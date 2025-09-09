@@ -73,21 +73,27 @@ serve(async (req) => {
     // Generate AI suggestions using OpenAI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     
-    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés. 
-    Analyse le profil de la personne et génère 3 suggestions de cadeaux parfaitement adaptées.
+    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
+    Analyse le profil de la personne et génère 3 suggestions de PRODUITS CONCRETS avec noms de marques, modèles et références précises.
+    
+    IMPORTANT: 
+    - Propose des PRODUITS RÉELS avec marques et modèles spécifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
+    - Évite les descriptions vagues comme "une activité mémorable" ou "un objet utile"
+    - Donne des noms de produits que l'on peut rechercher directement sur Amazon ou autres sites
+    - Inclus des alternatives concrètes avec marques et modèles
     
     Réponds UNIQUEMENT avec un JSON valide contenant un array "suggestions" avec 3 objets ayant cette structure exacte :
     {
       "suggestions": [
         {
-          "title": "Nom du cadeau",
-          "description": "Description détaillée du cadeau",
+          "title": "Marque + Modèle précis du produit",
+          "description": "Description détaillée du produit avec ses spécificités",
           "estimatedPrice": prix_en_euros_nombre,
           "confidence": score_0_a_1,
-          "reasoning": "Pourquoi ce cadeau est parfait pour cette personne",
-          "category": "Catégorie du cadeau", 
-          "alternatives": ["Alternative 1", "Alternative 2"],
-          "purchaseLinks": ["Suggestion de recherche 1", "Suggestion de recherche 2"]
+          "reasoning": "Pourquoi ce produit est parfait pour cette personne",
+          "category": "Catégorie du produit", 
+          "alternatives": ["Marque + Modèle alternatif 1", "Marque + Modèle alternatif 2"],
+          "purchaseLinks": ["Recherche Amazon exacte", "Recherche Google Shopping exacte"]
         }
       ]
     }`;
@@ -110,47 +116,68 @@ serve(async (req) => {
     HISTORIQUE RÉCENT :
     ${personContext.recentEvents.map(e => `- ${e.title} (${e.date})`).join('\n')}
     
-    Génère 3 suggestions de cadeaux créatives et personnalisées qui correspondent parfaitement à cette personne, son budget et l'occasion.
+    Génère 3 PRODUITS CONCRETS avec marques et modèles précis dans le budget de ${budget}€.
+    Exemple de format attendu :
+    - "Casque Bose QuietComfort 45" plutôt que "un casque audio de qualité"  
+    - "Kindle Paperwhite 11e génération 16GB" plutôt que "une liseuse électronique"
+    - "Montre Garmin Forerunner 255" plutôt que "une montre connectée"
+    
+    Pour les purchaseLinks, utilise des termes de recherche précis comme "Casque Bose QuietComfort 45 Amazon" ou "Kindle Paperwhite 16GB prix".
     `;
 
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
-      const baseIdeas = [
-        {
-          title: `Expérience personnalisée pour ${personContext.name}`,
-          description: `Une activité mémorable adaptée à ${personContext.name}: atelier, dégustation ou sortie en lien avec ${personContext.interests[0] || 'ses centres d’intérêt'}.`,
-          category: 'Expérience',
-        },
-        {
-          title: `Coffret sélectionné (${personContext.preferredCategories[0] || 'Lifestyle'})`,
-          description: `Un coffret qualitatif en lien avec ${personContext.preferredCategories[0] || 'ses goûts'}, avec une belle présentation et une carte personnalisée.`,
-          category: 'Coffret',
-        },
-        {
-          title: `Objet utile et élégant`,
-          description: `Un accessoire durable et esthétique que ${personContext.name} utilisera au quotidien, aligné avec ${personContext.interests.slice(0,2).join(', ') || 'ses activités'}.`,
-          category: 'Accessoire',
-        },
-      ];
+      const getConcreteProductsByInterest = (interest: string, budgetRange: number) => {
+        const products: {[key: string]: Array<{title: string, description: string, category: string}>>} = {
+          'Tech': [
+            { title: 'Casque Sony WH-1000XM5', description: 'Casque à réduction de bruit active avec qualité audio premium et autonomie 30h', category: 'Audio' },
+            { title: 'Kindle Paperwhite 11e génération', description: 'Liseuse numérique étanche avec éclairage réglable et écran 6.8 pouces', category: 'Lecture' },
+            { title: 'AirPods Pro 2e génération', description: 'Écouteurs sans fil avec réduction de bruit active et audio spatial', category: 'Audio' }
+          ],
+          'Sport': [
+            { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avancé et autonomie longue durée', category: 'Fitness' },
+            { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antidérapant 6mm d\'épaisseur', category: 'Yoga' },
+            { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour récupération musculaire et mobilité', category: 'Récupération' }
+          ],
+          'Cuisine': [
+            { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec écran tactile et recettes guidées', category: 'Électroménager' },
+            { title: 'Couteau Santoku Wüsthof Classic', description: 'Couteau japonais forgé en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
+            { title: 'Machine à café DeLonghi Magnifica S', description: 'Machine à expresso automatique avec broyeur intégré', category: 'Café' }
+          ],
+          'Lecture': [
+            { title: 'Kindle Oasis 10e génération', description: 'Liseuse premium avec éclairage adaptatif et design ergonomique', category: 'Liseuse' },
+            { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture à clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
+            { title: 'Support de livre en bambou', description: 'Support ajustable en bambou écologique pour lecture confortable', category: 'Accessoire' }
+          ]
+        };
 
-      const price = (mult: number) => Math.max(10, Math.round(budget * mult));
-      const toLinks = (q: string) => [
-        `${q} idée cadeau`,
-        `${q} meilleur prix`
-      ];
+        const defaultProducts = [
+          { title: 'Coffret cadeau Amazon', description: 'Carte cadeau Amazon dans un coffret élégant', category: 'Carte cadeau' },
+          { title: 'Diffuseur d\'huiles essentielles Stadler Form', description: 'Diffuseur ultrasonique design avec éclairage LED', category: 'Bien-être' },
+          { title: 'Bougie parfumée Diptyque Baies', description: 'Bougie premium aux notes de cassis et rose bulgare (190g)', category: 'Parfum' }
+        ];
 
-      return baseIdeas.map((idea, idx) => ({
-        title: idea.title,
-        description: idea.description,
-        estimatedPrice: price([0.8, 1, 1.2][idx] || 1),
-        confidence: 0.7,
-        reasoning: `Basé sur l’âge (${personContext.age} ans), la relation (${personContext.relationship}) et les intérêts (${personContext.interests.join(', ') || 'non renseignés'}).`,
-        category: idea.category,
+        return products[interest] || defaultProducts;
+      };
+
+      const primaryInterest = personContext.interests[0] || 'Tech';
+      const productsPool = getConcreteProductsByInterest(primaryInterest, budget);
+      
+      return productsPool.slice(0, 3).map((product, idx) => ({
+        title: product.title,
+        description: product.description,
+        estimatedPrice: Math.min(budget, [60, 120, 200][idx] || budget),
+        confidence: 0.75,
+        reasoning: `Produit sélectionné en fonction de l'intérêt principal "${primaryInterest}" et adapté au budget de ${budget}€.`,
+        category: product.category,
         alternatives: [
-          `Option similaire dans la catégorie ${idea.category}`,
-          `Carte cadeau ciblée (${personContext.preferredCategories[0] || 'boutique préférée'})`
+          `Version similaire dans la même gamme`,
+          `Alternative d'une autre marque reconnue`
         ],
-        purchaseLinks: toLinks(`${idea.category} ${personContext.interests[0] || ''}`.trim())
+        purchaseLinks: [
+          `${product.title} Amazon`,
+          `${product.title} prix comparateur`
+        ]
       }));
     };
 
@@ -197,7 +224,7 @@ serve(async (req) => {
           }
         }
       } catch (e) {
-        console.error('Erreur d’appel OpenAI, utilisation du fallback:', e);
+        console.error('Erreur d'appel OpenAI, utilisation du fallback:', e);
         suggestions = createFallbackSuggestions();
       }
     }
