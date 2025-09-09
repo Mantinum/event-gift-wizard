@@ -128,28 +128,29 @@ serve(async (req) => {
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
       const getConcreteProductsByInterest = (interest: string, budgetRange: number) => {
-        const products: {[key: string]: Array<{title: string, description: string, category: string}>>} = {
-          'Tech': [
-            { title: 'Casque Sony WH-1000XM5', description: 'Casque à réduction de bruit active avec qualité audio premium et autonomie 30h', category: 'Audio' },
-            { title: 'Kindle Paperwhite 11e génération', description: 'Liseuse numérique étanche avec éclairage réglable et écran 6.8 pouces', category: 'Lecture' },
-            { title: 'AirPods Pro 2e génération', description: 'Écouteurs sans fil avec réduction de bruit active et audio spatial', category: 'Audio' }
-          ],
-          'Sport': [
-            { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avancé et autonomie longue durée', category: 'Fitness' },
-            { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antidérapant 6mm d\'épaisseur', category: 'Yoga' },
-            { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour récupération musculaire et mobilité', category: 'Récupération' }
-          ],
-          'Cuisine': [
-            { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec écran tactile et recettes guidées', category: 'Électroménager' },
-            { title: 'Couteau Santoku Wüsthof Classic', description: 'Couteau japonais forgé en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
-            { title: 'Machine à café DeLonghi Magnifica S', description: 'Machine à expresso automatique avec broyeur intégré', category: 'Café' }
-          ],
-          'Lecture': [
-            { title: 'Kindle Oasis 10e génération', description: 'Liseuse premium avec éclairage adaptatif et design ergonomique', category: 'Liseuse' },
-            { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture à clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
-            { title: 'Support de livre en bambou', description: 'Support ajustable en bambou écologique pour lecture confortable', category: 'Accessoire' }
-          ]
-        };
+        const techProducts = [
+          { title: 'Casque Sony WH-1000XM5', description: 'Casque à réduction de bruit active avec qualité audio premium et autonomie 30h', category: 'Audio' },
+          { title: 'Kindle Paperwhite 11e génération', description: 'Liseuse numérique étanche avec éclairage réglable et écran 6.8 pouces', category: 'Lecture' },
+          { title: 'AirPods Pro 2e génération', description: 'Écouteurs sans fil avec réduction de bruit active et audio spatial', category: 'Audio' }
+        ];
+
+        const sportProducts = [
+          { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avancé et autonomie longue durée', category: 'Fitness' },
+          { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antidérapant 6mm d\'épaisseur', category: 'Yoga' },
+          { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour récupération musculaire et mobilité', category: 'Récupération' }
+        ];
+
+        const cuisineProducts = [
+          { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec écran tactile et recettes guidées', category: 'Électroménager' },
+          { title: 'Couteau Santoku Wüsthof Classic', description: 'Couteau japonais forgé en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
+          { title: 'Machine à café DeLonghi Magnifica S', description: 'Machine à expresso automatique avec broyeur intégré', category: 'Café' }
+        ];
+
+        const lectureProducts = [
+          { title: 'Kindle Oasis 10e génération', description: 'Liseuse premium avec éclairage adaptatif et design ergonomique', category: 'Liseuse' },
+          { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture à clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
+          { title: 'Support de livre en bambou', description: 'Support ajustable en bambou écologique pour lecture confortable', category: 'Accessoire' }
+        ];
 
         const defaultProducts = [
           { title: 'Coffret cadeau Amazon', description: 'Carte cadeau Amazon dans un coffret élégant', category: 'Carte cadeau' },
@@ -157,7 +158,11 @@ serve(async (req) => {
           { title: 'Bougie parfumée Diptyque Baies', description: 'Bougie premium aux notes de cassis et rose bulgare (190g)', category: 'Parfum' }
         ];
 
-        return products[interest] || defaultProducts;
+        if (interest === 'Tech') return techProducts;
+        if (interest === 'Sport') return sportProducts;
+        if (interest === 'Cuisine') return cuisineProducts;
+        if (interest === 'Lecture') return lectureProducts;
+        return defaultProducts;
       };
 
       const primaryInterest = personContext.interests[0] || 'Tech';
