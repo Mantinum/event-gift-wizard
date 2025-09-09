@@ -10,68 +10,19 @@ import {
   CheckCircle, 
   AlertCircle,
   Gift,
-  Euro
+  Euro,
+  Sparkles
 } from 'lucide-react';
 import { Event, Person, UpcomingPurchase } from '@/types';
+import { generateAIUpcomingPurchases } from '@/utils/giftAI';
 
 interface DashboardProps {
   events: Event[];
   persons: Person[];
 }
 
-// Simulation des achats à venir basés sur les événements
-const generateUpcomingPurchases = (events: Event[], persons: Person[]): UpcomingPurchase[] => {
-  const today = new Date();
-  
-  return events
-    .filter(event => {
-      const eventDate = new Date(event.date);
-      const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-      return daysUntil > 0 && daysUntil <= 30; // Événements dans les 30 prochains jours
-    })
-    .map(event => {
-      const eventDate = new Date(event.date);
-      const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-      const person = persons.find(p => p.id === event.personId);
-      
-      // Simulation d'une suggestion de cadeau basée sur les intérêts
-      const suggestedGifts = {
-        'birthday': ['Livre sur ses centres d\'intérêt', 'Coffret bien-être', 'Accessoire pour ses hobbies'],
-        'wedding': ['Coffret dégustation', 'Décoration maison', 'Expérience à deux'],
-        'anniversary': ['Bijou personnalisé', 'Album photo', 'Sortie romantique'],
-        'baptism': ['Peluche personnalisée', 'Livre d\'éveil', 'Cadre photo'],
-        'christmas': ['selon ses centres d\'intérêts', 'Coffret gourmand', 'Accessoire tech'],
-        'other': ['Carte cadeau', 'Expérience', 'Objet personnalisé']
-      };
-
-      const giftOptions = suggestedGifts[event.type as keyof typeof suggestedGifts] || suggestedGifts.other;
-      const randomGift = giftOptions[Math.floor(Math.random() * giftOptions.length)];
-      
-      // Si on a les intérêts de la personne, on personnalise
-      let personalizedGift = randomGift;
-      if (person && person.interests.length > 0) {
-        const interest = person.interests[0];
-        personalizedGift = `${randomGift} lié à ${interest.toLowerCase()}`;
-      }
-
-      return {
-        id: `purchase-${event.id}`,
-        personName: event.person,
-        personId: event.personId,
-        eventTitle: event.title,
-        eventId: event.id,
-        daysUntil,
-        budget: event.budget,
-        suggestedGift: personalizedGift,
-        confidence: Math.floor(Math.random() * 20) + 80, // 80-100%
-        status: daysUntil <= 3 ? 'reviewing' : 'pending' as UpcomingPurchase['status'],
-        aiReasoning: person ? `Basé sur ses intérêts: ${person.interests.slice(0, 3).join(', ')}` : 'Suggestion générale'
-      };
-    });
-};
-
 const Dashboard = ({ events, persons }: DashboardProps) => {
-  const upcomingPurchases = generateUpcomingPurchases(events, persons);
+  const upcomingPurchases = generateAIUpcomingPurchases(events, persons);
   const totalBudget = upcomingPurchases.reduce((sum, purchase) => sum + purchase.budget, 0);
   const reviewingPurchases = upcomingPurchases.filter(p => p.status === 'reviewing').length;
 
@@ -179,17 +130,35 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
                   style={{ animationDelay: `${index * 100}ms` }}
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h4 className="font-semibold text-foreground">
-                        {purchase.suggestedGift}
-                      </h4>
-                      <p className="text-sm text-muted-foreground">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <h4 className="font-semibold text-foreground">
+                          {purchase.suggestedGift}
+                        </h4>
+                        <div className="flex items-center space-x-1">
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          <span className="text-xs font-medium text-primary">IA</span>
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">
                         Pour {purchase.personName} • {purchase.eventTitle}
                       </p>
                       {purchase.aiReasoning && (
-                        <p className="text-xs text-primary mt-1">
-                          IA: {purchase.aiReasoning}
-                        </p>
+                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-2 mb-2">
+                          <p className="text-xs text-foreground">
+                            {purchase.aiReasoning}
+                          </p>
+                        </div>
+                      )}
+                      {purchase.alternativeGifts && purchase.alternativeGifts.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          <span className="text-xs text-muted-foreground">Alternatives:</span>
+                          {purchase.alternativeGifts.map((alt, idx) => (
+                            <Badge key={idx} variant="outline" className="text-xs">
+                              {alt}
+                            </Badge>
+                          ))}
+                        </div>
                       )}
                     </div>
                     <Badge className={getStatusColor(purchase.status)}>
