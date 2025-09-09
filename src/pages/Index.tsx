@@ -12,7 +12,7 @@ import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut } fr
 import { Person, Event } from '@/types';
 import { useSupabasePersons } from '@/hooks/useSupabasePersons';
 import { useSupabaseEvents } from '@/hooks/useSupabaseEvents';
-import { generateAutoEventsForPerson } from '@/utils/autoEvents';
+import { generateAutoEventsForPerson, updateAllAutoEvents } from '@/utils/autoEvents';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-calendar.jpg';
@@ -58,6 +58,16 @@ const Index = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // Générer automatiquement tous les événements anniversaire manquants
+  useEffect(() => {
+    if (!personsLoading && !eventsLoading && persons.length > 0) {
+      const missingAutoEvents = updateAllAutoEvents(persons, events);
+      if (missingAutoEvents.length > 0) {
+        saveMultipleEvents(missingAutoEvents);
+      }
+    }
+  }, [persons, events, personsLoading, eventsLoading, saveMultipleEvents]);
+
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -98,12 +108,10 @@ const Index = () => {
     if (success) {
       setEditingPerson(undefined);
       
-      // Générer automatiquement les événements pour cette personne (seulement pour nouveaux profils)
-      if (!isUpdate) {
-        const autoEvents = generateAutoEventsForPerson(person, events);
-        if (autoEvents.length > 0) {
-          await saveMultipleEvents(autoEvents);
-        }
+      // Générer automatiquement les événements anniversaire manquants pour cette personne
+      const autoEvents = generateAutoEventsForPerson(person, events);
+      if (autoEvents.length > 0) {
+        await saveMultipleEvents(autoEvents);
       }
     }
   };
