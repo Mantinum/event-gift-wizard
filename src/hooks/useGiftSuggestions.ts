@@ -24,11 +24,18 @@ export function useGiftSuggestions() {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<GiftSuggestion[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lastGeneratedFor, setLastGeneratedFor] = useState<string | null>(null);
 
   const generateSuggestions = async (request: GiftSuggestionRequest) => {
     setLoading(true);
     setError(null);
-    setSuggestions([]);
+    
+    // Ne clear les suggestions que si c'est pour une nouvelle personne/événement
+    const requestKey = `${request.personId}-${request.eventType}`;
+    if (lastGeneratedFor !== requestKey) {
+      setSuggestions([]);
+    }
+    setLastGeneratedFor(requestKey);
 
     try {
       console.log('Generating gift suggestions for:', request);
@@ -79,6 +86,7 @@ export function useGiftSuggestions() {
   const clearSuggestions = () => {
     setSuggestions([]);
     setError(null);
+    setLastGeneratedFor(null);
   };
 
   return {
@@ -86,6 +94,7 @@ export function useGiftSuggestions() {
     loading,
     error,
     generateSuggestions,
-    clearSuggestions
+    clearSuggestions,
+    lastGeneratedFor
   };
 }

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Event, Person, UpcomingPurchase } from '@/types';
 import { generateAIUpcomingPurchases } from '@/utils/giftAI';
-import GiftSuggestions from './GiftSuggestions';
+import AutoGiftSuggestions from './AutoGiftSuggestions';
 
 interface DashboardProps {
   events: Event[];
@@ -106,16 +106,16 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
         </Card>
       </div>
 
-      {/* IA Gift Suggestions Section */}
+      {/* Automatic IA Gift Suggestions */}
       <Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
-            <Wand2 className="h-5 w-5 text-primary" />
-            <span>Assistant IA - Suggestions de cadeaux</span>
+            <Sparkles className="h-5 w-5 text-primary" />
+            <span>Suggestions IA automatiques</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <GiftSuggestions persons={persons} />
+          <AutoGiftSuggestions events={events} persons={persons} />
         </CardContent>
       </Card>
 
