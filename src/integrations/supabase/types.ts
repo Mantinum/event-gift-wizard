@@ -14,7 +14,191 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      events: {
+        Row: {
+          budget: number
+          created_at: string
+          date: string
+          description: string | null
+          id: string
+          is_auto_generated: boolean | null
+          location: string | null
+          person_id: string | null
+          person_name: string
+          reminder_days: number | null
+          status: string
+          title: string
+          type: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          budget?: number
+          created_at?: string
+          date: string
+          description?: string | null
+          id?: string
+          is_auto_generated?: boolean | null
+          location?: string | null
+          person_id?: string | null
+          person_name: string
+          reminder_days?: number | null
+          status?: string
+          title: string
+          type: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          budget?: number
+          created_at?: string
+          date?: string
+          description?: string | null
+          id?: string
+          is_auto_generated?: boolean | null
+          location?: string | null
+          person_id?: string | null
+          person_name?: string
+          reminder_days?: number | null
+          status?: string
+          title?: string
+          type?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persons: {
+        Row: {
+          avatar: string | null
+          birthday: string
+          budget: number
+          created_at: string
+          email: string | null
+          id: string
+          interests: string[] | null
+          last_gift: string | null
+          name: string
+          notes: string | null
+          phone: string | null
+          preferred_categories: string[] | null
+          relationship: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          avatar?: string | null
+          birthday: string
+          budget?: number
+          created_at?: string
+          email?: string | null
+          id?: string
+          interests?: string[] | null
+          last_gift?: string | null
+          name: string
+          notes?: string | null
+          phone?: string | null
+          preferred_categories?: string[] | null
+          relationship: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          avatar?: string | null
+          birthday?: string
+          budget?: number
+          created_at?: string
+          email?: string | null
+          id?: string
+          interests?: string[] | null
+          last_gift?: string | null
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          preferred_categories?: string[] | null
+          relationship?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      upcoming_purchases: {
+        Row: {
+          ai_reasoning: string | null
+          alternative_gifts: string[] | null
+          budget: number
+          confidence: number | null
+          created_at: string
+          days_until: number
+          event_id: string | null
+          event_title: string
+          id: string
+          person_id: string | null
+          person_name: string
+          status: string
+          suggested_gift: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          ai_reasoning?: string | null
+          alternative_gifts?: string[] | null
+          budget?: number
+          confidence?: number | null
+          created_at?: string
+          days_until: number
+          event_id?: string | null
+          event_title: string
+          id?: string
+          person_id?: string | null
+          person_name: string
+          status?: string
+          suggested_gift: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          ai_reasoning?: string | null
+          alternative_gifts?: string[] | null
+          budget?: number
+          confidence?: number | null
+          created_at?: string
+          days_until?: number
+          event_id?: string | null
+          event_title?: string
+          id?: string
+          person_id?: string | null
+          person_name?: string
+          status?: string
+          suggested_gift?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upcoming_purchases_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "upcoming_purchases_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

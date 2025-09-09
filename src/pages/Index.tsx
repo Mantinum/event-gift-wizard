@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -7,80 +8,24 @@ import Dashboard from '@/components/Dashboard';
 import PersonProfile from '@/components/PersonProfile';
 import PersonProfileModal from '@/components/PersonProfileModal';
 import EventModal from '@/components/EventModal';
-import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut } from 'lucide-react';
 import { Person, Event } from '@/types';
-import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useSupabasePersons } from '@/hooks/useSupabasePersons';
+import { useSupabaseEvents } from '@/hooks/useSupabaseEvents';
 import { generateAutoEventsForPerson } from '@/utils/autoEvents';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-calendar.jpg';
 
-const initialPersons: Person[] = [
-  {
-    id: '1',
-    name: 'Sophie Martin',
-    avatar: '',
-    interests: ['Cuisine', 'Yoga', 'Lecture', 'Voyage', 'Photographie'],
-    budget: 50,
-    relationship: 'Soeur',
-    birthday: '1990-04-15',
-    lastGift: 'Livre de recettes healthy',
-    preferredCategories: ['Livres', 'Bien-être', 'Cuisine'],
-    notes: 'Adore la cuisine végétarienne et le yoga matinal',
-    email: 'sophie.martin@email.com'
-  },
-  {
-    id: '2',
-    name: 'Paul Dubois',
-    avatar: '',
-    interests: ['Vin', 'Golf', 'Tech', 'Musique'],
-    budget: 120,
-    relationship: 'Ami proche',
-    birthday: '1985-11-22',
-    lastGift: 'Écouteurs Bluetooth',
-    preferredCategories: ['Tech', 'Sport', 'Alcool'],
-    notes: 'Passionné de technologie et amateur de bon vin'
-  },
-  {
-    id: '3',
-    name: 'Marie Laurent',
-    avatar: '',
-    interests: ['Art', 'Jardinage', 'Décoration', 'Mode'],
-    budget: 80,
-    relationship: 'Cousine',
-    birthday: '1992-07-08',
-    preferredCategories: ['Décoration', 'Mode', 'Art'],
-    notes: 'Très créative, aime décorer sa maison'
-  }
-];
-
-const initialEvents: Event[] = [
-  {
-    id: '1',
-    title: 'Anniversaire Sophie',
-    date: '2024-09-15',
-    type: 'birthday',
-    personId: '1',
-    person: 'Sophie Martin',
-    budget: 50,
-    status: 'upcoming',
-    reminderDays: 3
-  },
-  {
-    id: '2',
-    title: 'Mariage Paul & Marie',
-    date: '2024-09-22',
-    type: 'wedding',
-    personId: '2',
-    person: 'Paul Dubois',
-    budget: 150,
-    status: 'upcoming',
-    reminderDays: 7
-  }
-];
-
 const Index = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [persons, setPersons] = useLocalStorage<Person[]>('giftcalendar-persons', initialPersons);
-  const [events, setEvents] = useLocalStorage<Event[]>('giftcalendar-events', initialEvents);
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  
+  // Use Supabase hooks instead of localStorage
+  const { persons, loading: personsLoading, savePerson } = useSupabasePersons();
+  const { events, loading: eventsLoading, saveEvent, saveMultipleEvents } = useSupabaseEvents();
   
   // Modal states
   const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
@@ -88,31 +33,87 @@ const Index = () => {
   const [editingPerson, setEditingPerson] = useState<Person | undefined>(undefined);
   const [editingEvent, setEditingEvent] = useState<Event | undefined>(undefined);
 
-  const handleSavePerson = (person: Person) => {
-    if (editingPerson) {
-      // Update existing person
-      setPersons(persons.map(p => p.id === person.id ? person : p));
-      setEditingPerson(undefined);
-    } else {
-      // Add new person
-      setPersons([...persons, person]);
+  // Check authentication
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setAuthLoading(false);
       
-      // Générer automatiquement les événements pour cette personne
-      const autoEvents = generateAutoEventsForPerson(person, events);
-      if (autoEvents.length > 0) {
-        setEvents([...events, ...autoEvents]);
+      if (!user) {
+        navigate('/auth');
+      }
+    };
+
+    checkAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        navigate('/auth');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de se déconnecter",
+        variant: "destructive"
+      });
+    } else {
+      toast({
+        title: "Déconnexion",
+        description: "Vous avez été déconnecté avec succès"
+      });
+    }
+  };
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <Sparkles className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Redirect to auth if not authenticated
+  if (!user) {
+    return null;
+  }
+
+  const handleSavePerson = async (person: Person) => {
+    const isUpdate = !!editingPerson;
+    const success = await savePerson(person, isUpdate);
+    
+    if (success) {
+      setEditingPerson(undefined);
+      
+      // Générer automatiquement les événements pour cette personne (seulement pour nouveaux profils)
+      if (!isUpdate) {
+        const autoEvents = generateAutoEventsForPerson(person, events);
+        if (autoEvents.length > 0) {
+          await saveMultipleEvents(autoEvents);
+        }
       }
     }
   };
 
-  const handleSaveEvent = (event: Event) => {
-    if (editingEvent) {
-      // Update existing event
-      setEvents(events.map(e => e.id === event.id ? event : e));
+  const handleSaveEvent = async (event: Event) => {
+    const isUpdate = !!editingEvent;
+    const success = await saveEvent(event, isUpdate);
+    
+    if (success) {
       setEditingEvent(undefined);
-    } else {
-      // Add new event
-      setEvents([...events, event]);
     }
   };
 
@@ -144,6 +145,16 @@ const Index = () => {
         </div>
         <div className="relative z-10 container mx-auto px-4 py-12 text-center">
           <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-end mb-4">
+              <Button
+                onClick={handleSignOut}
+                variant="outline" 
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Déconnexion
+              </Button>
+            </div>
             <h1 className="text-4xl md:text-6xl font-bold text-white mb-6 drop-shadow-lg">
               <Sparkles className="inline-block w-8 h-8 md:w-12 md:h-12 mr-3 text-primary-glow" />
               GiftCalendar
@@ -152,7 +163,7 @@ const Index = () => {
               L'assistant intelligent qui n'oublie jamais vos proches
             </p>
             <p className="text-lg text-white/80 mb-8 max-w-2xl mx-auto">
-              Créez des profils détaillés, planifiez vos événements et laissez notre IA commander 
+              Bienvenue {user.email} ! Créez des profils détaillés, planifiez vos événements et laissez notre IA commander 
               automatiquement les cadeaux parfaits selon les goûts et votre budget.
             </p>
           </div>
@@ -245,7 +256,7 @@ const Index = () => {
                 </div>
               ))}
               
-              {persons.length === 0 && (
+              {persons.length === 0 && !personsLoading && (
                 <div className="col-span-full text-center py-12">
                   <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-foreground mb-2">Aucun profil créé</h3>
