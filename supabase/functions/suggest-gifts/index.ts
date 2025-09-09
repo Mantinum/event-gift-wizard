@@ -113,48 +113,98 @@ serve(async (req) => {
     Génère 3 suggestions de cadeaux créatives et personnalisées qui correspondent parfaitement à cette personne, son budget et l'occasion.
     `;
 
-    console.log('Calling OpenAI API for gift suggestions...');
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-5-2025-08-07',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
+    // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
+    const createFallbackSuggestions = (): GiftSuggestion[] => {
+      const baseIdeas = [
+        {
+          title: `Expérience personnalisée pour ${personContext.name}`,
+          description: `Une activité mémorable adaptée à ${personContext.name}: atelier, dégustation ou sortie en lien avec ${personContext.interests[0] || 'ses centres d’intérêt'}.`,
+          category: 'Expérience',
+        },
+        {
+          title: `Coffret sélectionné (${personContext.preferredCategories[0] || 'Lifestyle'})`,
+          description: `Un coffret qualitatif en lien avec ${personContext.preferredCategories[0] || 'ses goûts'}, avec une belle présentation et une carte personnalisée.`,
+          category: 'Coffret',
+        },
+        {
+          title: `Objet utile et élégant`,
+          description: `Un accessoire durable et esthétique que ${personContext.name} utilisera au quotidien, aligné avec ${personContext.interests.slice(0,2).join(', ') || 'ses activités'}.`,
+          category: 'Accessoire',
+        },
+      ];
+
+      const price = (mult: number) => Math.max(10, Math.round(budget * mult));
+      const toLinks = (q: string) => [
+        `${q} idée cadeau`,
+        `${q} meilleur prix`
+      ];
+
+      return baseIdeas.map((idea, idx) => ({
+        title: idea.title,
+        description: idea.description,
+        estimatedPrice: price([0.8, 1, 1.2][idx] || 1),
+        confidence: 0.7,
+        reasoning: `Basé sur l’âge (${personContext.age} ans), la relation (${personContext.relationship}) et les intérêts (${personContext.interests.join(', ') || 'non renseignés'}).`,
+        category: idea.category,
+        alternatives: [
+          `Option similaire dans la catégorie ${idea.category}`,
+          `Carte cadeau ciblée (${personContext.preferredCategories[0] || 'boutique préférée'})`
         ],
-        max_completion_tokens: 2000,
-      }),
-    });
+        purchaseLinks: toLinks(`${idea.category} ${personContext.interests[0] || ''}`.trim())
+      }));
+    };
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
-    }
+    console.log('Calling OpenAI API for gift suggestions...');
 
-    const data = await response.json();
-    const aiResponse = data.choices[0].message.content;
-    
-    console.log('OpenAI response:', aiResponse);
+    let suggestions: GiftSuggestion[] | null = null;
 
-    // Parse AI response
-    let suggestions: GiftSuggestion[];
-    try {
-      const parsed = JSON.parse(aiResponse);
-      suggestions = parsed.suggestions;
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError);
-      throw new Error('Réponse IA invalide');
+    if (!openAIApiKey) {
+      console.warn('OPENAI_API_KEY non configurée. Utilisation du fallback local.');
+      suggestions = createFallbackSuggestions();
+    } else {
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openAIApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-5-2025-08-07',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            max_completion_tokens: 1200,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('OpenAI API error:', errorData);
+          suggestions = createFallbackSuggestions();
+        } else {
+          const data = await response.json();
+          const aiResponse = data.choices?.[0]?.message?.content ?? '';
+          console.log('OpenAI response:', aiResponse);
+
+          try {
+            const parsed = JSON.parse(aiResponse);
+            suggestions = parsed.suggestions;
+          } catch (parseError) {
+            console.error('Failed to parse AI response, using fallback:', parseError);
+            suggestions = createFallbackSuggestions();
+          }
+        }
+      } catch (e) {
+        console.error('Erreur d’appel OpenAI, utilisation du fallback:', e);
+        suggestions = createFallbackSuggestions();
+      }
     }
 
     // Validate suggestions
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      throw new Error('Aucune suggestion générée');
+      suggestions = createFallbackSuggestions();
     }
 
     // Store suggestions in database for future reference
