@@ -47,7 +47,7 @@ serve(async (req) => {
       .single();
 
     if (personError || !person) {
-      throw new Error('Personne non trouvée');
+      throw new Error('Personne non trouvee');
     }
 
     // Get person's event history for better context
@@ -73,26 +73,26 @@ serve(async (req) => {
     // Generate AI suggestions using OpenAI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     
-    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
-    Analyse le profil de la personne et génère 3 suggestions de PRODUITS CONCRETS avec noms de marques, modèles et références précises.
+    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalises avec acces aux catalogues produits.
+    Analyse le profil de la personne et genere 3 suggestions de PRODUITS CONCRETS avec noms de marques, modeles et references precises.
     
     IMPORTANT: 
-    - Propose des PRODUITS RÉELS avec marques et modèles spécifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
-    - Évite les descriptions vagues comme "une activité mémorable" ou "un objet utile"
+    - Propose des PRODUITS REELS avec marques et modeles specifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
+    - Evite les descriptions vagues comme "une activite memorable" ou "un objet utile"
     - Donne des noms de produits que l'on peut rechercher directement sur Amazon ou autres sites
-    - Inclus des alternatives concrètes avec marques et modèles
+    - Inclus des alternatives concretes avec marques et modeles
     
-    Réponds UNIQUEMENT avec un JSON valide contenant un array "suggestions" avec 3 objets ayant cette structure exacte :
+    Reponds UNIQUEMENT avec un JSON valide contenant un array "suggestions" avec 3 objets ayant cette structure exacte :
     {
       "suggestions": [
         {
-          "title": "Marque + Modèle précis du produit",
-          "description": "Description détaillée du produit avec ses spécificités",
+          "title": "Marque + Modele precis du produit",
+          "description": "Description detaillee du produit avec ses specificites",
           "estimatedPrice": prix_en_euros_nombre,
           "confidence": score_0_a_1,
           "reasoning": "Pourquoi ce produit est parfait pour cette personne",
-          "category": "Catégorie du produit", 
-          "alternatives": ["Marque + Modèle alternatif 1", "Marque + Modèle alternatif 2"],
+          "category": "Categorie du produit", 
+          "alternatives": ["Marque + Modele alternatif 1", "Marque + Modele alternatif 2"],
           "purchaseLinks": ["Recherche Amazon exacte", "Recherche Google Shopping exacte"]
         }
       ]
@@ -101,61 +101,61 @@ serve(async (req) => {
     const userPrompt = `
     PROFIL DE LA PERSONNE :
     - Nom : ${personContext.name}
-    - Âge : ${personContext.age} ans
+    - Age : ${personContext.age} ans
     - Relation : ${personContext.relationship}
-    - Centres d'intérêt : ${personContext.interests.join(', ')}
-    - Catégories préférées : ${personContext.preferredCategories.join(', ')}
+    - Centres d'interet : ${personContext.interests.join(', ')}
+    - Categories preferees : ${personContext.preferredCategories.join(', ')}
     - Notes personnelles : ${personContext.notes}
     - Dernier cadeau offert : ${personContext.lastGift}
     
-    CONTEXTE DE L'ÉVÉNEMENT :
-    - Type d'événement : ${eventType}
+    CONTEXTE DE L'EVENEMENT :
+    - Type d'evenement : ${eventType}
     - Budget maximum : ${budget}€
     - Contexte additionnel : ${additionalContext || 'Aucun'}
     
-    HISTORIQUE RÉCENT :
+    HISTORIQUE RECENT :
     ${personContext.recentEvents.map(e => `- ${e.title} (${e.date})`).join('\n')}
     
-    Génère 3 PRODUITS CONCRETS avec marques et modèles précis dans le budget de ${budget}€.
+    Genere 3 PRODUITS CONCRETS avec marques et modeles precis dans le budget de ${budget}€.
     Exemple de format attendu :
-    - "Casque Bose QuietComfort 45" plutôt que "un casque audio de qualité"  
-    - "Kindle Paperwhite 11e génération 16GB" plutôt que "une liseuse électronique"
-    - "Montre Garmin Forerunner 255" plutôt que "une montre connectée"
+    - "Casque Bose QuietComfort 45" plutot que "un casque audio de qualite"  
+    - "Kindle Paperwhite 11e generation 16GB" plutot que "une liseuse electronique"
+    - "Montre Garmin Forerunner 255" plutot que "une montre connectee"
     
-    Pour les purchaseLinks, utilise des termes de recherche précis comme "Casque Bose QuietComfort 45 Amazon" ou "Kindle Paperwhite 16GB prix".
+    Pour les purchaseLinks, utilise des termes de recherche precis comme "Casque Bose QuietComfort 45 Amazon" ou "Kindle Paperwhite 16GB prix".
     `;
 
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
       const getConcreteProductsByInterest = (interest: string, budgetRange: number) => {
         const techProducts = [
-          { title: 'Casque Sony WH-1000XM5', description: 'Casque à réduction de bruit active avec qualité audio premium et autonomie 30h', category: 'Audio' },
-          { title: 'Kindle Paperwhite 11e génération', description: 'Liseuse numérique étanche avec éclairage réglable et écran 6.8 pouces', category: 'Lecture' },
-          { title: 'AirPods Pro 2e génération', description: 'Écouteurs sans fil avec réduction de bruit active et audio spatial', category: 'Audio' }
+          { title: 'Casque Sony WH-1000XM5', description: 'Casque a reduction de bruit active avec qualite audio premium et autonomie 30h', category: 'Audio' },
+          { title: 'Kindle Paperwhite 11e generation', description: 'Liseuse numerique etanche avec eclairage reglable et ecran 6.8 pouces', category: 'Lecture' },
+          { title: 'AirPods Pro 2e generation', description: 'Ecouteurs sans fil avec reduction de bruit active et audio spatial', category: 'Audio' }
         ];
 
         const sportProducts = [
-          { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avancé et autonomie longue durée', category: 'Fitness' },
-          { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antidérapant 6mm d\'épaisseur', category: 'Yoga' },
-          { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour récupération musculaire et mobilité', category: 'Récupération' }
+          { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avance et autonomie longue duree', category: 'Fitness' },
+          { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antiderapant 6mm d\'epaisseur', category: 'Yoga' },
+          { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour recuperation musculaire et mobilite', category: 'Recuperation' }
         ];
 
         const cuisineProducts = [
-          { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec écran tactile et recettes guidées', category: 'Électroménager' },
-          { title: 'Couteau Santoku Wüsthof Classic', description: 'Couteau japonais forgé en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
-          { title: 'Machine à café DeLonghi Magnifica S', description: 'Machine à expresso automatique avec broyeur intégré', category: 'Café' }
+          { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec ecran tactile et recettes guidees', category: 'Electromenager' },
+          { title: 'Couteau Santoku Wusthof Classic', description: 'Couteau japonais forge en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
+          { title: 'Machine a cafe DeLonghi Magnifica S', description: 'Machine a expresso automatique avec broyeur integre', category: 'Cafe' }
         ];
 
         const lectureProducts = [
-          { title: 'Kindle Oasis 10e génération', description: 'Liseuse premium avec éclairage adaptatif et design ergonomique', category: 'Liseuse' },
-          { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture à clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
-          { title: 'Support de livre en bambou', description: 'Support ajustable en bambou écologique pour lecture confortable', category: 'Accessoire' }
+          { title: 'Kindle Oasis 10e generation', description: 'Liseuse premium avec eclairage adaptatif et design ergonomique', category: 'Liseuse' },
+          { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture a clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
+          { title: 'Support de livre en bambou', description: 'Support ajustable en bambou ecologique pour lecture confortable', category: 'Accessoire' }
         ];
 
         const defaultProducts = [
-          { title: 'Coffret cadeau Amazon', description: 'Carte cadeau Amazon dans un coffret élégant', category: 'Carte cadeau' },
-          { title: 'Diffuseur d\'huiles essentielles Stadler Form', description: 'Diffuseur ultrasonique design avec éclairage LED', category: 'Bien-être' },
-          { title: 'Bougie parfumée Diptyque Baies', description: 'Bougie premium aux notes de cassis et rose bulgare (190g)', category: 'Parfum' }
+          { title: 'Coffret cadeau Amazon', description: 'Carte cadeau Amazon dans un coffret elegant', category: 'Carte cadeau' },
+          { title: 'Diffuseur d\'huiles essentielles Stadler Form', description: 'Diffuseur ultrasonique design avec eclairage LED', category: 'Bien-etre' },
+          { title: 'Bougie parfumee Diptyque Baies', description: 'Bougie premium aux notes de cassis et rose bulgare (190g)', category: 'Parfum' }
         ];
 
         if (interest === 'Tech') return techProducts;
@@ -173,11 +173,11 @@ serve(async (req) => {
         description: product.description,
         estimatedPrice: Math.min(budget, [60, 120, 200][idx] || budget),
         confidence: 0.75,
-        reasoning: `Produit sélectionné en fonction de l'intérêt principal "${primaryInterest}" et adapté au budget de ${budget}€.`,
+        reasoning: `Produit selectionne en fonction de l\'interet principal "${primaryInterest}" et adapte au budget de ${budget}€.`,
         category: product.category,
         alternatives: [
-          `Version similaire dans la même gamme`,
-          `Alternative d'une autre marque reconnue`
+          `Version similaire dans la meme gamme`,
+          `Alternative d\'une autre marque reconnue`
         ],
         purchaseLinks: [
           `${product.title} Amazon`,
@@ -191,7 +191,7 @@ serve(async (req) => {
     let suggestions: GiftSuggestion[] | null = null;
 
     if (!openAIApiKey) {
-      console.warn('OPENAI_API_KEY non configurée. Utilisation du fallback local.');
+      console.warn('OPENAI_API_KEY non configuree. Utilisation du fallback local.');
       suggestions = createFallbackSuggestions();
     } else {
       try {
@@ -229,7 +229,7 @@ serve(async (req) => {
           }
         }
       } catch (e) {
-        console.error('Erreur d'appel OpenAI, utilisation du fallback:', e);
+        console.error('Erreur d\'appel OpenAI, utilisation du fallback:', e);
         suggestions = createFallbackSuggestions();
       }
     }
@@ -275,7 +275,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in suggest-gifts function:', error);
     return new Response(JSON.stringify({ 
-      error: error.message || 'Une erreur est survenue lors de la génération des suggestions' 
+      error: error.message || 'Une erreur est survenue lors de la generation des suggestions' 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
