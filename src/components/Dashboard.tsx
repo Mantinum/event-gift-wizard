@@ -11,10 +11,12 @@ import {
   AlertCircle,
   Gift,
   Euro,
-  Sparkles
+  Sparkles,
+  Wand2
 } from 'lucide-react';
 import { Event, Person, UpcomingPurchase } from '@/types';
 import { generateAIUpcomingPurchases } from '@/utils/giftAI';
+import GiftSuggestions from './GiftSuggestions';
 
 interface DashboardProps {
   events: Event[];
@@ -103,6 +105,19 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
           </CardContent>
         </Card>
       </div>
+
+      {/* IA Gift Suggestions Section */}
+      <Card className="shadow-card">
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Wand2 className="h-5 w-5 text-primary" />
+            <span>Assistant IA - Suggestions de cadeaux</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <GiftSuggestions persons={persons} />
+        </CardContent>
+      </Card>
 
       {/* Upcoming Purchases */}
       <Card className="shadow-card">
