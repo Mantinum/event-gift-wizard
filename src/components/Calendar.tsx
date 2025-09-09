@@ -3,41 +3,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon } from 'lucide-react';
+import { Event, Person, EVENT_TYPES } from '@/types';
 
-interface Event {
-  id: string;
-  title: string;
-  date: string;
-  type: 'birthday' | 'wedding' | 'anniversary' | 'baptism' | 'other';
-  person: string;
-  budget: number;
-  status: 'upcoming' | 'ordered' | 'completed';
+interface CalendarProps {
+  events: Event[];
+  persons: Person[];
 }
 
-const mockEvents: Event[] = [
-  {
-    id: '1',
-    title: 'Anniversaire Sophie',
-    date: '2024-09-15',
-    type: 'birthday',
-    person: 'Sophie',
-    budget: 50,
-    status: 'upcoming'
-  },
-  {
-    id: '2',
-    title: 'Mariage Paul & Marie',
-    date: '2024-09-22',
-    type: 'wedding',
-    person: 'Paul',
-    budget: 150,
-    status: 'ordered'
-  }
-];
-
-const Calendar = () => {
+const Calendar = ({ events, persons }: CalendarProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [events] = useState<Event[]>(mockEvents);
 
   const monthNames = [
     'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -62,12 +36,8 @@ const Calendar = () => {
   };
 
   const getEventTypeColor = (type: string) => {
-    switch (type) {
-      case 'birthday': return 'bg-ocean-blue text-white';
-      case 'wedding': return 'bg-purple-accent text-white';
-      case 'anniversary': return 'bg-accent text-accent-foreground';
-      default: return 'bg-secondary text-secondary-foreground';
-    }
+    const eventType = EVENT_TYPES.find(et => et.value === type);
+    return eventType ? `${eventType.color} text-white` : 'bg-secondary text-secondary-foreground';
   };
 
   const renderCalendarDays = () => {

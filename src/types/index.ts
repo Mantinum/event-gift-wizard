@@ -1,0 +1,92 @@
+export interface Person {
+  id: string;
+  name: string;
+  avatar?: string;
+  interests: string[];
+  budget: number;
+  relationship: string;
+  birthday: string;
+  lastGift?: string;
+  preferredCategories: string[];
+  notes?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface Event {
+  id: string;
+  title: string;
+  date: string;
+  type: 'birthday' | 'wedding' | 'anniversary' | 'baptism' | 'christmas' | 'other';
+  personId: string;
+  person: string;
+  budget: number;
+  status: 'upcoming' | 'ordered' | 'completed' | 'cancelled';
+  description?: string;
+  location?: string;
+  reminderDays?: number;
+}
+
+export interface UpcomingPurchase {
+  id: string;
+  personName: string;
+  personId: string;
+  eventTitle: string;
+  eventId: string;
+  daysUntil: number;
+  budget: number;
+  suggestedGift: string;
+  confidence: number;
+  status: 'pending' | 'reviewing' | 'approved' | 'ordered' | 'delivered';
+  alternativeGifts?: string[];
+  aiReasoning?: string;
+}
+
+export type EventType = Event['type'];
+export type PurchaseStatus = UpcomingPurchase['status'];
+export type EventStatus = Event['status'];
+
+export const EVENT_TYPES: { value: EventType; label: string; color: string }[] = [
+  { value: 'birthday', label: 'Anniversaire', color: 'bg-ocean-blue' },
+  { value: 'wedding', label: 'Mariage', color: 'bg-purple-accent' },
+  { value: 'anniversary', label: 'Anniversaire de mariage', color: 'bg-accent' },
+  { value: 'baptism', label: 'Baptême', color: 'bg-success' },
+  { value: 'christmas', label: 'Noël', color: 'bg-destructive' },
+  { value: 'other', label: 'Autre', color: 'bg-muted' },
+];
+
+export const RELATIONSHIP_TYPES = [
+  'Famille',
+  'Ami(e) proche',
+  'Collègue',
+  'Voisin(e)',
+  'Connaissance',
+  'Partenaire',
+  'Enfant',
+  'Parent',
+  'Frère/Sœur',
+  'Cousin(e)',
+  'Autre'
+];
+
+export const INTEREST_CATEGORIES = [
+  'Sport',
+  'Lecture',
+  'Cuisine',
+  'Voyage',
+  'Musique',
+  'Art',
+  'Tech',
+  'Mode',
+  'Jardinage',
+  'Cinéma',
+  'Photographie',
+  'Bien-être',
+  'Jeux',
+  'Décoration',
+  'Beauté',
+  'Artisanat',
+  'Science',
+  'Histoire',
+  'Nature'
+];
