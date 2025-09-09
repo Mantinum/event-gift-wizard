@@ -10,6 +10,7 @@ import EventModal from '@/components/EventModal';
 import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles } from 'lucide-react';
 import { Person, Event } from '@/types';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { generateAutoEventsForPerson } from '@/utils/autoEvents';
 import heroImage from '@/assets/hero-calendar.jpg';
 
 const initialPersons: Person[] = [
@@ -95,6 +96,12 @@ const Index = () => {
     } else {
       // Add new person
       setPersons([...persons, person]);
+      
+      // Générer automatiquement les événements pour cette personne
+      const autoEvents = generateAutoEventsForPerson(person, events);
+      if (autoEvents.length > 0) {
+        setEvents([...events, ...autoEvents]);
+      }
     }
   };
 

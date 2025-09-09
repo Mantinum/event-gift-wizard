@@ -88,7 +88,7 @@ const PersonProfileModal = ({
     
     toast({
       title: person ? "Profil modifié" : "Profil créé",
-      description: `Le profil de ${personData.name} a été ${person ? 'modifié' : 'créé'} avec succès`,
+      description: `Le profil de ${personData.name} a été ${person ? 'modifié' : 'créé'} avec succès${personData.birthday ? ' - Événement anniversaire ajouté automatiquement !' : ''}`,
     });
   };
 
