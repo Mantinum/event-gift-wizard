@@ -17,6 +17,7 @@ import {
 import { Event, Person, UpcomingPurchase } from '@/types';
 import { generateAIUpcomingPurchases } from '@/utils/giftAI';
 import AutoGiftSuggestions from './AutoGiftSuggestions';
+import { ThemeToggle } from './ThemeToggle';
 
 interface DashboardProps {
   events: Event[];
@@ -55,6 +56,15 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
 
   return (
     <div className="space-y-6">
+      {/* Dashboard Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Tableau de bord</h1>
+          <p className="text-muted-foreground">Gérez vos événements et suggestions de cadeaux</p>
+        </div>
+        <ThemeToggle />
+      </div>
+
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="shadow-card hover:shadow-elegant transition-all duration-300">
