@@ -23,7 +23,7 @@ const Auth = () => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        navigate('/');
+        navigate('/dashboard');
       }
     };
     checkUser();
@@ -31,7 +31,7 @@ const Auth = () => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
-        navigate('/');
+        navigate('/dashboard');
       }
     });
 
