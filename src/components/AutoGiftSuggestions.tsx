@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Event, Person } from '@/types';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
-import { differenceInDays, parseISO } from 'date-fns';
+import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns';
 
 interface AutoGiftSuggestionsProps {
   events: Event[];
@@ -31,10 +31,10 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
   const upcomingEvents = events
     .filter(event => {
       const eventDate = parseISO(event.date);
-      const daysUntil = differenceInDays(eventDate, new Date());
+      const daysUntil = differenceInCalendarDays(startOfDay(eventDate), startOfDay(new Date()));
       return daysUntil >= 0 && daysUntil <= 30;
     })
-    .sort((a, b) => differenceInDays(parseISO(a.date), new Date()) - differenceInDays(parseISO(b.date), new Date()));
+    .sort((a, b) => differenceInCalendarDays(startOfDay(parseISO(a.date)), startOfDay(new Date())) - differenceInCalendarDays(startOfDay(parseISO(b.date)), startOfDay(new Date())));
 
   const handleGenerateSuggestions = async (event: Event) => {
     const person = persons.find(p => p.id === event.personId);
@@ -77,7 +77,7 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
     <div className="space-y-4">
       {upcomingEvents.map((event) => {
         const person = persons.find(p => p.id === event.personId);
-        const daysUntil = differenceInDays(parseISO(event.date), new Date());
+        const daysUntil = differenceInCalendarDays(startOfDay(parseISO(event.date)), startOfDay(new Date()));
         const hasGeneratedSuggestions = generatedForEvent === event.id && suggestions.length > 0;
         
         return (

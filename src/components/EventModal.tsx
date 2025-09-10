@@ -80,7 +80,7 @@ const EventModal = ({
       type: formData.type,
       personId: formData.personId,
       person: selectedPerson.name,
-      date: date.toISOString().split('T')[0],
+      date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
       budget: formData.budget || selectedPerson.budget,
       description: formData.description,
       location: formData.location,

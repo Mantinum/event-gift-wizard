@@ -1,4 +1,5 @@
 import { Person, Event, UpcomingPurchase } from '@/types';
+import { differenceInCalendarDays, startOfDay } from 'date-fns';
 
 interface GiftSuggestion {
   name: string;
@@ -119,7 +120,7 @@ export const generateSmartGiftSuggestions = (person: Person, event: Event): Upco
 
   const today = new Date();
   const eventDate = new Date(event.date);
-  const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+  const daysUntil = differenceInCalendarDays(startOfDay(eventDate), startOfDay(today));
 
   return {
     id: `ai-purchase-${event.id}`,
@@ -224,7 +225,7 @@ export const generateAIUpcomingPurchases = (events: Event[], persons: Person[]):
   return events
     .filter(event => {
       const eventDate = new Date(event.date);
-      const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+      const daysUntil = differenceInCalendarDays(startOfDay(eventDate), startOfDay(today));
       return daysUntil > 0 && daysUntil <= 30; // Événements dans les 30 prochains jours
     })
     .map(event => {
@@ -235,7 +236,7 @@ export const generateAIUpcomingPurchases = (events: Event[], persons: Person[]):
         // Fallback si la personne n'existe pas
         const today = new Date();
         const eventDate = new Date(event.date);
-        const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+        const daysUntil = differenceInCalendarDays(startOfDay(eventDate), startOfDay(today));
         
         return {
           id: `fallback-${event.id}`,

@@ -144,97 +144,44 @@ serve(async (req) => {
 
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
-      // Produits abordables (<= ~50€) utilises comme base de secours
-      const baseAffordable: Array<{ title: string; description: string; category: string; price: number }> = [
-        { title: 'Anker PowerCore 10000', description: 'Batterie externe compacte 10k mAh avec charge rapide', category: 'Tech', price: 35 },
-        { title: 'SanDisk Ultra microSD 128GB', description: 'Carte memoire 128GB U1 pour smartphone/camera', category: 'Tech', price: 15 },
-        { title: 'Xiaomi Mi Band 8', description: "Bracelet connecte suivi d'activite et sommeil", category: 'Fitness', price: 40 },
-        { title: 'Lampe de lecture Glocusent LED', description: 'Lampe a clip rechargeable 3 temperatures', category: 'Lecture', price: 25 },
-        { title: 'Moulin a cafe Hario Mini Slim Plus', description: 'Moulin manuel compact pour amateurs de cafe', category: 'Cafe', price: 32 },
-        { title: 'Bouteille isotherme Stanley 0.47L', description: 'Bouteille inox isotherme robuste', category: 'Outdoor', price: 29 },
+      // Viser 85% à 100% du budget
+      const minTarget = Math.min(budget, Math.max(10, Math.round(budget * 0.85)));
+      const targets = [minTarget, Math.round((minTarget + budget) / 2), budget];
+
+      // 3 catégories variées
+      const templates: Array<{ title: string; description: string; category: string }>[] = [
+        [
+          { title: 'Casque Bose QuietComfort 45', description: 'Casque Bluetooth à réduction de bruit active', category: 'Audio' },
+          { title: 'Casque Sony WH-1000XM4', description: 'Casque premium ANC, idéal pour la musique et le télétravail', category: 'Audio' },
+        ],
+        [
+          { title: 'Kindle Paperwhite 11e génération 16GB', description: 'Liseuse étanche avec éclairage réglable', category: 'Lecture' },
+          { title: 'Kobo Clara 2E', description: 'Liseuse compacte et légère, très confortable', category: 'Lecture' },
+        ],
+        [
+          { title: 'Garmin Forerunner 55', description: 'Montre GPS course à pied avec coaching', category: 'Fitness' },
+          { title: 'Fitbit Charge 6', description: 'Tracker d’activité complet, cardio et sommeil', category: 'Fitness' },
+        ],
       ];
 
-      // Petits catalogues par centre d'interet avec prix approximatifs
-      const techProducts = [
-        { title: 'Casque Sony WH-CH520', description: 'Casque Bluetooth leger autonomie 50h', category: 'Audio', price: 39 },
-        { title: 'Clavier Logitech K380', description: 'Clavier Bluetooth multi-appareils compact', category: 'Peripherique', price: 45 },
-        { title: 'Souris Logitech M330 Silent Plus', description: 'Souris sans fil silencieuse', category: 'Peripherique', price: 29 },
-      ];
+      // Sélectionner un élément par catégorie en variant selon la seed
+      const seed = Date.now();
+      const picks = templates.map((cat, i) => cat[seed % 2]);
 
-      const sportProducts = [
-        { title: 'Ceinture running Kalenji', description: 'Ceinture porte-objet pour course a pied', category: 'Running', price: 12 },
-        { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour recuperation', category: 'Recuperation', price: 35 },
-        { title: 'Corde a sauter Domyos', description: 'Corde reglable entrainement cardio', category: 'Fitness', price: 10 },
-      ];
-
-      const cuisineProducts = [
-        { title: 'Balance de cuisine Hario', description: 'Balance precise pour cuisine et cafe', category: 'Ustensiles', price: 35 },
-        { title: 'Couteau Santoku Victorinox 17cm', description: 'Couteau de cuisine polyvalent', category: 'Ustensiles', price: 49 },
-        { title: 'Thermometre cuisine TFA', description: 'Thermometre instantane pour cuisson', category: 'Ustensiles', price: 18 },
-      ];
-
-      const lectureProducts = [
-        { title: 'Support de livre en bambou', description: 'Support ajustable pour lecture', category: 'Accessoire', price: 20 },
-        { title: 'Lampe de lecture Glocusent LED', description: 'Lampe a clip rechargeable', category: 'Accessoire', price: 25 },
-        { title: 'Marque-pages magnetiques (lot de 6)', description: 'Marque-pages magnetiques fines', category: 'Accessoire', price: 9 },
-      ];
-
-      const byInterest = (interest: string) => {
-        if (interest === 'Tech') return techProducts;
-        if (interest === 'Sport') return sportProducts;
-        if (interest === 'Cuisine') return cuisineProducts;
-        if (interest === 'Lecture') return lectureProducts;
-        return [] as Array<{ title: string; description: string; category: string; price: number }>;
-      };
-
-      // Mélanger et sélectionner des produits diversifiés selon les intérêts
-      const diverseProducts = [
-        ...baseAffordable,
-        ...techProducts,
-        ...sportProducts, 
-        ...cuisineProducts,
-        ...lectureProducts
-      ];
-      
-      // Filtrer par budget
-      const affordableProducts = diverseProducts.filter((p) => p.price <= budget);
-      
-      // Créer un mix diversifié en évitant les doublons de catégorie
-      const selectedProducts: Array<{ title: string; description: string; category: string; price: number }> = [];
-      const usedCategories = new Set<string>();
-      
-      // Randomiser la sélection basée sur timestamp
-      const randomSeed = Date.now() % 1000;
-      const shuffled = affordableProducts.sort(() => (randomSeed % 2) - 0.5);
-      
-      // Sélectionner 3 produits de catégories différentes
-      for (const product of shuffled) {
-        if (selectedProducts.length < 3 && !usedCategories.has(product.category)) {
-          selectedProducts.push(product);
-          usedCategories.add(product.category);
-        }
-      }
-      
-      // Si pas assez de catégories différentes, compléter avec les meilleurs candidats
-      while (selectedProducts.length < 3 && selectedProducts.length < shuffled.length) {
-        const nextProduct = shuffled.find(p => !selectedProducts.includes(p));
-        if (nextProduct) selectedProducts.push(nextProduct);
-      }
-
-      return selectedProducts.map((product) => ({
-        title: product.title,
-        description: product.description,
-        estimatedPrice: Math.min(product.price, budget),
+      return picks.map((p, i) => ({
+        title: p.title,
+        description: p.description,
+        estimatedPrice: targets[Math.min(i, targets.length - 1)],
         confidence: 0.8,
-        reasoning: `Produit selectionne en fonction des interets et du budget <= ${budget}€`,
-        category: product.category,
+        reasoning: `Suggestion fallback alignée sur le budget (${minTarget}€ - ${budget}€) et catégorie variée`,
+        category: p.category,
         alternatives: [
-          'Variante similaire dans la meme gamme',
-          "Alternative d'une autre marque reconnue",
+          'Variante de la même gamme',
+          "Modèle précédent pour ajuster le prix",
         ],
         purchaseLinks: [
-          `${product.title} Amazon`,
-          `${product.title} prix comparateur`,
+          `${p.title} Amazon`,
+          `${p.title} prix comparateur`,
         ],
       }));
     };
@@ -287,16 +234,19 @@ serve(async (req) => {
       }
     }
 
-    // Validate and enforce budget
+    // Validate and enforce budget with 85%-100% range
     const enforceBudget = (suggs: GiftSuggestion[] | null | undefined, max: number): GiftSuggestion[] => {
+      const min = Math.min(max, Math.max(10, Math.round(max * 0.85)));
       const safe = Array.isArray(suggs) ? suggs : [];
-      const filtered = safe
-        .filter((s) => typeof s.estimatedPrice !== 'number' ? true : (isFinite(s.estimatedPrice) && s.estimatedPrice <= max))
-        .map((s) => ({
-          ...s,
-          estimatedPrice: Math.min(typeof s.estimatedPrice === 'number' ? s.estimatedPrice : max, max),
-        }));
-      return filtered;
+      return safe
+        .map((s) => {
+          let price = typeof s.estimatedPrice === 'number' && isFinite(s.estimatedPrice)
+            ? Math.round(s.estimatedPrice)
+            : min;
+          price = Math.min(max, Math.max(min, price));
+          return { ...s, estimatedPrice: price };
+        })
+        .filter((s) => s.estimatedPrice <= max);
     };
 
     suggestions = enforceBudget(suggestions, budget);

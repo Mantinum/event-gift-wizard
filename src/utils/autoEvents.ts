@@ -29,13 +29,14 @@ const getNextBirthday = (birthdayString: string): Date => {
   
   const today = new Date();
   const currentYear = today.getFullYear();
+  const todayStart = new Date(currentYear, today.getMonth(), today.getDate());
   
-  // Créer la date d'anniversaire pour cette année
+  // Créer la date d'anniversaire pour cette année (en heure locale)
   const thisYearBirthday = new Date(currentYear, birthday.getMonth(), birthday.getDate());
   console.log(`Anniversaire cette année:`, thisYearBirthday);
   
-  // Si l'anniversaire de cette année est passé, prendre celui de l'année prochaine
-  if (thisYearBirthday < today) {
+  // Si l'anniversaire de cette année est passé (en se basant sur le jour, pas l'heure)
+  if (thisYearBirthday < todayStart) {
     const nextYear = new Date(currentYear + 1, birthday.getMonth(), birthday.getDate());
     console.log(`Anniversaire année prochaine:`, nextYear);
     return nextYear;
@@ -76,7 +77,7 @@ export const generateAutoEventsForPerson = (person: Person, existingEvents: Even
         title: `Anniversaire de ${person.name}`,
         person: person.name,
         personId: person.id,
-        date: nextBirthday.toISOString().split('T')[0],
+        date: `${nextBirthday.getFullYear()}-${String(nextBirthday.getMonth() + 1).padStart(2, '0')}-${String(nextBirthday.getDate()).padStart(2, '0')}`,
         type: 'birthday',
         budget: person.budget || AUTO_EVENT_CONFIGS.birthday.defaultBudget,
         description: `🎂 Événement généré automatiquement - ${getAge(person.birthday, nextBirthday)} ans`,
@@ -142,7 +143,7 @@ export const regenerateYearlyEvents = (persons: Person[], existingEvents: Event[
           title: `Anniversaire de ${person.name}`,
           person: person.name,
           personId: person.id,
-          date: nextYearBirthday.toISOString().split('T')[0],
+          date: `${nextYearBirthday.getFullYear()}-${String(nextYearBirthday.getMonth() + 1).padStart(2, '0')}-${String(nextYearBirthday.getDate()).padStart(2, '0')}`,
           type: 'birthday',
           budget: person.budget || AUTO_EVENT_CONFIGS.birthday.defaultBudget,
           description: `🎂 Événement généré automatiquement - ${getAge(person.birthday, nextYearBirthday)} ans`,
