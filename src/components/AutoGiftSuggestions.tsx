@@ -2,13 +2,11 @@ import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { 
   Sparkles, 
   Clock, 
   Euro, 
   Calendar,
-  ChevronDown,
   Loader2,
   Gift,
   ShoppingCart
@@ -24,7 +22,6 @@ interface AutoGiftSuggestionsProps {
 
 const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
   const { suggestions, loading, generateSuggestions } = useGiftSuggestions();
-  const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
   const [generatedForEvent, setGeneratedForEvent] = useState<string | null>(null);
 
   // Filtrer les événements à venir dans les 30 prochains jours
@@ -135,87 +132,67 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                     Générer des idées IA
                   </Button>
                 ) : (
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <Gift className="h-4 w-4 mr-2" />
-                      Voir les suggestions ({suggestions.length})
-                    </Button>
-                    <Button
-                      onClick={() => handleGenerateSuggestions(event)}
-                      disabled={loading}
-                      size="sm"
-                      variant="outline"
-                      className="hover:bg-primary hover:text-white transition-colors"
-                    >
-                      {loading ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Sparkles className="h-4 w-4 mr-2" />
-                      )}
-                      Régénérer
-                    </Button>
-                  </div>
+                  <Button
+                    onClick={() => handleGenerateSuggestions(event)}
+                    disabled={loading}
+                    size="sm"
+                    variant="outline"
+                    className="hover:bg-primary hover:text-white transition-colors"
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 mr-2" />
+                    )}
+                    Régénérer
+                  </Button>
                 )}
               </div>
 
               {hasGeneratedSuggestions && (
-                <Collapsible 
-                  open={expandedEvent === event.id} 
-                  onOpenChange={(open) => setExpandedEvent(open ? event.id : null)}
-                >
-                  <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm" className="w-full justify-between p-2">
-                      <span className="text-sm font-medium">
-                        {suggestions.length} suggestions générées
-                      </span>
-                      <ChevronDown className={`h-4 w-4 transition-transform ${expandedEvent === event.id ? 'rotate-180' : ''}`} />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-3 mt-3">
-                    {suggestions.map((suggestion, index) => (
-                      <div 
-                        key={index}
-                        className="border border-border rounded-lg p-3 bg-card"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <h5 className="font-medium text-foreground">{suggestion.title}</h5>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant="outline" className="text-xs">
-                              {suggestion.category}
-                            </Badge>
-                            <span className={`text-xs font-medium ${getConfidenceColor(suggestion.confidence * 100)}`}>
-                              {Math.round(suggestion.confidence * 100)}%
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {suggestion.description}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-success">
-                            ~{suggestion.estimatedPrice}€
+                <div className="space-y-3 mt-3">
+                  <div className="text-sm font-medium text-foreground mb-3">
+                    {suggestions.length} suggestions générées :
+                  </div>
+                  {suggestions.map((suggestion, index) => (
+                    <div 
+                      key={index}
+                      className="border border-border rounded-lg p-3 bg-card"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <h5 className="font-medium text-foreground">{suggestion.title}</h5>
+                        <div className="flex items-center space-x-2">
+                          <Badge variant="outline" className="text-xs">
+                            {suggestion.category}
+                          </Badge>
+                          <span className={`text-xs font-medium ${getConfidenceColor(suggestion.confidence * 100)}`}>
+                            {Math.round(suggestion.confidence * 100)}%
                           </span>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              const searchQuery = encodeURIComponent(suggestion.title);
-                              window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
-                            }}
-                            className="hover:bg-primary hover:text-white transition-colors"
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            Acheter sur Amazon
-                          </Button>
                         </div>
                       </div>
-                    ))}
-                  </CollapsibleContent>
-                </Collapsible>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        {suggestion.description}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-success">
+                          ~{suggestion.estimatedPrice}€
+                        </span>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const searchQuery = encodeURIComponent(suggestion.title);
+                            window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
+                          }}
+                          className="hover:bg-primary hover:text-white transition-colors"
+                        >
+                          <ShoppingCart className="h-3 w-3 mr-1" />
+                          Acheter sur Amazon
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

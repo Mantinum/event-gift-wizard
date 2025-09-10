@@ -5,8 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Sparkles, Lightbulb, ChevronDown, ChevronUp, Euro, Star, ShoppingCart, Wand2 } from 'lucide-react';
+import { Sparkles, Lightbulb, Euro, Star, ShoppingCart, Wand2 } from 'lucide-react';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
 import { Person } from '@/types';
 import { EVENT_TYPES } from '@/types';
@@ -21,7 +20,6 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
   const [selectedEventType, setSelectedEventType] = useState('');
   const [budget, setBudget] = useState(100);
   const [additionalContext, setAdditionalContext] = useState('');
-  const [expandedSuggestion, setExpandedSuggestion] = useState<number | null>(null);
 
   const selectedPerson = persons.find(p => p.id === selectedPersonId);
 
@@ -231,24 +229,6 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                       </Badge>
                     </div>
                   </div>
-                  
-                  <Collapsible>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setExpandedSuggestion(
-                          expandedSuggestion === index ? null : index
-                        )}
-                      >
-                        {expandedSuggestion === index ? (
-                          <ChevronUp className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </CollapsibleTrigger>
-                  </Collapsible>
                 </div>
                 
                 <CardDescription>
@@ -256,63 +236,59 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                 </CardDescription>
               </CardHeader>
 
-              <Collapsible open={expandedSuggestion === index}>
-                <CollapsibleContent>
-                  <CardContent className="pt-0">
-                    <div className="space-y-4">
-                      <div className="bg-muted/30 p-3 rounded-lg">
-                        <h5 className="font-medium mb-2 text-sm">Pourquoi c'est un bon choix :</h5>
-                        <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
-                      </div>
+              <CardContent className="pt-0">
+                <div className="space-y-4">
+                  <div className="bg-muted/30 p-3 rounded-lg">
+                    <h5 className="font-medium mb-2 text-sm">Pourquoi c'est un bon choix :</h5>
+                    <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
+                  </div>
 
-                      <div className="flex justify-end gap-2">
-                        <Button 
-                          onClick={() => {
-                            // Utilise le premier terme de recherche optimisé, ou le titre si pas de purchaseLinks
-                            const searchTerm = suggestion.purchaseLinks.length > 0 
-                              ? suggestion.purchaseLinks[0] 
-                              : suggestion.title;
-                            const searchQuery = encodeURIComponent(searchTerm);
-                            window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
-                          }}
-                          className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
-                          size="sm"
-                        >
-                          <ShoppingCart className="h-4 w-4 mr-2" />
-                          Acheter sur Amazon
-                        </Button>
-                      </div>
+                  <div className="flex justify-end gap-2">
+                    <Button 
+                      onClick={() => {
+                        // Utilise le premier terme de recherche optimisé, ou le titre si pas de purchaseLinks
+                        const searchTerm = suggestion.purchaseLinks.length > 0 
+                          ? suggestion.purchaseLinks[0] 
+                          : suggestion.title;
+                        const searchQuery = encodeURIComponent(searchTerm);
+                        window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
+                      }}
+                      className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
+                      size="sm"
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Acheter sur Amazon
+                    </Button>
+                  </div>
 
-                      {suggestion.alternatives.length > 0 && (
-                        <div>
-                          <h5 className="font-medium mb-2 text-sm">Alternatives :</h5>
-                          <ul className="text-sm text-muted-foreground space-y-1">
-                            {suggestion.alternatives.map((alt, altIndex) => (
-                              <li key={altIndex} className="flex items-center gap-2">
-                                <div className="w-1 h-1 bg-muted-foreground rounded-full" />
-                                {alt}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {suggestion.purchaseLinks.length > 0 && (
-                        <div>
-                          <h5 className="font-medium mb-2 text-sm">Suggestions de recherche :</h5>
-                          <div className="flex flex-wrap gap-2">
-                            {suggestion.purchaseLinks.map((link, linkIndex) => (
-                              <Badge key={linkIndex} variant="outline" className="text-xs">
-                                {link}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                  {suggestion.alternatives.length > 0 && (
+                    <div>
+                      <h5 className="font-medium mb-2 text-sm">Alternatives :</h5>
+                      <ul className="text-sm text-muted-foreground space-y-1">
+                        {suggestion.alternatives.map((alt, altIndex) => (
+                          <li key={altIndex} className="flex items-center gap-2">
+                            <div className="w-1 h-1 bg-muted-foreground rounded-full" />
+                            {alt}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </CardContent>
-                </CollapsibleContent>
-              </Collapsible>
+                  )}
+
+                  {suggestion.purchaseLinks.length > 0 && (
+                    <div>
+                      <h5 className="font-medium mb-2 text-sm">Suggestions de recherche :</h5>
+                      <div className="flex flex-wrap gap-2">
+                        {suggestion.purchaseLinks.map((link, linkIndex) => (
+                          <Badge key={linkIndex} variant="outline" className="text-xs">
+                            {link}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
             </Card>
           ))}
         </div>
