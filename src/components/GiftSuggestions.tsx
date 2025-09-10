@@ -159,9 +159,29 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
             </Button>
             
             {suggestions.length > 0 && (
-              <Button variant="outline" onClick={clearSuggestions}>
-                Effacer les suggestions
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={clearSuggestions}>
+                  Effacer les suggestions
+                </Button>
+                <Button
+                  onClick={handleGenerateSuggestions}
+                  disabled={loading}
+                  variant="outline"
+                  className="hover:bg-primary hover:text-white transition-colors"
+                >
+                  {loading ? (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2 animate-spin" />
+                      Régénération...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Régénérer
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>

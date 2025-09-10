@@ -135,14 +135,30 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                     Générer des idées IA
                   </Button>
                 ) : (
-                  <Button
-                    onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Gift className="h-4 w-4 mr-2" />
-                    Voir les suggestions ({suggestions.length})
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setExpandedEvent(expandedEvent === event.id ? null : event.id)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Gift className="h-4 w-4 mr-2" />
+                      Voir les suggestions ({suggestions.length})
+                    </Button>
+                    <Button
+                      onClick={() => handleGenerateSuggestions(event)}
+                      disabled={loading}
+                      size="sm"
+                      variant="outline"
+                      className="hover:bg-primary hover:text-white transition-colors"
+                    >
+                      {loading ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      Régénérer
+                    </Button>
+                  </div>
                 )}
               </div>
 

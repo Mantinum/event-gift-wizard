@@ -79,11 +79,18 @@ serve(async (req) => {
     CONTRAINTE BUDGET: toutes les suggestions doivent respecter STRICTEMENT le budget (prix <= budget).
     Si un produit depasse le budget, propose automatiquement une alternative moins chere (variante, capacite inferieure, gamme precedente) qui rentre dans le budget.
     
+    CONTRAINTE DIVERSITE: Les 3 suggestions DOIVENT etre dans des categories DIFFERENTES pour offrir de la variete.
+    Exemples de categories diverses : Tech/Audio, Mode/Accessoires, Maison/Deco, Sport/Fitness, Lecture/Culture, Cuisine/Gastronomie, Jeux/Loisirs, Bien-etre/Beaute.
+    
+    VARIATION: Pour eviter de toujours proposer les memes produits, utilise ce timestamp comme source de variation : ${Date.now()}
+    Explore differentes marques et gammes de produits selon les interets de la personne.
+    
     IMPORTANT: 
     - Propose des PRODUITS REELS avec marques et modeles specifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
     - Evite les descriptions vagues comme "une activite memorable" ou "un objet utile"
     - Donne des noms de produits que l'on peut rechercher directement sur Amazon ou autres sites
     - Inclus des alternatives concretes avec marques et modeles
+    - VARIE les suggestions meme pour la meme personne en explorant tous ses centres d'interet
     
     Reponds UNIQUEMENT avec un JSON valide contenant un array "suggestions" avec 3 objets ayant cette structure exacte :
     {
@@ -119,11 +126,15 @@ serve(async (req) => {
     HISTORIQUE RECENT :
     ${personContext.recentEvents.map(e => `- ${e.title} (${e.date})`).join('\n')}
     
-    Genere 3 PRODUITS CONCRETS avec marques et modeles precis dans le budget de ${budget}€.
+    Genere 3 PRODUITS CONCRETS dans des CATEGORIES DIFFERENTES dans le budget de ${budget}€.
+    IMPORTANT: Varie les categories pour offrir de la diversite (ex: une suggestion tech, une suggestion mode, une suggestion loisir).
+    
     Exemple de format attendu :
     - "Casque Bose QuietComfort 45" plutot que "un casque audio de qualite"  
     - "Kindle Paperwhite 11e generation 16GB" plutot que "une liseuse electronique"
     - "Montre Garmin Forerunner 255" plutot que "une montre connectee"
+    
+    EXPLORE TOUS LES INTERETS de la personne pour proposer des categories variees.
     
     Pour les purchaseLinks, utilise des termes de recherche precis comme "Casque Bose QuietComfort 45 Amazon" ou "Kindle Paperwhite 16GB prix".
     `;
@@ -173,20 +184,46 @@ serve(async (req) => {
         return [] as Array<{ title: string; description: string; category: string; price: number }>;
       };
 
-      const primaryInterest = personContext.interests[0] || 'Tech';
-      const candidates = [...byInterest(primaryInterest), ...baseAffordable];
+      // Mélanger et sélectionner des produits diversifiés selon les intérêts
+      const diverseProducts = [
+        ...baseAffordable,
+        ...techProducts,
+        ...sportProducts, 
+        ...cuisineProducts,
+        ...lectureProducts
+      ];
+      
+      // Filtrer par budget
+      const affordableProducts = diverseProducts.filter((p) => p.price <= budget);
+      
+      // Créer un mix diversifié en évitant les doublons de catégorie
+      const selectedProducts: Array<{ title: string; description: string; category: string; price: number }> = [];
+      const usedCategories = new Set<string>();
+      
+      // Randomiser la sélection basée sur timestamp
+      const randomSeed = Date.now() % 1000;
+      const shuffled = affordableProducts.sort(() => (randomSeed % 2) - 0.5);
+      
+      // Sélectionner 3 produits de catégories différentes
+      for (const product of shuffled) {
+        if (selectedProducts.length < 3 && !usedCategories.has(product.category)) {
+          selectedProducts.push(product);
+          usedCategories.add(product.category);
+        }
+      }
+      
+      // Si pas assez de catégories différentes, compléter avec les meilleurs candidats
+      while (selectedProducts.length < 3 && selectedProducts.length < shuffled.length) {
+        const nextProduct = shuffled.find(p => !selectedProducts.includes(p));
+        if (nextProduct) selectedProducts.push(nextProduct);
+      }
 
-      // Filtrer par budget; si rien ne passe, retomber sur la base abordable filtree
-      const filtered = candidates.filter((p) => p.price <= budget);
-      const pool = filtered.length > 0 ? filtered : baseAffordable.filter((p) => p.price <= budget);
-      const selected = pool.slice(0, 3);
-
-      return selected.map((product) => ({
+      return selectedProducts.map((product) => ({
         title: product.title,
         description: product.description,
         estimatedPrice: Math.min(product.price, budget),
         confidence: 0.8,
-        reasoning: `Produit selectionne en fonction de l'interet "${primaryInterest}" et du budget <= ${budget}€`,
+        reasoning: `Produit selectionne en fonction des interets et du budget <= ${budget}€`,
         category: product.category,
         alternatives: [
           'Variante similaire dans la meme gamme',
