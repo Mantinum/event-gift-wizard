@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Person, RELATIONSHIP_TYPES, INTEREST_CATEGORIES } from '@/types';
+import { Person, RELATIONSHIP_TYPES, INTEREST_CATEGORIES, GENDER_OPTIONS } from '@/types';
 import { cn } from '@/lib/utils';
 
 interface PersonProfileModalProps {
@@ -50,12 +50,13 @@ const PersonProfileModal = ({
     notes: '',
     email: '',
     phone: '',
-    avatar: ''
+    avatar: '',
+    gender: '',
+    address: ''
   });
 
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [newInterest, setNewInterest] = useState('');
-  const [date, setDate] = useState<Date | undefined>(undefined);
 
   // Réinitialiser le formulaire quand la personne change
   useEffect(() => {
@@ -70,10 +71,11 @@ const PersonProfileModal = ({
         notes: person.notes || '',
         email: person.email || '',
         phone: person.phone || '',
-        avatar: person.avatar || ''
+        avatar: person.avatar || '',
+        gender: person.gender || '',
+        address: person.address || ''
       });
       setSelectedInterests(person.interests || []);
-      setDate(person.birthday ? new Date(person.birthday) : undefined);
     } else {
       // Réinitialiser pour un nouveau profil
       setFormData({
@@ -86,15 +88,16 @@ const PersonProfileModal = ({
         notes: '',
         email: '',
         phone: '',
-        avatar: ''
+        avatar: '',
+        gender: '',
+        address: ''
       });
       setSelectedInterests([]);
-      setDate(undefined);
     }
   }, [person, isOpen]);
 
   const handleSave = () => {
-    if (!formData.name || !formData.relationship || !date) {
+    if (!formData.name || !formData.relationship || !formData.birthday) {
       toast({
         title: "Erreur",
         description: "Veuillez remplir tous les champs obligatoires",
@@ -107,7 +110,7 @@ const PersonProfileModal = ({
       id: person?.id || Date.now().toString(),
       name: formData.name,
       relationship: formData.relationship,
-      birthday: date.toISOString().split('T')[0],
+      birthday: formData.birthday,
       budget: formData.budget || 50,
       interests: selectedInterests,
       preferredCategories: formData.preferredCategories || [],
@@ -115,6 +118,8 @@ const PersonProfileModal = ({
       email: formData.email,
       phone: formData.phone,
       avatar: formData.avatar,
+      gender: formData.gender,
+      address: formData.address,
     };
 
     onSave(personData);
@@ -177,7 +182,7 @@ const PersonProfileModal = ({
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="relationship" className="text-sm font-medium">
                     Relation *
@@ -195,29 +200,30 @@ const PersonProfileModal = ({
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium">Date de naissance *</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal mt-1",
-                          !date && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, "PPP", { locale: fr }) : "Sélectionner une date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 animate-fade-in">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={setDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Label htmlFor="gender" className="text-sm font-medium">
+                    Sexe
+                  </Label>
+                  <Select value={formData.gender} onValueChange={(value) => setFormData({ ...formData, gender: value })}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Choisir le sexe" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GENDER_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="birthday" className="text-sm font-medium">Date de naissance *</Label>
+                  <Input
+                    id="birthday"
+                    type="date"
+                    value={formData.birthday}
+                    onChange={(e) => setFormData({ ...formData, birthday: e.target.value })}
+                    className="mt-1"
+                  />
                 </div>
               </div>
             </CardContent>
@@ -301,7 +307,7 @@ const PersonProfileModal = ({
             </CardContent>
           </Card>
 
-          {/* Contact et notes */}
+          {/* Contact et adresse */}
           <Card className="shadow-card">
             <CardContent className="p-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -326,6 +332,18 @@ const PersonProfileModal = ({
                     className="mt-1"
                   />
                 </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="address" className="text-sm font-medium">Adresse complète</Label>
+                <Textarea
+                  id="address"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder="123 Rue de la Paix, 75001 Paris, France"
+                  className="mt-1 min-h-[60px]"
+                  rows={2}
+                />
               </div>
               
               <div>

@@ -10,7 +10,9 @@ import {
   Mail, 
   Phone, 
   StickyNote,
-  Gift
+  Gift,
+  MapPin,
+  Users
 } from 'lucide-react';
 import { Person } from '@/types';
 
@@ -87,6 +89,12 @@ const PersonProfileViewModal = ({
                       <ShoppingBag className="w-4 h-4 mr-2" />
                       <span>Budget: {formatBudget(person.budget)}</span>
                     </div>
+                    {person.gender && (
+                      <div className="flex items-center text-muted-foreground">
+                        <Users className="w-4 h-4 mr-2" />
+                        <span>{person.gender}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -131,11 +139,11 @@ const PersonProfileViewModal = ({
             </CardContent>
           </Card>
 
-          {/* Contact */}
-          {(person.email || person.phone) && (
+          {/* Contact et adresse */}
+          {(person.email || person.phone || person.address) && (
             <Card className="shadow-card">
               <CardContent className="p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4">Contact</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-4">Contact & Localisation</h3>
                 <div className="space-y-3">
                   {person.email && (
                     <div className="flex items-center">
@@ -147,6 +155,12 @@ const PersonProfileViewModal = ({
                     <div className="flex items-center">
                       <Phone className="w-4 h-4 mr-3 text-muted-foreground" />
                       <span className="text-sm">{person.phone}</span>
+                    </div>
+                  )}
+                  {person.address && (
+                    <div className="flex items-start">
+                      <MapPin className="w-4 h-4 mr-3 text-muted-foreground mt-0.5" />
+                      <span className="text-sm">{person.address}</span>
                     </div>
                   )}
                 </div>

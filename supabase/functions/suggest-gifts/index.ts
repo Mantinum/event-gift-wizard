@@ -62,6 +62,7 @@ serve(async (req) => {
     const personContext = {
       name: person.name,
       age: calculateAge(person.birthday),
+      gender: person.gender || 'Non spécifié',
       interests: person.interests || [],
       relationship: person.relationship,
       preferredCategories: person.preferred_categories || [],
@@ -112,6 +113,7 @@ serve(async (req) => {
     PROFIL DE LA PERSONNE :
     - Nom : ${personContext.name}
     - Age : ${personContext.age} ans
+    - Sexe : ${personContext.gender}
     - Relation : ${personContext.relationship}
     - Centres d'interet : ${personContext.interests.join(', ')}
     - Categories preferees : ${personContext.preferredCategories.join(', ')}
@@ -128,6 +130,7 @@ serve(async (req) => {
     
     Genere 3 PRODUITS CONCRETS dans des CATEGORIES DIFFERENTES dans le budget de ${budget}€.
     IMPORTANT: Varie les categories pour offrir de la diversite (ex: une suggestion tech, une suggestion mode, une suggestion loisir).
+    IMPORTANT: Tiens compte du sexe de la personne pour adapter les suggestions (couleurs, styles, preferences typiques).
     
     Exemple de format attendu :
     - "Casque Bose QuietComfort 45" plutot que "un casque audio de qualite"  

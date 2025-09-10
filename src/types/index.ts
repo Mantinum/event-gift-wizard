@@ -9,8 +9,10 @@ export interface Person {
   lastGift?: string;
   preferredCategories: string[];
   notes?: string;
-  email?: string;
+  email?: string;  
   phone?: string;
+  gender?: string;
+  address?: string;
 }
 
 export interface Event {
@@ -68,6 +70,13 @@ export const RELATIONSHIP_TYPES = [
   'Frère/Sœur',
   'Cousin(e)',
   'Autre'
+];
+
+export const GENDER_OPTIONS = [
+  'Homme',
+  'Femme',
+  'Non binaire',
+  'Préfère ne pas dire'
 ];
 
 export const INTEREST_CATEGORIES = [
