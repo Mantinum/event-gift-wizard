@@ -7,6 +7,7 @@ import Calendar from '@/components/Calendar';
 import Dashboard from '@/components/Dashboard';
 import PersonProfile from '@/components/PersonProfile';
 import PersonProfileModal from '@/components/PersonProfileModal';
+import PersonProfileViewModal from '@/components/PersonProfileViewModal';
 import EventModal from '@/components/EventModal';
 import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut } from 'lucide-react';
 import { Person, Event } from '@/types';
@@ -29,8 +30,10 @@ const Index = () => {
   
   // Modal states
   const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
+  const [isPersonViewModalOpen, setIsPersonViewModalOpen] = useState(false);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | undefined>(undefined);
+  const [viewingPerson, setViewingPerson] = useState<Person | null>(null);
   const [editingEvent, setEditingEvent] = useState<Event | undefined>(undefined);
 
   // Check authentication
@@ -128,6 +131,11 @@ const Index = () => {
   const handleEditPerson = (person: Person) => {
     setEditingPerson(person);
     setIsPersonModalOpen(true);
+  };
+
+  const handleViewPerson = (person: Person) => {
+    setViewingPerson(person);
+    setIsPersonViewModalOpen(true);
   };
 
   const openNewPersonModal = () => {
@@ -260,6 +268,7 @@ const Index = () => {
                   <PersonProfile 
                     person={person}
                     onEdit={() => handleEditPerson(person)}
+                    onViewProfile={() => handleViewPerson(person)}
                   />
                 </div>
               ))}
@@ -349,6 +358,12 @@ const Index = () => {
           isOpen={isPersonModalOpen}
           onOpenChange={setIsPersonModalOpen}
           onSave={handleSavePerson}
+        />
+
+        <PersonProfileViewModal
+          person={viewingPerson}
+          isOpen={isPersonViewModalOpen}
+          onOpenChange={setIsPersonViewModalOpen}
         />
 
         <EventModal

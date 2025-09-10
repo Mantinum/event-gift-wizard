@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,23 +41,57 @@ const PersonProfileModal = ({
   trigger 
 }: PersonProfileModalProps) => {
   const [formData, setFormData] = useState<Partial<Person>>({
-    name: person?.name || '',
-    relationship: person?.relationship || '',
-    birthday: person?.birthday || '',
-    budget: person?.budget || 50,
-    interests: person?.interests || [],
-    preferredCategories: person?.preferredCategories || [],
-    notes: person?.notes || '',
-    email: person?.email || '',
-    phone: person?.phone || '',
-    avatar: person?.avatar || ''
+    name: '',
+    relationship: '',
+    birthday: '',
+    budget: 50,
+    interests: [],
+    preferredCategories: [],
+    notes: '',
+    email: '',
+    phone: '',
+    avatar: ''
   });
 
-  const [selectedInterests, setSelectedInterests] = useState<string[]>(person?.interests || []);
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [newInterest, setNewInterest] = useState('');
-  const [date, setDate] = useState<Date | undefined>(
-    person?.birthday ? new Date(person.birthday) : undefined
-  );
+  const [date, setDate] = useState<Date | undefined>(undefined);
+
+  // Réinitialiser le formulaire quand la personne change
+  useEffect(() => {
+    if (person) {
+      setFormData({
+        name: person.name || '',
+        relationship: person.relationship || '',
+        birthday: person.birthday || '',
+        budget: person.budget || 50,
+        interests: person.interests || [],
+        preferredCategories: person.preferredCategories || [],
+        notes: person.notes || '',
+        email: person.email || '',
+        phone: person.phone || '',
+        avatar: person.avatar || ''
+      });
+      setSelectedInterests(person.interests || []);
+      setDate(person.birthday ? new Date(person.birthday) : undefined);
+    } else {
+      // Réinitialiser pour un nouveau profil
+      setFormData({
+        name: '',
+        relationship: '',
+        birthday: '',
+        budget: 50,
+        interests: [],
+        preferredCategories: [],
+        notes: '',
+        email: '',
+        phone: '',
+        avatar: ''
+      });
+      setSelectedInterests([]);
+      setDate(undefined);
+    }
+  }, [person, isOpen]);
 
   const handleSave = () => {
     if (!formData.name || !formData.relationship || !date) {

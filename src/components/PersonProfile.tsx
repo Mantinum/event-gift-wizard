@@ -19,9 +19,10 @@ interface Person {
 interface PersonProfileProps {
   person: Person;
   onEdit?: () => void;
+  onViewProfile?: () => void;
 }
 
-const PersonProfile = ({ person, onEdit }: PersonProfileProps) => {
+const PersonProfile = ({ person, onEdit, onViewProfile }: PersonProfileProps) => {
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
@@ -106,6 +107,7 @@ const PersonProfile = ({ person, onEdit }: PersonProfileProps) => {
           <Button 
             size="sm" 
             className="flex-1 bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
+            onClick={onViewProfile}
           >
             <User className="w-3 h-3 mr-1" />
             Voir profil
