@@ -245,6 +245,20 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                         <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
                       </div>
 
+                      <div className="flex justify-end">
+                        <Button 
+                          onClick={() => {
+                            const searchQuery = encodeURIComponent(suggestion.title);
+                            window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
+                          }}
+                          className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
+                          size="sm"
+                        >
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          Acheter sur Amazon
+                        </Button>
+                      </div>
+
                       {suggestion.alternatives.length > 0 && (
                         <div>
                           <h5 className="font-medium mb-2 text-sm">Alternatives :</h5>

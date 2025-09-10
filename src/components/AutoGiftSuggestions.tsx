@@ -10,7 +10,8 @@ import {
   Calendar,
   ChevronDown,
   Loader2,
-  Gift
+  Gift,
+  ShoppingCart
 } from 'lucide-react';
 import { Event, Person } from '@/types';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
@@ -182,8 +183,17 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                           <span className="text-sm font-medium text-success">
                             ~{suggestion.estimatedPrice}€
                           </span>
-                          <Button variant="outline" size="sm">
-                            Programmer cet achat
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const searchQuery = encodeURIComponent(suggestion.title);
+                              window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
+                            }}
+                            className="hover:bg-primary hover:text-white transition-colors"
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            Acheter sur Amazon
                           </Button>
                         </div>
                       </div>
