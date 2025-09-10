@@ -110,7 +110,7 @@ serve(async (req) => {
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
 
     const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
-    Analyse le profil et génère 3 suggestions de PRODUITS CONCRETS (marque + modèle précis).
+    Analyse le profil et génère 3 suggestions de PRODUITS TROUVABLES facilement en ligne.
 
     CONTRAINTE CATEGORIES: TU DOIS RESTREINDRE les suggestions aux catégories suivantes UNIQUEMENT: ${allowedCategories.join(', ')}. N'ajoute aucune catégorie extérieure.
 
@@ -118,10 +118,23 @@ serve(async (req) => {
 
     CONTRAINTE DIVERSITÉ: Les 3 suggestions DOIVENT être dans des catégories DIFFÉRENTES (mais toujours parmi les catégories autorisées).
 
-    IMPORTANT:
-    - Propose des PRODUITS RÉELS avec marques et modèles
-    - Évite les descriptions vagues
-    - Donne des termes de recherche exacts pour l'achat
+    IMPORTANT pour les noms de produits et recherche Amazon:
+    - Utilise des noms GÉNÉRIQUES pour les "title" (ex: "Crème hydratante anti-âge" au lieu de "Crème La Roche-Posay Toleriane")
+    - Dans "purchaseLinks", mets des TERMES DE RECHERCHE AMAZON optimisés (ex: "creme hydratante anti age", "serum visage")
+    - Évite les noms de marques spécifiques sauf si très connues (Chanel, Dior)
+    - Privilégie les termes que les gens tapent réellement dans Amazon
+
+    Structure attendue pour chaque suggestion:
+    {
+      "title": "Nom générique du produit",
+      "description": "Description attrayante",
+      "estimatedPrice": prix_en_nombre,
+      "confidence": score_de_0_à_100,
+      "reasoning": "Pourquoi c'est adapté à cette personne",
+      "category": "catégorie_autorisée",
+      "alternatives": ["Alternative 1", "Alternative 2"],
+      "purchaseLinks": ["terme recherche amazon 1", "terme recherche amazon 2"]
+    }
 
     Réponds UNIQUEMENT avec un JSON valide ayant "suggestions" (array de 3 objets).`;
 
@@ -227,7 +240,7 @@ serve(async (req) => {
           reasoning: `Suggestion fallback alignée sur intérêts (${cat}) et budget (${minTarget}€ - ${budget}€)`,
           category: cat,
           alternatives: ['Variante de la même gamme', 'Modèle précédent pour ajuster le prix'],
-          purchaseLinks: [`${p.title} Amazon`, `${p.title} prix comparateur`],
+          purchaseLinks: p.searchTerms,
         };
       });
     };

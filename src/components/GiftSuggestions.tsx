@@ -265,10 +265,14 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                         <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
                       </div>
 
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         <Button 
                           onClick={() => {
-                            const searchQuery = encodeURIComponent(suggestion.title);
+                            // Utilise le premier terme de recherche optimisé, ou le titre si pas de purchaseLinks
+                            const searchTerm = suggestion.purchaseLinks.length > 0 
+                              ? suggestion.purchaseLinks[0] 
+                              : suggestion.title;
+                            const searchQuery = encodeURIComponent(searchTerm);
                             window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
                           }}
                           className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
