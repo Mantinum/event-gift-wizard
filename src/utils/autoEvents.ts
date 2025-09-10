@@ -55,19 +55,24 @@ export const generateAutoEventsForPerson = (person: Person, existingEvents: Even
   if (person.birthday) {
     console.log(`🎂 Génération anniversaire pour ${person.name} (${person.birthday})`);
     
+    // Vérification plus robuste : chercher par personId, type ET année de l'événement
+    const nextBirthday = getNextBirthday(person.birthday);
+    const targetYear = nextBirthday.getFullYear();
+    
     const existingBirthdayEvent = existingEvents.find(
-      event => event.personId === person.id && event.type === 'birthday'
+      event => event.personId === person.id && 
+               event.type === 'birthday' && 
+               new Date(event.date).getFullYear() === targetYear
     );
     
-    console.log(`Événement anniversaire existant:`, existingBirthdayEvent ? 'OUI' : 'NON');
+    console.log(`Événement anniversaire existant pour ${targetYear}:`, existingBirthdayEvent ? 'OUI' : 'NON');
     
-    // Si aucun événement anniversaire n'existe, en créer un
+    // Si aucun événement anniversaire n'existe pour cette année, en créer un
     if (!existingBirthdayEvent) {
-      const nextBirthday = getNextBirthday(person.birthday);
       console.log(`Prochain anniversaire calculé:`, nextBirthday);
       
       const birthdayEvent: Event = {
-        id: `auto-birthday-${person.id}-${nextBirthday.getFullYear()}`,
+        id: `auto-birthday-${person.id}-${targetYear}`,
         title: `Anniversaire de ${person.name}`,
         person: person.name,
         personId: person.id,
