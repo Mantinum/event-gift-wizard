@@ -64,8 +64,15 @@ const Index = () => {
   // Générer automatiquement tous les événements anniversaire manquants
   useEffect(() => {
     if (!personsLoading && !eventsLoading && persons.length > 0) {
+      console.log('🔍 Vérification des événements automatiques...');
+      console.log('Personnes:', persons.map(p => ({ nom: p.name, anniversaire: p.birthday })));
+      console.log('Événements existants:', events.length);
+      
       const missingAutoEvents = updateAllAutoEvents(persons, events);
+      console.log('Événements manquants générés:', missingAutoEvents.length, missingAutoEvents);
+      
       if (missingAutoEvents.length > 0) {
+        console.log('💾 Sauvegarde des événements automatiques...');
         saveMultipleEvents(missingAutoEvents);
       }
     }
