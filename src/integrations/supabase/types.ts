@@ -78,11 +78,13 @@ export type Database = {
       }
       persons: {
         Row: {
+          address: string | null
           avatar: string | null
           birthday: string
           budget: number
           created_at: string
           email: string | null
+          gender: string | null
           id: string
           interests: string[] | null
           last_gift: string | null
@@ -95,11 +97,13 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          address?: string | null
           avatar?: string | null
           birthday: string
           budget?: number
           created_at?: string
           email?: string | null
+          gender?: string | null
           id?: string
           interests?: string[] | null
           last_gift?: string | null
@@ -112,11 +116,13 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          address?: string | null
           avatar?: string | null
           birthday?: string
           budget?: number
           created_at?: string
           email?: string | null
+          gender?: string | null
           id?: string
           interests?: string[] | null
           last_gift?: string | null
