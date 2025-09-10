@@ -76,6 +76,9 @@ serve(async (req) => {
     const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalises avec acces aux catalogues produits.
     Analyse le profil de la personne et genere 3 suggestions de PRODUITS CONCRETS avec noms de marques, modeles et references precises.
     
+    CONTRAINTE BUDGET: toutes les suggestions doivent respecter STRICTEMENT le budget (prix <= budget).
+    Si un produit depasse le budget, propose automatiquement une alternative moins chere (variante, capacite inferieure, gamme precedente) qui rentre dans le budget.
+    
     IMPORTANT: 
     - Propose des PRODUITS REELS avec marques et modeles specifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
     - Evite les descriptions vagues comme "une activite memorable" ou "un objet utile"
@@ -90,7 +93,7 @@ serve(async (req) => {
           "description": "Description detaillee du produit avec ses specificites",
           "estimatedPrice": prix_en_euros_nombre,
           "confidence": score_0_a_1,
-          "reasoning": "Pourquoi ce produit est parfait pour cette personne",
+          "reasoning": "Pourquoi ce produit est parfait pour cette personne et respecte le budget",
           "category": "Categorie du produit", 
           "alternatives": ["Marque + Modele alternatif 1", "Marque + Modele alternatif 2"],
           "purchaseLinks": ["Recherche Amazon exacte", "Recherche Google Shopping exacte"]
@@ -127,62 +130,72 @@ serve(async (req) => {
 
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
-      const getConcreteProductsByInterest = (interest: string, budgetRange: number) => {
-        const techProducts = [
-          { title: 'Casque Sony WH-1000XM5', description: 'Casque a reduction de bruit active avec qualite audio premium et autonomie 30h', category: 'Audio' },
-          { title: 'Kindle Paperwhite 11e generation', description: 'Liseuse numerique etanche avec eclairage reglable et ecran 6.8 pouces', category: 'Lecture' },
-          { title: 'AirPods Pro 2e generation', description: 'Ecouteurs sans fil avec reduction de bruit active et audio spatial', category: 'Audio' }
-        ];
+      // Produits abordables (<= ~50€) utilises comme base de secours
+      const baseAffordable: Array<{ title: string; description: string; category: string; price: number }> = [
+        { title: 'Anker PowerCore 10000', description: 'Batterie externe compacte 10k mAh avec charge rapide', category: 'Tech', price: 35 },
+        { title: 'SanDisk Ultra microSD 128GB', description: 'Carte memoire 128GB U1 pour smartphone/camera', category: 'Tech', price: 15 },
+        { title: 'Xiaomi Mi Band 8', description: "Bracelet connecte suivi d'activite et sommeil", category: 'Fitness', price: 40 },
+        { title: 'Lampe de lecture Glocusent LED', description: 'Lampe a clip rechargeable 3 temperatures', category: 'Lecture', price: 25 },
+        { title: 'Moulin a cafe Hario Mini Slim Plus', description: 'Moulin manuel compact pour amateurs de cafe', category: 'Cafe', price: 32 },
+        { title: 'Bouteille isotherme Stanley 0.47L', description: 'Bouteille inox isotherme robuste', category: 'Outdoor', price: 29 },
+      ];
 
-        const sportProducts = [
-          { title: 'Montre Garmin Forerunner 255', description: 'Montre GPS multisport avec suivi avance et autonomie longue duree', category: 'Fitness' },
-          { title: 'Tapis de yoga Manduka PRO', description: 'Tapis de yoga professionnel antiderapant 6mm d\'epaisseur', category: 'Yoga' },
-          { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour recuperation musculaire et mobilite', category: 'Recuperation' }
-        ];
+      // Petits catalogues par centre d'interet avec prix approximatifs
+      const techProducts = [
+        { title: 'Casque Sony WH-CH520', description: 'Casque Bluetooth leger autonomie 50h', category: 'Audio', price: 39 },
+        { title: 'Clavier Logitech K380', description: 'Clavier Bluetooth multi-appareils compact', category: 'Peripherique', price: 45 },
+        { title: 'Souris Logitech M330 Silent Plus', description: 'Souris sans fil silencieuse', category: 'Peripherique', price: 29 },
+      ];
 
-        const cuisineProducts = [
-          { title: 'Thermomix TM6', description: 'Robot culinaire multifonction avec ecran tactile et recettes guidees', category: 'Electromenager' },
-          { title: 'Couteau Santoku Wusthof Classic', description: 'Couteau japonais forge en acier inoxydable avec lame 17cm', category: 'Ustensiles' },
-          { title: 'Machine a cafe DeLonghi Magnifica S', description: 'Machine a expresso automatique avec broyeur integre', category: 'Cafe' }
-        ];
+      const sportProducts = [
+        { title: 'Ceinture running Kalenji', description: 'Ceinture porte-objet pour course a pied', category: 'Running', price: 12 },
+        { title: 'Foam Roller TriggerPoint GRID', description: 'Rouleau de massage pour recuperation', category: 'Recuperation', price: 35 },
+        { title: 'Corde a sauter Domyos', description: 'Corde reglable entrainement cardio', category: 'Fitness', price: 10 },
+      ];
 
-        const lectureProducts = [
-          { title: 'Kindle Oasis 10e generation', description: 'Liseuse premium avec eclairage adaptatif et design ergonomique', category: 'Liseuse' },
-          { title: 'Lampe de lecture Glocusent LED', description: 'Lampe de lecture a clip avec 6 LED et batterie rechargeable', category: 'Accessoire' },
-          { title: 'Support de livre en bambou', description: 'Support ajustable en bambou ecologique pour lecture confortable', category: 'Accessoire' }
-        ];
+      const cuisineProducts = [
+        { title: 'Balance de cuisine Hario', description: 'Balance precise pour cuisine et cafe', category: 'Ustensiles', price: 35 },
+        { title: 'Couteau Santoku Victorinox 17cm', description: 'Couteau de cuisine polyvalent', category: 'Ustensiles', price: 49 },
+        { title: 'Thermometre cuisine TFA', description: 'Thermometre instantane pour cuisson', category: 'Ustensiles', price: 18 },
+      ];
 
-        const defaultProducts = [
-          { title: 'Coffret cadeau Amazon', description: 'Carte cadeau Amazon dans un coffret elegant', category: 'Carte cadeau' },
-          { title: 'Diffuseur d\'huiles essentielles Stadler Form', description: 'Diffuseur ultrasonique design avec eclairage LED', category: 'Bien-etre' },
-          { title: 'Bougie parfumee Diptyque Baies', description: 'Bougie premium aux notes de cassis et rose bulgare (190g)', category: 'Parfum' }
-        ];
+      const lectureProducts = [
+        { title: 'Support de livre en bambou', description: 'Support ajustable pour lecture', category: 'Accessoire', price: 20 },
+        { title: 'Lampe de lecture Glocusent LED', description: 'Lampe a clip rechargeable', category: 'Accessoire', price: 25 },
+        { title: 'Marque-pages magnetiques (lot de 6)', description: 'Marque-pages magnetiques fines', category: 'Accessoire', price: 9 },
+      ];
 
+      const byInterest = (interest: string) => {
         if (interest === 'Tech') return techProducts;
         if (interest === 'Sport') return sportProducts;
         if (interest === 'Cuisine') return cuisineProducts;
         if (interest === 'Lecture') return lectureProducts;
-        return defaultProducts;
+        return [] as Array<{ title: string; description: string; category: string; price: number }>;
       };
 
       const primaryInterest = personContext.interests[0] || 'Tech';
-      const productsPool = getConcreteProductsByInterest(primaryInterest, budget);
-      
-      return productsPool.slice(0, 3).map((product, idx) => ({
+      const candidates = [...byInterest(primaryInterest), ...baseAffordable];
+
+      // Filtrer par budget; si rien ne passe, retomber sur la base abordable filtree
+      const filtered = candidates.filter((p) => p.price <= budget);
+      const pool = filtered.length > 0 ? filtered : baseAffordable.filter((p) => p.price <= budget);
+      const selected = pool.slice(0, 3);
+
+      return selected.map((product) => ({
         title: product.title,
         description: product.description,
-        estimatedPrice: Math.min(budget, [60, 120, 200][idx] || budget),
-        confidence: 0.75,
-        reasoning: `Produit selectionne en fonction de l\'interet principal "${primaryInterest}" et adapte au budget de ${budget}€.`,
+        estimatedPrice: Math.min(product.price, budget),
+        confidence: 0.8,
+        reasoning: `Produit selectionne en fonction de l'interet "${primaryInterest}" et du budget <= ${budget}€`,
         category: product.category,
         alternatives: [
-          `Version similaire dans la meme gamme`,
-          `Alternative d\'une autre marque reconnue`
+          'Variante similaire dans la meme gamme',
+          "Alternative d'une autre marque reconnue",
         ],
         purchaseLinks: [
           `${product.title} Amazon`,
-          `${product.title} prix comparateur`
-        ]
+          `${product.title} prix comparateur`,
+        ],
       }));
     };
 
@@ -234,7 +247,19 @@ serve(async (req) => {
       }
     }
 
-    // Validate suggestions
+    // Validate and enforce budget
+    const enforceBudget = (suggs: GiftSuggestion[] | null | undefined, max: number): GiftSuggestion[] => {
+      const safe = Array.isArray(suggs) ? suggs : [];
+      const filtered = safe
+        .filter((s) => typeof s.estimatedPrice !== 'number' ? true : (isFinite(s.estimatedPrice) && s.estimatedPrice <= max))
+        .map((s) => ({
+          ...s,
+          estimatedPrice: Math.min(typeof s.estimatedPrice === 'number' ? s.estimatedPrice : max, max),
+        }));
+      return filtered;
+    };
+
+    suggestions = enforceBudget(suggestions, budget);
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
       suggestions = createFallbackSuggestions();
     }
