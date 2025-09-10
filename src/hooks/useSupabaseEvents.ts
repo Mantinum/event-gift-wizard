@@ -173,6 +173,11 @@ export function useSupabaseEvents() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return false;
 
+      // Si aucun événement à créer, pas d'erreur
+      if (!newEvents || newEvents.length === 0) {
+        return true;
+      }
+
       const dbEvents = newEvents.map(event => ({
         user_id: user.id,
         title: event.title,
@@ -203,6 +208,7 @@ export function useSupabaseEvents() {
       setEvents(prev => [...prev, ...createdEvents]);
       return true;
     } catch (err) {
+      console.error('Erreur lors de la création d\'événements automatiques:', err);
       toast({
         title: "Erreur",
         description: "Impossible de créer les événements automatiques",

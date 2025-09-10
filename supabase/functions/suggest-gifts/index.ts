@@ -166,8 +166,23 @@ serve(async (req) => {
       const minTarget = Math.min(budget, Math.max(10, Math.round(budget * 0.85)));
       const targets = [minTarget, Math.round((minTarget + budget) / 2), budget];
 
-      // Modèles par catégorie centrés sur Beauté / Déco / Mode / Bijoux
-      const TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
+      // Templates adaptés à l'âge
+      const BABY_TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
+        'Enfance': [
+          { title: 'Jouet d\'éveil en bois', description: 'Stimule la motricité et les sens' },
+          { title: 'Livre en tissu interactif', description: 'Textures variées pour l\'exploration tactile' },
+        ],
+        'Bébé': [
+          { title: 'Mobile musical en bois', description: 'Berceuses apaisantes et formes douces' },
+          { title: 'Anneau de dentition en silicone', description: 'Soulage les poussées dentaires' },
+        ],
+        'Jeux': [
+          { title: 'Tapis d\'éveil coloré', description: 'Arches avec jouets suspendus pour stimuler bébé' },
+          { title: 'Cubes empilables souples', description: 'Développement de la coordination' },
+        ],
+      };
+
+      const ADULT_TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
         'Beauté': [
           { title: 'Lisseur ghd Gold', description: 'Lisseur professionnel à température contrôlée' },
           { title: 'Coffret soins visage Clarins', description: 'Routine complète hydratation et éclat' },
@@ -222,8 +237,15 @@ serve(async (req) => {
         ],
       };
 
+      // Choisir les templates appropriés selon l'âge
+      const isChild = personContext.age <= 12;
+      const TEMPLATES = isChild ? BABY_TEMPLATES : ADULT_TEMPLATES;
+
       const allowedPrimary = allowedCategories.filter((c) => TEMPLATES[c]);
-      const fallbackOrder = ['Mode', 'Bijoux', 'Décoration', 'Beauté', 'Bien-être', 'Parfum', 'Cosmétiques', 'Maroquinerie', 'Accessoires', 'Montres'];
+      const fallbackOrder = isChild 
+        ? ['Enfance', 'Bébé', 'Jeux', 'Mode', 'Décoration'] 
+        : ['Mode', 'Bijoux', 'Décoration', 'Beauté', 'Bien-être', 'Parfum', 'Cosmétiques', 'Maroquinerie', 'Accessoires', 'Montres'];
+      
       const pickCats: string[] = [];
       for (const c of allowedPrimary) { if (pickCats.length < 3) pickCats.push(c); }
       for (const c of fallbackOrder) { if (pickCats.length < 3 && !pickCats.includes(c) && TEMPLATES[c]) pickCats.push(c); }
@@ -237,7 +259,7 @@ serve(async (req) => {
           description: p.description,
           estimatedPrice: targets[Math.min(i, targets.length - 1)],
           confidence: 0.85,
-          reasoning: `Suggestion fallback alignée sur intérêts (${cat}) et budget (${minTarget}€ - ${budget}€)`,
+          reasoning: `Suggestion fallback adaptée à l'âge (${personContext.age} ans) et aux intérêts (${cat}) - Budget: ${minTarget}€ - ${budget}€`,
           category: cat,
           alternatives: ['Variante de la même gamme', 'Modèle précédent pour ajuster le prix'],
           purchaseLinks: p.searchTerms,
