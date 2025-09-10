@@ -2,16 +2,32 @@ import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3 } from 'lucide-react';
 import { Event, Person, EVENT_TYPES } from '@/types';
+import { useEventFilters } from '@/hooks/useEventFilters';
+import SearchFilters from '@/components/SearchFilters';
+import EventsList from '@/components/EventsList';
 
 interface CalendarProps {
   events: Event[];
   persons: Person[];
+  onEditEvent?: (event: Event) => void;
+  onDeleteEvent?: (eventId: string) => void;
 }
 
-const Calendar = ({ events, persons }: CalendarProps) => {
+const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  
+  // Use the event filters hook
+  const {
+    filters,
+    filteredEvents,
+    updateFilter,
+    clearFilters,
+    activeFiltersCount
+  } = useEventFilters(events, persons);
 
   const monthNames = [
     'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
@@ -32,7 +48,7 @@ const Calendar = ({ events, persons }: CalendarProps) => {
 
   const getEventsForDate = (day: number) => {
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return events.filter(event => event.date === dateStr);
+    return filteredEvents.filter(event => event.date === dateStr);
   };
 
   const getEventTypeColor = (type: string) => {
@@ -78,39 +94,81 @@ const Calendar = ({ events, persons }: CalendarProps) => {
   };
 
   return (
-    <Card className="w-full shadow-card">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" size="icon" onClick={previousMonth}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <h2 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-            </h2>
-            <Button variant="outline" size="icon" onClick={nextMonth}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-          <Button className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-all duration-300">
-            <Plus className="w-4 h-4 mr-2" />
-            Nouvel événement
-          </Button>
-        </div>
+    <div className="space-y-6">
+      {/* Search and Filters */}
+      <SearchFilters 
+        filters={filters}
+        updateFilter={updateFilter}
+        clearFilters={clearFilters}
+        activeFiltersCount={activeFiltersCount}
+        persons={persons}
+      />
+
+      {/* View Mode Toggle and Actions */}
+      <div className="flex items-center justify-between">
+        <Tabs value={viewMode} onValueChange={(value: any) => setViewMode(value)}>
+          <TabsList className="grid w-full max-w-sm grid-cols-2">
+            <TabsTrigger value="calendar" className="flex items-center space-x-2">
+              <Grid3x3 className="w-4 h-4" />
+              <span>Calendrier</span>
+            </TabsTrigger>
+            <TabsTrigger value="list" className="flex items-center space-x-2">
+              <List className="w-4 h-4" />
+              <span>Liste ({filteredEvents.length})</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         
-        <div className="grid grid-cols-7 gap-2 mb-4">
-          {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
-            <div key={day} className="text-center font-medium text-muted-foreground py-2">
-              {day}
+        <Button className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-all duration-300">
+          <Plus className="w-4 h-4 mr-2" />
+          Nouvel événement
+        </Button>
+      </div>
+
+      {/* Content based on view mode */}
+      {viewMode === 'calendar' ? (
+        <Card className="w-full shadow-card">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-4">
+                <Button variant="outline" size="icon" onClick={previousMonth}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <h2 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                  {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+                </h2>
+                <Button variant="outline" size="icon" onClick={nextMonth}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {filteredEvents.length} événement{filteredEvents.length !== 1 ? 's' : ''} 
+                {activeFiltersCount > 0 && ' (filtré)'}
+              </div>
             </div>
-          ))}
-        </div>
-        
-        <div className="grid grid-cols-7 gap-2">
-          {renderCalendarDays()}
-        </div>
-      </CardContent>
-    </Card>
+            
+            <div className="grid grid-cols-7 gap-2 mb-4">
+              {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
+                <div key={day} className="text-center font-medium text-muted-foreground py-2">
+                  {day}
+                </div>
+              ))}
+            </div>
+            
+            <div className="grid grid-cols-7 gap-2">
+              {renderCalendarDays()}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <EventsList 
+          events={filteredEvents}
+          persons={persons}
+          onEditEvent={onEditEvent}
+          onDeleteEvent={onDeleteEvent}
+        />
+      )}
+    </div>
   );
 };
 
