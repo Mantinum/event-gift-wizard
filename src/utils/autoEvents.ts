@@ -21,18 +21,27 @@ const AUTO_EVENT_CONFIGS: Record<string, AutoEventConfig> = {
  * Génère la prochaine occurrence d'un anniversaire
  */
 const getNextBirthday = (birthdayString: string): Date => {
+  console.log(`🎂 Calcul anniversaire pour: ${birthdayString}`);
+  
+  // Parsing de la date d'anniversaire
   const birthday = new Date(birthdayString);
+  console.log(`Date d'origine parsée:`, birthday);
+  
   const today = new Date();
   const currentYear = today.getFullYear();
   
   // Créer la date d'anniversaire pour cette année
   const thisYearBirthday = new Date(currentYear, birthday.getMonth(), birthday.getDate());
+  console.log(`Anniversaire cette année:`, thisYearBirthday);
   
   // Si l'anniversaire de cette année est passé, prendre celui de l'année prochaine
   if (thisYearBirthday < today) {
-    return new Date(currentYear + 1, birthday.getMonth(), birthday.getDate());
+    const nextYear = new Date(currentYear + 1, birthday.getMonth(), birthday.getDate());
+    console.log(`Anniversaire année prochaine:`, nextYear);
+    return nextYear;
   }
   
+  console.log(`Anniversaire retourné:`, thisYearBirthday);
   return thisYearBirthday;
 };
 
