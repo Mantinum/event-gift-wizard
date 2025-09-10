@@ -25,6 +25,25 @@ interface GiftSuggestion {
   purchaseLinks: string[];
 }
 
+// Helpers to align suggestions with interests
+const normalize = (s: string) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+
+const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
+  beaute: ['Beauté', 'Bien-être', 'Cosmétiques', 'Parfum'],
+  decoration: ['Décoration', 'Maison', 'Design', 'Luminaires'],
+  deco: ['Décoration', 'Maison', 'Design', 'Luminaires'],
+  mode: ['Mode', 'Accessoires', 'Maroquinerie', 'Vêtements'],
+  bijou: ['Bijoux', 'Joaillerie', 'Montres'],
+  bijoux: ['Bijoux', 'Joaillerie', 'Montres'],
+  sport: ['Sport', 'Fitness'],
+  lecture: ['Lecture', 'Culture', 'Livres'],
+  cuisine: ['Cuisine', 'Gastronomie', 'Ustensiles'],
+  voyage: ['Voyage', 'Bagages'],
+  musique: ['Audio', 'Musique'],
+  tech: ['Tech', 'Informatique', 'Gadgets'],
+  art: ['Art', 'Loisirs créatifs'],
+};
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -71,119 +90,146 @@ serve(async (req) => {
       recentEvents: events || []
     };
 
+    // Derive allowed categories strictly from interests/preferences
+    const rawInterests: string[] = Array.isArray(personContext.interests) ? personContext.interests : [];
+    const allowedSet = new Set<string>();
+    for (const it of rawInterests) {
+      const cats = INTEREST_CATEGORY_MAP[normalize(it)];
+      if (cats) cats.forEach((c) => allowedSet.add(c));
+    }
+    const prefCats: string[] = Array.isArray(personContext.preferredCategories) ? personContext.preferredCategories : [];
+    prefCats.forEach((c) => allowedSet.add(c));
+    const allowedCategories = Array.from(allowedSet);
+    if (allowedCategories.length === 0) {
+      // Sensible defaults if no interests mapped
+      allowedCategories.push('Mode', 'Bijoux', 'Décoration', 'Beauté');
+    }
+    console.log('Allowed categories derived from interests:', allowedCategories);
+
     // Generate AI suggestions using OpenAI
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    
-    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalises avec acces aux catalogues produits.
-    Analyse le profil de la personne et genere 3 suggestions de PRODUITS CONCRETS avec noms de marques, modeles et references precises.
-    
-    CONTRAINTE BUDGET: toutes les suggestions doivent respecter STRICTEMENT le budget (prix <= budget).
-    Si un produit depasse le budget, propose automatiquement une alternative moins chere (variante, capacite inferieure, gamme precedente) qui rentre dans le budget.
-    
-    CONTRAINTE DIVERSITE: Les 3 suggestions DOIVENT etre dans des categories DIFFERENTES pour offrir de la variete.
-    Exemples de categories diverses : Tech/Audio, Mode/Accessoires, Maison/Deco, Sport/Fitness, Lecture/Culture, Cuisine/Gastronomie, Jeux/Loisirs, Bien-etre/Beaute.
-    
-    VARIATION: Pour eviter de toujours proposer les memes produits, utilise ce timestamp comme source de variation : ${Date.now()}
-    Explore differentes marques et gammes de produits selon les interets de la personne.
-    
-    IMPORTANT: 
-    - Propose des PRODUITS REELS avec marques et modeles specifiques (ex: "iPhone 15 Pro 128GB", "Casque Sony WH-1000XM5", "Montre Apple Watch Series 9")
-    - Evite les descriptions vagues comme "une activite memorable" ou "un objet utile"
-    - Donne des noms de produits que l'on peut rechercher directement sur Amazon ou autres sites
-    - Inclus des alternatives concretes avec marques et modeles
-    - VARIE les suggestions meme pour la meme personne en explorant tous ses centres d'interet
-    
-    Reponds UNIQUEMENT avec un JSON valide contenant un array "suggestions" avec 3 objets ayant cette structure exacte :
-    {
-      "suggestions": [
-        {
-          "title": "Marque + Modele precis du produit",
-          "description": "Description detaillee du produit avec ses specificites",
-          "estimatedPrice": prix_en_euros_nombre,
-          "confidence": score_0_a_1,
-          "reasoning": "Pourquoi ce produit est parfait pour cette personne et respecte le budget",
-          "category": "Categorie du produit", 
-          "alternatives": ["Marque + Modele alternatif 1", "Marque + Modele alternatif 2"],
-          "purchaseLinks": ["Recherche Amazon exacte", "Recherche Google Shopping exacte"]
-        }
-      ]
-    }`;
+
+    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
+    Analyse le profil et génère 3 suggestions de PRODUITS CONCRETS (marque + modèle précis).
+
+    CONTRAINTE CATEGORIES: TU DOIS RESTREINDRE les suggestions aux catégories suivantes UNIQUEMENT: ${allowedCategories.join(', ')}. N'ajoute aucune catégorie extérieure.
+
+    CONTRAINTE BUDGET: toutes les suggestions doivent respecter STRICTEMENT le budget (prix <= budget). Si un produit dépasse, propose automatiquement une alternative moins chère qui rentre dans le budget.
+
+    CONTRAINTE DIVERSITÉ: Les 3 suggestions DOIVENT être dans des catégories DIFFÉRENTES (mais toujours parmi les catégories autorisées).
+
+    IMPORTANT:
+    - Propose des PRODUITS RÉELS avec marques et modèles
+    - Évite les descriptions vagues
+    - Donne des termes de recherche exacts pour l'achat
+
+    Réponds UNIQUEMENT avec un JSON valide ayant "suggestions" (array de 3 objets).`;
 
     const userPrompt = `
     PROFIL DE LA PERSONNE :
     - Nom : ${personContext.name}
-    - Age : ${personContext.age} ans
+    - Âge : ${personContext.age} ans
     - Sexe : ${personContext.gender}
     - Relation : ${personContext.relationship}
-    - Centres d'interet : ${personContext.interests.join(', ')}
-    - Categories preferees : ${personContext.preferredCategories.join(', ')}
+    - Centres d'intérêt : ${rawInterests.join(', ')}
+    - Catégories préférées : ${prefCats.join(', ')}
+    - Catégories AUTORISÉES: ${allowedCategories.join(', ')}
     - Notes personnelles : ${personContext.notes}
     - Dernier cadeau offert : ${personContext.lastGift}
-    
-    CONTEXTE DE L'EVENEMENT :
-    - Type d'evenement : ${eventType}
+
+    CONTEXTE DE L'ÉVÈNEMENT :
+    - Type d'évènement : ${eventType}
     - Budget maximum : ${budget}€
     - Contexte additionnel : ${additionalContext || 'Aucun'}
-    
-    HISTORIQUE RECENT :
+
+    HISTORIQUE RÉCENT :
     ${personContext.recentEvents.map(e => `- ${e.title} (${e.date})`).join('\n')}
-    
-    Genere 3 PRODUITS CONCRETS dans des CATEGORIES DIFFERENTES dans le budget de ${budget}€.
-    IMPORTANT: Varie les categories pour offrir de la diversite (ex: une suggestion tech, une suggestion mode, une suggestion loisir).
-    IMPORTANT: Tiens compte du sexe de la personne pour adapter les suggestions (couleurs, styles, preferences typiques).
-    
-    Exemple de format attendu :
-    - "Casque Bose QuietComfort 45" plutot que "un casque audio de qualite"  
-    - "Kindle Paperwhite 11e generation 16GB" plutot que "une liseuse electronique"
-    - "Montre Garmin Forerunner 255" plutot que "une montre connectee"
-    
-    EXPLORE TOUS LES INTERETS de la personne pour proposer des categories variees.
-    
-    Pour les purchaseLinks, utilise des termes de recherche precis comme "Casque Bose QuietComfort 45 Amazon" ou "Kindle Paperwhite 16GB prix".
-    `;
+
+    Génère 3 PRODUITS CONCRETS dans des CATÉGORIES DIFFÉRENTES parmi les catégories AUTORISÉES ci-dessus et dans le budget de ${budget}€.`;
 
     // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
     const createFallbackSuggestions = (): GiftSuggestion[] => {
-      // Viser 85% à 100% du budget
+      // 85% à 100% du budget
       const minTarget = Math.min(budget, Math.max(10, Math.round(budget * 0.85)));
       const targets = [minTarget, Math.round((minTarget + budget) / 2), budget];
 
-      // 3 catégories variées
-      const templates: Array<{ title: string; description: string; category: string }>[] = [
-        [
-          { title: 'Casque Bose QuietComfort 45', description: 'Casque Bluetooth à réduction de bruit active', category: 'Audio' },
-          { title: 'Casque Sony WH-1000XM4', description: 'Casque premium ANC, idéal pour la musique et le télétravail', category: 'Audio' },
+      // Modèles par catégorie centrés sur Beauté / Déco / Mode / Bijoux
+      const TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
+        'Beauté': [
+          { title: 'Lisseur ghd Gold', description: 'Lisseur professionnel à température contrôlée' },
+          { title: 'Coffret soins visage Clarins', description: 'Routine complète hydratation et éclat' },
         ],
-        [
-          { title: 'Kindle Paperwhite 11e génération 16GB', description: 'Liseuse étanche avec éclairage réglable', category: 'Lecture' },
-          { title: 'Kobo Clara 2E', description: 'Liseuse compacte et légère, très confortable', category: 'Lecture' },
+        'Bien-être': [
+          { title: 'Coffret spa Rituals The Ritual of Sakura', description: 'Gommage, gel douche, crème et bougie' },
+          { title: 'Masseur cervical Shiatsu Homedics', description: 'Relaxation à domicile, chaleur apaisante' },
         ],
-        [
-          { title: 'Garmin Forerunner 55', description: 'Montre GPS course à pied avec coaching', category: 'Fitness' },
-          { title: 'Fitbit Charge 6', description: 'Tracker d’activité complet, cardio et sommeil', category: 'Fitness' },
+        'Cosmétiques': [
+          { title: 'Coffret maquillage Sephora Favorites', description: 'Sélection best-sellers format découverte' },
+          { title: 'Palette yeux Anastasia Beverly Hills Soft Glam', description: 'Teintes neutres et pigmentées' },
         ],
-      ];
+        'Parfum': [
+          { title: 'Coffret parfum découverte Sephora', description: 'Sélection de miniatures mixte' },
+          { title: 'Yves Saint Laurent Libre Eau de Parfum 50ml', description: 'Floral moderne, long tenue' },
+        ],
+        'Décoration': [
+          { title: 'Lampe de table Fatboy Edison the Medium', description: 'Ambiance chaleureuse, design iconique' },
+          { title: 'Plaid en laine mérinos Hugo Boss Home', description: 'Confort haut de gamme pour le salon' },
+        ],
+        'Maison': [
+          { title: 'Diffuseur d’arômes en céramique Stone', description: 'Design minimal, relaxation à la maison' },
+          { title: 'Vase design Bloomingville', description: 'Céramique texturée, pièce décorative' },
+        ],
+        'Mode': [
+          { title: 'Écharpe en cachemire', description: 'Accessoire intemporel, ultra-doux' },
+          { title: 'Portefeuille en cuir Fossil', description: 'Maroquinerie élégante et durable' },
+        ],
+        'Accessoires': [
+          { title: 'Ceinture en cuir Levi’s', description: 'Boucle métal, finition premium' },
+          { title: 'Lunettes de soleil Ray-Ban Wayfarer', description: 'Icône de style, verres UV' },
+        ],
+        'Maroquinerie': [
+          { title: 'Sac bandoulière en cuir Lancaster', description: 'Compact, chic, quotidien' },
+          { title: 'Porte-cartes en cuir Tommy Hilfiger', description: 'Profil fin, compartiments essentiels' },
+        ],
+        'Vêtements': [
+          { title: 'Chemise en lin premium', description: 'Respirante, coupe moderne' },
+          { title: 'Sweat zippé Nike Tech Fleece', description: 'Confort et style décontracté' },
+        ],
+        'Bijoux': [
+          { title: 'Bracelet Swarovski Subtle', description: 'Cristaux scintillants, plaqué rhodium' },
+          { title: 'Collier en argent 925 avec pendentif', description: 'Minimaliste et élégant' },
+        ],
+        'Joaillerie': [
+          { title: 'Bague en argent avec oxydes', description: 'Finition brillante, intemporelle' },
+          { title: 'Boucles d’oreilles perles Majorica', description: 'Classiques revisitées' },
+        ],
+        'Montres': [
+          { title: 'Montre Casio Edifice', description: 'Acier inoxydable, style urbain' },
+          { title: 'Montre Fossil Minimalist', description: 'Cuir véritable, cadran épuré' },
+        ],
+      };
 
-      // Sélectionner un élément par catégorie en variant selon la seed
+      const allowedPrimary = allowedCategories.filter((c) => TEMPLATES[c]);
+      const fallbackOrder = ['Mode', 'Bijoux', 'Décoration', 'Beauté', 'Bien-être', 'Parfum', 'Cosmétiques', 'Maroquinerie', 'Accessoires', 'Montres'];
+      const pickCats: string[] = [];
+      for (const c of allowedPrimary) { if (pickCats.length < 3) pickCats.push(c); }
+      for (const c of fallbackOrder) { if (pickCats.length < 3 && !pickCats.includes(c) && TEMPLATES[c]) pickCats.push(c); }
+
       const seed = Date.now();
-      const picks = templates.map((cat, i) => cat[seed % 2]);
-
-      return picks.map((p, i) => ({
-        title: p.title,
-        description: p.description,
-        estimatedPrice: targets[Math.min(i, targets.length - 1)],
-        confidence: 0.8,
-        reasoning: `Suggestion fallback alignée sur le budget (${minTarget}€ - ${budget}€) et catégorie variée`,
-        category: p.category,
-        alternatives: [
-          'Variante de la même gamme',
-          "Modèle précédent pour ajuster le prix",
-        ],
-        purchaseLinks: [
-          `${p.title} Amazon`,
-          `${p.title} prix comparateur`,
-        ],
-      }));
+      return pickCats.map((cat, i) => {
+        const options = TEMPLATES[cat];
+        const p = options[(seed + i) % options.length];
+        return {
+          title: p.title,
+          description: p.description,
+          estimatedPrice: targets[Math.min(i, targets.length - 1)],
+          confidence: 0.85,
+          reasoning: `Suggestion fallback alignée sur intérêts (${cat}) et budget (${minTarget}€ - ${budget}€)`,
+          category: cat,
+          alternatives: ['Variante de la même gamme', 'Modèle précédent pour ajuster le prix'],
+          purchaseLinks: [`${p.title} Amazon`, `${p.title} prix comparateur`],
+        };
+      });
     };
 
     console.log('Calling OpenAI API for gift suggestions...');
@@ -249,7 +295,20 @@ serve(async (req) => {
         .filter((s) => s.estimatedPrice <= max);
     };
 
+    const filterAndAdjustCategories = (arr: GiftSuggestion[] | null | undefined): GiftSuggestion[] => {
+      const safe = Array.isArray(arr) ? arr : [];
+      const allowedNorm = new Set(allowedCategories.map((c) => normalize(c)));
+      const mapped = safe.map((s) => {
+        const catNorm = normalize(s.category);
+        if (allowedNorm.has(catNorm)) return s;
+        const fallbackCat = allowedCategories[0] || s.category;
+        return { ...s, category: fallbackCat, reasoning: `${s.reasoning} • Catégorie réajustée pour correspondre aux centres d’intérêt (${fallbackCat}).` };
+      });
+      return mapped.filter((s) => allowedNorm.has(normalize(s.category)));
+    };
+
     suggestions = enforceBudget(suggestions, budget);
+    suggestions = filterAndAdjustCategories(suggestions);
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
       suggestions = createFallbackSuggestions();
     }
@@ -282,7 +341,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       suggestions,
-      personName: person.name 
+      personName: person.name,
+      allowedCategories
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
