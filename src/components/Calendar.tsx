@@ -3,11 +3,148 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3, Eye, Trash2, MapPin, Euro, Heart } from 'lucide-react';
 import { Event, Person, EVENT_TYPES } from '@/types';
 import { useEventFilters } from '@/hooks/useEventFilters';
 import SearchFilters from '@/components/SearchFilters';
 import EventsList from '@/components/EventsList';
+import PersonProfileViewModal from '@/components/PersonProfileViewModal';
+
+// Event Popover Content Component
+interface EventPopoverContentProps {
+  event: Event;
+  person?: Person;
+  onViewProfile: (person: Person) => void;
+  onDeleteEvent?: (eventId: string) => void;
+}
+
+const EventPopoverContent = ({ event, person, onViewProfile, onDeleteEvent }: EventPopoverContentProps) => {
+  const getEventTypeLabel = (type: string) => {
+    const eventType = EVENT_TYPES.find(et => et.value === type);
+    return eventType ? eventType.label : type;
+  };
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('fr-FR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* Event Header */}
+      <div>
+        <h3 className="font-semibold text-lg text-foreground mb-1">{event.title}</h3>
+        <Badge className={`text-xs ${EVENT_TYPES.find(et => et.value === event.type)?.color || 'bg-muted'} text-white`}>
+          {getEventTypeLabel(event.type)}
+        </Badge>
+      </div>
+
+      <Separator />
+
+      {/* Event Details */}
+      <div className="space-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="w-4 h-4 text-muted-foreground" />
+          <span>{formatDate(event.date)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Euro className="w-4 h-4 text-muted-foreground" />
+          <span>Budget: {event.budget}€</span>
+        </div>
+        {event.location && (
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-muted-foreground" />
+            <span>{event.location}</span>
+          </div>
+        )}
+        {event.description && (
+          <div className="text-muted-foreground">
+            <p>{event.description}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Person Info */}
+      {person && (
+        <>
+          <Separator />
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Avatar className="w-10 h-10">
+                <AvatarImage src={person.avatar} alt={person.name} />
+                <AvatarFallback className="bg-gradient-primary text-white text-sm">
+                  {getInitials(person.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <p className="font-medium">{person.name}</p>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Heart className="w-3 h-3" />
+                  <span>{person.relationship}</span>
+                </div>
+              </div>
+            </div>
+            
+            {person.interests.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Centres d'intérêt:</p>
+                <div className="flex flex-wrap gap-1">
+                  {person.interests.slice(0, 3).map((interest, index) => (
+                    <Badge key={index} variant="outline" className="text-xs py-0 px-2">
+                      {interest}
+                    </Badge>
+                  ))}
+                  {person.interests.length > 3 && (
+                    <Badge variant="outline" className="text-xs py-0 px-2">
+                      +{person.interests.length - 3}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Actions */}
+      <Separator />
+      <div className="flex gap-2">
+        {person && (
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={() => onViewProfile(person)}
+            className="flex-1"
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Voir le profil
+          </Button>
+        )}
+        {onDeleteEvent && (
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={() => onDeleteEvent(event.id)}
+            className="text-destructive hover:bg-destructive hover:text-white"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 interface CalendarProps {
   events: Event[];
@@ -19,6 +156,8 @@ interface CalendarProps {
 const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   
   // Use the event filters hook
   const {
@@ -68,17 +207,31 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
     for (let day = 1; day <= daysInMonth; day++) {
       const dayEvents = getEventsForDate(day);
       days.push(
-        <div key={day} className="h-24 p-2 border border-border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer">
+        <div key={day} className="h-24 p-2 border border-border rounded-lg hover:bg-muted/50 transition-colors">
           <div className="font-medium text-sm mb-1">{day}</div>
           <div className="space-y-1">
             {dayEvents.slice(0, 2).map(event => (
-              <Badge 
-                key={event.id} 
-                className={`text-xs p-1 ${getEventTypeColor(event.type)} truncate block`}
-              >
-                <Gift className="w-3 h-3 inline mr-1" />
-                {event.person}
-              </Badge>
+              <Popover key={event.id}>
+                <PopoverTrigger asChild>
+                  <Badge 
+                    className={`text-xs p-1 ${getEventTypeColor(event.type)} truncate block cursor-pointer hover:opacity-80 transition-opacity`}
+                  >
+                    <Gift className="w-3 h-3 inline mr-1" />
+                    {event.person}
+                  </Badge>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-0" side="right" align="start">
+                  <EventPopoverContent 
+                    event={event}
+                    person={persons.find(p => p.id === event.personId)}
+                    onViewProfile={(person) => {
+                      setSelectedPerson(person);
+                      setShowProfileModal(true);
+                    }}
+                    onDeleteEvent={onDeleteEvent}
+                  />
+                </PopoverContent>
+              </Popover>
             ))}
             {dayEvents.length > 2 && (
               <Badge variant="secondary" className="text-xs">
@@ -168,6 +321,13 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
           onDeleteEvent={onDeleteEvent}
         />
       )}
+
+      {/* Profile Modal */}
+      <PersonProfileViewModal
+        person={selectedPerson}
+        isOpen={showProfileModal}
+        onOpenChange={setShowProfileModal}
+      />
     </div>
   );
 };
