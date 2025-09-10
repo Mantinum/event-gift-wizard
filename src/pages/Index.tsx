@@ -26,7 +26,7 @@ const Index = () => {
   
   // Use Supabase hooks instead of localStorage
   const { persons, loading: personsLoading, savePerson } = useSupabasePersons();
-  const { events, loading: eventsLoading, saveEvent, saveMultipleEvents } = useSupabaseEvents();
+  const { events, loading: eventsLoading, saveEvent, saveMultipleEvents, deleteEvent } = useSupabaseEvents();
   
   // Modal states
   const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
@@ -247,7 +247,7 @@ const Index = () => {
                 Nouvel événement
               </Button>
             </div>
-            <Calendar events={events} persons={persons} />
+            <Calendar events={events} persons={persons} onDeleteEvent={deleteEvent} />
           </TabsContent>
 
           <TabsContent value="profiles" className="mt-6">

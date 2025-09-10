@@ -213,12 +213,14 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
             {dayEvents.slice(0, 2).map(event => (
               <Popover key={event.id}>
                 <PopoverTrigger asChild>
-                  <Badge 
-                    className={`text-xs p-1 ${getEventTypeColor(event.type)} truncate block cursor-pointer hover:opacity-80 transition-opacity`}
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className={`h-auto py-0 px-2 w-full justify-start ${getEventTypeColor(event.type)} hover:opacity-90`}
                   >
-                    <Gift className="w-3 h-3 inline mr-1" />
+                    <Gift className="w-3 h-3 mr-1" />
                     {event.person}
-                  </Badge>
+                  </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-80 p-0" side="right" align="start">
                   <EventPopoverContent 
