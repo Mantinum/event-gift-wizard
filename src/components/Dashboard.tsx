@@ -106,134 +106,20 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
         </Card>
       </div>
 
-      {/* Automatic IA Gift Suggestions */}
+      {/* Gift suggestions with OpenAI */}
       <Card className="shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            <span>Suggestions IA automatiques</span>
+            <Wand2 className="h-5 w-5 text-primary" />
+            <span>Générateur de cadeaux IA</span>
+            <Badge variant="outline" className="text-xs">Powered by OpenAI</Badge>
           </CardTitle>
+          <p className="text-sm text-muted-foreground mt-2">
+            Générez des suggestions personnalisées pour vos événements à venir
+          </p>
         </CardHeader>
         <CardContent>
           <AutoGiftSuggestions events={events} persons={persons} />
-        </CardContent>
-      </Card>
-
-      {/* Upcoming Purchases */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Gift className="h-5 w-5 text-primary" />
-            <span>Prochains achats automatiques</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {upcomingPurchases.length === 0 ? (
-              <div className="text-center py-12">
-                <Gift className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">Aucun achat programmé</h3>
-                <p className="text-muted-foreground">
-                  Ajoutez des événements pour voir les suggestions de cadeaux automatiques
-                </p>
-              </div>
-            ) : (
-              upcomingPurchases.map((purchase, index) => (
-                <div 
-                  key={purchase.id} 
-                  className="border border-border rounded-lg p-4 hover:bg-muted/50 transition-colors animate-fade-in"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <h4 className="font-semibold text-foreground">
-                          {purchase.suggestedGift}
-                        </h4>
-                        <div className="flex items-center space-x-1">
-                          <Sparkles className="h-3 w-3 text-primary" />
-                          <span className="text-xs font-medium text-primary">IA</span>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Pour {purchase.personName} • {purchase.eventTitle}
-                      </p>
-                      {purchase.aiReasoning && (
-                        <div className="bg-primary/5 border border-primary/20 rounded-lg p-2 mb-2">
-                          <p className="text-xs text-foreground">
-                            {purchase.aiReasoning}
-                          </p>
-                        </div>
-                      )}
-                      {purchase.alternativeGifts && purchase.alternativeGifts.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          <span className="text-xs text-muted-foreground">Alternatives:</span>
-                          {purchase.alternativeGifts.map((alt, idx) => (
-                            <Badge key={idx} variant="outline" className="text-xs">
-                              {alt}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <Badge className={getStatusColor(purchase.status)}>
-                      {getStatusText(purchase.status)}
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                    <div className="flex items-center space-x-2 text-sm">
-                      <Clock className="h-4 w-4 text-warning" />
-                      <span>{purchase.daysUntil} jours</span>
-                    </div>
-                    <div className="flex items-center space-x-2 text-sm">
-                      <Euro className="h-4 w-4 text-success" />
-                      <span>{formatCurrency(purchase.budget)}</span>
-                    </div>
-                    <div className="flex items-center space-x-2 text-sm">
-                      <TrendingUp className="h-4 w-4 text-primary" />
-                      <span>{purchase.confidence}% confiance</span>
-                    </div>
-                    <div className="flex items-center space-x-2 text-sm">
-                      <CheckCircle className="h-4 w-4 text-muted-foreground" />
-                      <span>IA Suggestion</span>
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs text-muted-foreground">Niveau de confiance</span>
-                      <span className="text-xs font-medium">{purchase.confidence}%</span>
-                    </div>
-                    <Progress value={purchase.confidence} className="h-2" />
-                  </div>
-
-                  <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" className="flex-1">
-                      Modifier
-                    </Button>
-                    {purchase.status === 'reviewing' && (
-                      <Button 
-                        size="sm" 
-                        className="flex-1 bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
-                      >
-                        Valider l'achat
-                      </Button>
-                    )}
-                    {purchase.status === 'pending' && (
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="flex-1"
-                      >
-                        Programmer
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </CardContent>
       </Card>
     </div>
