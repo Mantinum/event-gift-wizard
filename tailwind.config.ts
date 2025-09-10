@@ -55,6 +55,8 @@ export default {
         purple: {
           accent: "hsl(var(--purple-accent))",
         },
+        "ocean-blue": "hsl(var(--ocean-blue))",
+        "purple-accent": "hsl(var(--purple-accent))",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         sidebar: {

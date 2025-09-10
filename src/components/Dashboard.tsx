@@ -31,7 +31,7 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-warning text-white';
-      case 'reviewing': return 'bg-ocean-blue text-white';
+      case 'reviewing': return 'bg-primary text-white';
       case 'approved': return 'bg-success text-white';
       default: return 'bg-secondary text-secondary-foreground';
     }
@@ -64,7 +64,7 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
                 <p className="text-sm text-muted-foreground">Achats à venir</p>
                 <p className="text-2xl font-bold text-primary">{upcomingPurchases.length}</p>
               </div>
-              <ShoppingCart className="h-8 w-8 text-ocean-blue" />
+              <ShoppingCart className="h-8 w-8 text-primary" />
             </div>
           </CardContent>
         </Card>
@@ -98,9 +98,9 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Événements</p>
-                <p className="text-2xl font-bold text-purple-accent">{events.length}</p>
+                <p className="text-2xl font-bold text-accent">{events.length}</p>
               </div>
-              <Calendar className="h-8 w-8 text-purple-accent" />
+              <Calendar className="h-8 w-8 text-accent" />
             </div>
           </CardContent>
         </Card>
