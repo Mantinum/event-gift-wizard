@@ -259,8 +259,8 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
         persons={persons}
       />
 
-      {/* View Mode Toggle and Actions */}
-      <div className="flex items-center justify-between">
+      {/* View Mode Toggle */}
+      <div className="flex items-center justify-center">
         <Tabs value={viewMode} onValueChange={(value: any) => setViewMode(value)}>
           <TabsList className="grid w-full max-w-sm grid-cols-2">
             <TabsTrigger value="calendar" className="flex items-center space-x-2">
@@ -273,11 +273,6 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
             </TabsTrigger>
           </TabsList>
         </Tabs>
-        
-        <Button className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-all duration-300">
-          <Plus className="w-4 h-4 mr-2" />
-          Nouvel événement
-        </Button>
       </div>
 
       {/* Content based on view mode */}
