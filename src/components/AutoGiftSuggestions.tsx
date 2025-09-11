@@ -200,44 +200,18 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              const q = encodeURIComponent(suggestion.title);
-                              window.open(`https://www.google.com/search?q=${q}+acheter+prix`, '_blank');
-                            }}
-                            className="text-xs"
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            Google Shopping
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              const q = encodeURIComponent(suggestion.title);
-                              window.open(`https://www.amazon.fr/s?k=${q}`, '_blank');
-                            }}
-                            className="text-xs"
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            Amazon
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              const q = encodeURIComponent(suggestion.title);
-                              window.open(`https://www.fnac.com/SearchResult/ResultList.aspx?Search=${q}`, '_blank');
-                            }}
-                            className="text-xs"
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            Fnac
-                          </Button>
-                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            const q = encodeURIComponent(suggestion.title);
+                            window.open(`https://www.amazon.fr/s?k=${q}`, '_blank');
+                          }}
+                          className="text-xs"
+                        >
+                          <ShoppingCart className="h-3 w-3 mr-1" />
+                          Amazon
+                        </Button>
                       </div>
                     </div>
                   ))}

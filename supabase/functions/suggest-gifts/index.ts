@@ -56,8 +56,12 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
 const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<GiftSuggestion[]> => {
   const canopyApiKey = Deno.env.get('CANOPY_API_KEY');
   
+  console.log('🔍 Starting Canopy enrichment...');
+  console.log('📊 Number of suggestions to enrich:', suggestions.length);
+  console.log('🔑 Canopy API key available:', !!canopyApiKey);
+  
   if (!canopyApiKey) {
-    console.log('CANOPY_API_KEY not configured, skipping Amazon data enrichment');
+    console.log('❌ CANOPY_API_KEY not configured, skipping Amazon data enrichment');
     return suggestions;
   }
 
@@ -66,9 +70,13 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
   const enrichedSuggestions = await Promise.all(
     suggestions.map(async (suggestion) => {
       try {
+        console.log(`🔍 Searching Canopy for: "${suggestion.title}"`);
+        
         // Search for the product on Amazon using Canopy REST API
         const searchQuery = encodeURIComponent(suggestion.title);
         const searchUrl = `https://rest.canopyapi.co/api/amazon/search?q=${searchQuery}&domain=amazon.fr&limit=1`;
+        
+        console.log(`📡 Canopy request URL: ${searchUrl}`);
         
         const searchResponse = await fetch(searchUrl, {
           method: 'GET',
@@ -79,14 +87,17 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         });
 
         if (!searchResponse.ok) {
-          console.log(`Canopy search failed for "${suggestion.title}":`, searchResponse.statusText);
+          console.log(`❌ Canopy search failed for "${suggestion.title}":`, searchResponse.status, searchResponse.statusText);
+          const errorText = await searchResponse.text();
+          console.log('Error details:', errorText);
           return suggestion;
         }
 
         const searchData = await searchResponse.json();
+        console.log(`✅ Canopy search response for "${suggestion.title}":`, JSON.stringify(searchData, null, 2));
         
         if (!searchData.products || searchData.products.length === 0) {
-          console.log(`No Amazon products found for "${suggestion.title}"`);
+          console.log(`⚠️ No Amazon products found for "${suggestion.title}"`);
           return suggestion;
         }
 
@@ -150,7 +161,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         };
 
       } catch (error) {
-        console.error(`Error enriching suggestion "${suggestion.title}" with Canopy data:`, error);
+        console.error(`❌ Error enriching suggestion "${suggestion.title}" with Canopy data:`, error);
         return suggestion;
       }
     })
@@ -490,8 +501,10 @@ serve(async (req) => {
     }
 
     // Enrich suggestions with real Amazon data via Canopy API
-    console.log('Enriching suggestions with Canopy Amazon data...');
+    console.log('🔄 About to enrich suggestions with Canopy Amazon data...');
+    console.log('📋 Suggestions before enrichment:', suggestions.length);
     suggestions = await enrichWithCanopyData(suggestions);
+    console.log('✅ Canopy enrichment completed. Suggestions after enrichment:', suggestions.length);
 
     // Store suggestions in database for future reference
     const purchaseRecords = suggestions.map(suggestion => ({
