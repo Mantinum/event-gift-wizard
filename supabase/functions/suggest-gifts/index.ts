@@ -140,6 +140,15 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
           if (restRes.ok) {
             const restJson = await restRes.json();
             results = restJson?.results;
+            console.log(`✅ REST response received. Results count: ${results?.length || 0}`);
+            if (results && results.length > 0) {
+              console.log('🎯 First result preview:', {
+                title: results[0]?.title?.substring(0, 50),
+                asin: results[0]?.asin,
+                price: results[0]?.price
+              });
+            }
+          } else {
           } else {
             const errText = await restRes.text();
             console.log('❌ REST error body:', errText);
@@ -224,7 +233,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         const bestProduct = pickBestProduct(searchData.results, suggestion.title, suggestion.estimatedPrice);
         
         if (!bestProduct || !bestProduct.asin) {
-          console.log(`⚠️ No suitable product found for "${suggestion.title}"`);
+          console.log(`⚠️ No suitable product found for "${suggestion.title}" - no ASIN available`);
           return {
             ...suggestion,
             purchaseLinks: [
@@ -242,6 +251,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         
         // Create proper Amazon links using ASIN
         const amazonLinks = createAmazonLinks(bestProduct.asin, suggestion.title);
+        console.log(`🔗 Generated Amazon links for ASIN ${bestProduct.asin}:`, amazonLinks);
         
         return {
           ...suggestion,
