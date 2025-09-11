@@ -200,18 +200,42 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                       )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            const q = encodeURIComponent(suggestion.title);
-                            window.open(`https://www.amazon.fr/s?k=${q}`, '_blank');
-                          }}
-                          className="text-xs"
-                        >
-                          <ShoppingCart className="h-3 w-3 mr-1" />
-                          Amazon
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const directLink = suggestion.purchaseLinks?.find(link => 
+                                link.includes('amazon.fr/dp/') || link.includes('amazon.fr/gp/aws/cart/add')
+                              );
+                              if (directLink) {
+                                window.open(directLink, '_blank');
+                              } else {
+                                const q = encodeURIComponent(suggestion.title);
+                                window.open(`https://www.amazon.fr/s?k=${q}`,'_blank');
+                              }
+                            }}
+                            className="text-xs"
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            {suggestion.amazonData?.asin ? 'Voir sur Amazon' : 'Rechercher sur Amazon'}
+                          </Button>
+
+                          {suggestion.purchaseLinks?.some(link => link.includes('amazon.fr/gp/aws/cart/add')) && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                const cartLink = suggestion.purchaseLinks.find(link => link.includes('amazon.fr/gp/aws/cart/add'));
+                                if (cartLink) window.open(cartLink, '_blank');
+                              }}
+                              className="text-xs bg-gradient-primary text-white"
+                            >
+                              <ShoppingCart className="h-3 w-3 mr-1" />
+                              Ajouter au panier
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
