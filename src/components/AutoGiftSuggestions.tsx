@@ -201,38 +201,61 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
                         <div className="flex gap-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              const directLink = suggestion.purchaseLinks?.find(link => 
-                                link.includes('amazon.fr/dp/') || link.includes('amazon.fr/gp/aws/cart/add')
-                              );
-                              if (directLink) {
-                                window.open(directLink, '_blank');
-                              } else {
-                                const q = encodeURIComponent(suggestion.title);
-                                window.open(`https://www.amazon.fr/s?k=${q}`,'_blank');
-                              }
-                            }}
-                            className="text-xs"
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            {suggestion.amazonData?.asin ? 'Voir sur Amazon' : 'Rechercher sur Amazon'}
-                          </Button>
-
-                          {suggestion.purchaseLinks?.some(link => link.includes('amazon.fr/gp/aws/cart/add')) && (
-                            <Button
-                              variant="default"
+                          {/* Badge de type de match */}
+                          {suggestion.amazonData?.matchType === 'exact' && (
+                            <span className="text-xs text-green-600 font-medium flex items-center gap-1 mb-1">
+                              ✅ Produit exact trouvé
+                            </span>
+                          )}
+                          {suggestion.amazonData?.matchType === 'relaxed' && (
+                            <span className="text-xs text-orange-600 font-medium flex items-center gap-1 mb-1">
+                              🔍 Produit similaire trouvé
+                            </span>
+                          )}
+                          {suggestion.amazonData?.matchType === 'search' && (
+                            <span className="text-xs text-gray-600 font-medium flex items-center gap-1 mb-1">
+                              🔍 Recherche Amazon
+                            </span>
+                          )}
+                          
+                          {/* Boutons d'action */}
+                          {suggestion.amazonData?.productUrl ? (
+                            <>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => window.open(suggestion.amazonData?.productUrl, '_blank')}
+                                className="text-xs"
+                              >
+                                <ShoppingCart className="h-3 w-3 mr-1" />
+                                Voir le produit
+                              </Button>
+                              
+                              {suggestion.amazonData?.addToCartUrl && (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => window.open(suggestion.amazonData?.addToCartUrl, '_blank')}
+                                  className="text-xs bg-gradient-primary text-white"
+                                >
+                                  <ShoppingCart className="h-3 w-3 mr-1" />
+                                  Ajouter au panier
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <Button 
+                              variant="outline" 
                               size="sm"
                               onClick={() => {
-                                const cartLink = suggestion.purchaseLinks.find(link => link.includes('amazon.fr/gp/aws/cart/add'));
-                                if (cartLink) window.open(cartLink, '_blank');
+                                const url = suggestion.amazonData?.searchUrl || 
+                                           `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`;
+                                window.open(url, '_blank');
                               }}
-                              className="text-xs bg-gradient-primary text-white"
+                              className="text-xs"
                             >
                               <ShoppingCart className="h-3 w-3 mr-1" />
-                              Ajouter au panier
+                              Rechercher sur Amazon
                             </Button>
                           )}
                         </div>

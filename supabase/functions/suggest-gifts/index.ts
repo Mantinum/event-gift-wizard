@@ -23,6 +23,11 @@ interface GiftSuggestion {
   category: string;
   alternatives: string[];
   purchaseLinks: string[];
+  brand?: string;
+  canonical_name?: string;
+  search_queries?: string[];
+  min_price?: number;
+  max_price?: number;
   amazonData?: {
     asin?: string;
     rating?: number;
@@ -30,6 +35,11 @@ interface GiftSuggestion {
     availability?: string;
     prime?: boolean;
     actualPrice?: number;
+    imageUrl?: string;
+    productUrl?: string;
+    addToCartUrl?: string;
+    searchUrl?: string;
+    matchType?: 'exact' | 'relaxed' | 'search';
   };
 }
 
@@ -52,234 +62,312 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   art: ['Art', 'Loisirs créatifs'],
 };
 
-// Helper function to pick the best product from search results
-const pickBestProduct = (products: any[], expectedTitle: string, targetBudget?: number) => {
-  if (!products || products.length === 0) return null;
-  
-  const scored = products.map(product => {
-    // Score based on title similarity (simple word matching)
-    const titleWords = expectedTitle.toLowerCase().split(' ').filter(w => w.length > 2);
-    const productTitle = (product.title || '').toLowerCase();
-    const titleScore = titleWords.reduce((score, word) => {
-      return score + (productTitle.includes(word) ? 1 : 0);
-    }, 0) / Math.max(titleWords.length, 1);
-    
-    // Score based on budget proximity
-    const price = product.price_current || product.price || 0;
-    const budgetScore = targetBudget && price > 0 
-      ? 1 / (1 + Math.abs(price - targetBudget) / targetBudget)
-      : 0.5;
-    
-    // Score based on rating (if available)
-    const ratingScore = product.rating ? Math.min(product.rating / 5, 1) : 0.5;
-    
-    const totalScore = 0.5 * titleScore + 0.3 * budgetScore + 0.2 * ratingScore;
-    
-    return { product, score: totalScore, titleScore, budgetScore, ratingScore };
-  });
-  
-  scored.sort((a, b) => b.score - a.score);
-  console.log(`🎯 Product scoring for "${expectedTitle}":`, scored.map(s => ({
-    title: s.product.title,
-    score: s.score.toFixed(3),
-    titleScore: s.titleScore.toFixed(3),
-    budgetScore: s.budgetScore.toFixed(3),
-    ratingScore: s.ratingScore.toFixed(3),
-    price: s.product.price_current || s.product.price
-  })));
-  
-  return scored[0]?.product;
-};
+// Scoring function for Amazon search results
+interface Hit {
+  title: string;
+  brand?: string;
+  asin?: string;
+  price?: number;
+  url?: string;
+}
 
-// Function to create Amazon links from ASIN
-const createAmazonLinks = (asin: string, title: string): string[] => {
-  if (!asin) return [];
-  
-  return [
-    `https://www.amazon.fr/dp/${asin}`, // Direct product page
-    `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`, // Add to cart
-    `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(title)}`, // Price comparison
-  ];
-};
+function scoreHit(hit: Hit, expectedBrand?: string, targetPrice?: number, queryTokens: string[] = []): number {
+  const t = (hit.title || "").toLowerCase();
+  const brandScore = expectedBrand ? 
+    (t.includes(expectedBrand.toLowerCase()) || hit.brand?.toLowerCase() === expectedBrand.toLowerCase() ? 1 : 0) : 0.5;
 
-// Canopy API integration functions
-const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<GiftSuggestion[]> => {
-  const canopyApiKey = Deno.env.get('CANOPY_API_KEY');
-  
-  console.log('🔍 Starting Canopy enrichment...');
-  console.log('📊 Number of suggestions to enrich:', suggestions.length);
-  console.log('🔑 Canopy API key available:', !!canopyApiKey);
+  const price = hit.price ?? 0;
+  const priceScore = targetPrice ? 
+    1 / (1 + Math.abs(price - targetPrice) / Math.max(10, targetPrice * 0.3)) : 0.5;
+
+  // Simple bag-of-words matching
+  const kw = queryTokens.filter(k => k.length > 2);
+  const kwMatch = kw.length ? 
+    kw.reduce((acc, k) => acc + (t.includes(k.toLowerCase()) ? 1 : 0), 0) / kw.length : 0.5;
+
+  return 0.5 * brandScore + 0.3 * priceScore + 0.2 * kwMatch;
+}
+
+// Sleep function for retry backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Multi-strategy Amazon search with orchestration
+async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiKey: string): Promise<any> {
+  console.log(`🎯 Advanced Canopy search for: "${suggestion.title}"`);
   
   if (!canopyApiKey) {
-    console.log('❌ CANOPY_API_KEY not configured, skipping Amazon data enrichment');
-    return suggestions;
+    console.log('❌ No Canopy API key available');
+    return null;
   }
 
-  console.log('🔄 Starting Canopy enrichment process...');
+  const targetPrice = suggestion.estimatedPrice;
+  const expectedBrand = suggestion.brand;
+  const queries = [
+    suggestion.canonical_name,
+    ...(suggestion.search_queries || []),
+    suggestion.brand + ' ' + suggestion.title.split(' ').slice(0, 3).join(' ')
+  ].filter(Boolean);
+
+  console.log(`🔍 Search queries: ${JSON.stringify(queries)}`);
+  console.log(`🎯 Target price: ${targetPrice}, Expected brand: ${expectedBrand}`);
+
+  // Strategy 1: Exact search
+  for (const query of queries.slice(0, 2)) {
+    console.log(`🔍 Exact search: "${query}"`);
+    const results = await searchCanopyWithRetry(query, canopyApiKey, 'exact');
+    if (results.length > 0) {
+      const scored = results.map((hit: any) => ({
+        ...hit,
+        score: scoreHit(hit, expectedBrand, targetPrice, query.split(' '))
+      })).sort((a: any, b: any) => b.score - a.score);
+      
+      console.log(`📊 Top result score: ${scored[0]?.score || 0}`);
+      if (scored[0]?.score >= 0.62) {
+        console.log(`✅ Exact match found with score ${scored[0].score}`);
+        return buildAmazonData(scored[0], 'exact');
+      }
+    }
+  }
+
+  // Strategy 2: Relaxed search (remove color/size descriptors)
+  for (const query of queries) {
+    const relaxedQuery = query
+      .replace(/\b(blanc|noir|rouge|bleu|vert|jaune|rose|doré|argenté|gold|silver|white|black|red|blue|green|yellow)\b/gi, '')
+      .replace(/\b(petit|grand|mini|maxi|S|M|L|XL)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (relaxedQuery !== query && relaxedQuery.length > 3) {
+      console.log(`🔍 Relaxed search: "${relaxedQuery}"`);
+      const results = await searchCanopyWithRetry(relaxedQuery, canopyApiKey, 'relaxed');
+      if (results.length > 0) {
+        const scored = results.map((hit: any) => ({
+          ...hit,
+          score: scoreHit(hit, expectedBrand, targetPrice, relaxedQuery.split(' '))
+        })).sort((a: any, b: any) => b.score - a.score);
+        
+        console.log(`📊 Top relaxed result score: ${scored[0]?.score || 0}`);
+        if (scored[0]?.score >= 0.62) {
+          console.log(`✅ Relaxed match found with score ${scored[0].score}`);
+          return buildAmazonData(scored[0], 'relaxed');
+        }
+      }
+    }
+  }
+
+  // Strategy 3: English translation for international brands
+  if (expectedBrand) {
+    const englishQuery = `${expectedBrand} ${suggestion.title.split(' ').slice(1, 4).join(' ')}`;
+    console.log(`🔍 English search: "${englishQuery}"`);
+    const results = await searchCanopyWithRetry(englishQuery, canopyApiKey, 'english');
+    if (results.length > 0) {
+      const scored = results.map((hit: any) => ({
+        ...hit,
+        score: scoreHit(hit, expectedBrand, targetPrice, englishQuery.split(' '))
+      })).sort((a: any, b: any) => b.score - a.score);
+      
+      console.log(`📊 Top English result score: ${scored[0]?.score || 0}`);
+      if (scored[0]?.score >= 0.58) { // Slightly lower threshold for English
+        console.log(`✅ English match found with score ${scored[0].score}`);
+        return buildAmazonData(scored[0], 'relaxed');
+      }
+    }
+  }
+
+  console.log(`⚠️ No good match found, falling back to search URL`);
+  return buildFallbackAmazonData(suggestion);
+}
+
+// Search with retry logic and fallback to GraphQL
+async function searchCanopyWithRetry(query: string, canopyApiKey: string, variant: string): Promise<any[]> {
+  const cleanQuery = query.replace(/[^\w\s\-àáâãäåæçèéêëìíîïñòóôõöøùúûüýÿ]/g, ' ').trim();
+  if (cleanQuery.length < 3) return [];
+
+  const searchQuery = encodeURIComponent(cleanQuery);
+  const maxRetries = 3;
+  const backoffDelays = [200, 500, 1200];
+
+  // Try REST API with retries
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
+      console.log(`📡 Canopy REST (${variant}, attempt ${i + 1}): ${restUrl}`);
+
+      const response = await fetch(restUrl, {
+        headers: {
+          'Authorization': `Bearer ${canopyApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`📊 Canopy REST status: ${response.status}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.results || data.products || [];
+        if (results.length > 0) {
+          console.log(`✅ REST success: ${results.length} results`);
+          return results;
+        }
+      } else if (response.status === 500 && i < maxRetries - 1) {
+        console.log(`⏳ Retrying after ${backoffDelays[i]}ms...`);
+        await sleep(backoffDelays[i]);
+        continue;
+      } else {
+        const errorText = await response.text();
+        console.log(`❌ REST error: ${errorText}`);
+        break;
+      }
+    } catch (error) {
+      console.log(`❌ REST request failed (attempt ${i + 1}): ${error}`);
+      if (i < maxRetries - 1) {
+        await sleep(backoffDelays[i]);
+      }
+    }
+  }
+
+  // Fallback to GraphQL
+  console.log(`🔄 Falling back to Canopy GraphQL for ${variant}`);
+  try {
+    const graphqlQuery = `
+      query SearchAmazon($searchTerm: String!, $domain: String!) {
+        amazon_search(searchTerm: $searchTerm, domain: $domain, limit: 10) {
+          results {
+            title
+            asin
+            price
+            currency
+            rating
+            review_count
+            availability
+            prime
+            image_url
+            url
+          }
+        }
+      }
+    `;
+
+    const graphqlResponse = await fetch('https://graphql.canopyapi.co/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${canopyApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: graphqlQuery,
+        variables: {
+          searchTerm: cleanQuery,
+          domain: 'amazon.fr'
+        }
+      })
+    });
+
+    console.log(`📊 Canopy GraphQL status: ${graphqlResponse.status}`);
+
+    if (graphqlResponse.ok) {
+      const graphqlData = await graphqlResponse.json();
+      const results = graphqlData.data?.amazon_search?.results || [];
+      console.log(`✅ GraphQL success: ${results.length} results`);
+      return results;
+    }
+  } catch (error) {
+    console.error(`❌ GraphQL fallback failed: ${error}`);
+  }
+
+  return [];
+}
+
+// Build Amazon data object for successful matches
+function buildAmazonData(hit: any, matchType: string): any {
+  const asin = hit.asin;
+  return {
+    asin,
+    rating: hit.rating,
+    reviewCount: hit.review_count,
+    availability: hit.availability,
+    prime: hit.prime,
+    actualPrice: hit.price,
+    imageUrl: hit.image_url,
+    productUrl: asin ? `https://www.amazon.fr/dp/${asin}` : hit.url,
+    addToCartUrl: asin ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1` : undefined,
+    searchUrl: undefined,
+    matchType
+  };
+}
+
+// Build fallback Amazon data for search-only
+function buildFallbackAmazonData(suggestion: GiftSuggestion): any {
+  const searchQuery = suggestion.canonical_name || suggestion.title;
+  return {
+    searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
+    matchType: 'search'
+  };
+}
+
+// Enrich suggestions with advanced Canopy Amazon search
+async function enrichWithCanopyAmazon(suggestions: GiftSuggestion[], canopyApiKey: string): Promise<GiftSuggestion[]> {
+  console.log(`🔑 CANOPY_API_KEY env var check: ${!!canopyApiKey}`);
+  console.log(`📊 Number of suggestions to enrich: ${suggestions.length}`);
+  console.log(`🔄 Starting advanced Canopy enrichment process...`);
+
+  if (!canopyApiKey) {
+    console.log('❌ No Canopy API key available for enrichment');
+    return suggestions;
+  }
 
   const enrichedSuggestions = await Promise.all(
     suggestions.map(async (suggestion) => {
       try {
-        console.log(`🔍 Searching Canopy for: "${suggestion.title}"`);
+        console.log(`🔍 Processing suggestion: "${suggestion.title}"`);
+        console.log(`📊 Brand: ${suggestion.brand}, Canonical: ${suggestion.canonical_name}`);
+        console.log(`🔍 Search queries: ${JSON.stringify(suggestion.search_queries)}`);
         
-        // Search for the product on Amazon using Canopy API with more results
-        const rawQuery = suggestion.title;
-        const searchQuery = encodeURIComponent(rawQuery);
-
-        // Try REST first
-        const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=5`;
-        console.log(`📡 Canopy REST request URL: ${restUrl}`);
-
-        let results: any[] | undefined;
-        try {
-          const restRes = await fetch(restUrl, {
-            method: 'GET',
-            headers: { 'API-KEY': canopyApiKey },
-          });
-          console.log(`📊 Canopy REST status: ${restRes.status}`);
-          if (restRes.ok) {
-            const restJson = await restRes.json();
-            results = restJson?.results;
-            console.log(`✅ REST response received. Results count: ${results?.length || 0}`);
-            if (results && results.length > 0) {
-              console.log('🎯 First result preview:', {
-                title: results[0]?.title?.substring(0, 50),
-                asin: results[0]?.asin,
-                price: results[0]?.price
-              });
-            }
-          } else {
-            const errText = await restRes.text();
-            console.log('❌ REST error body:', errText);
+        const amazonData = await searchCanopyAmazonAdvanced(suggestion, canopyApiKey);
+        
+        if (amazonData) {
+          suggestion.amazonData = amazonData;
+          console.log(`✅ Enriched "${suggestion.title}" - Match type: ${amazonData.matchType}, ASIN: ${amazonData.asin || 'N/A'}`);
+          
+          // Update purchase links based on match type
+          if (amazonData.asin) {
+            suggestion.purchaseLinks = [
+              amazonData.productUrl,
+              amazonData.addToCartUrl,
+              ...suggestion.purchaseLinks.slice(2) // Keep other non-Amazon links
+            ].filter(Boolean);
+          } else if (amazonData.searchUrl && !suggestion.purchaseLinks.includes(amazonData.searchUrl)) {
+            suggestion.purchaseLinks.push(amazonData.searchUrl);
           }
-        } catch (e) {
-          console.log('❌ REST call threw:', e);
+        } else {
+          console.log(`⚠️ No Amazon data found for "${suggestion.title}"`);
         }
-
-        // If REST did not return usable results, try GraphQL as a fallback
-        if (!Array.isArray(results) || results.length === 0) {
-          const gqlEndpoint = 'https://graphql.canopyapi.co/';
-          const gqlQuery = `
-            query Search($q: String!, $country: String!) {
-              search(query: $q, country: $country, page: 1) {
-                results {
-                  asin
-                  title
-                  url
-                  image
-                  price { value currency }
-                  rating { stars count }
-                  badges
-                  brand
-                }
-              }
-            }
-          `;
-          console.log('🔄 Falling back to Canopy GraphQL search');
-          try {
-            const gqlRes = await fetch(gqlEndpoint, {
-              method: 'POST',
-              headers: {
-                'API-KEY': canopyApiKey,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ query: gqlQuery, variables: { q: rawQuery, country: 'FR' } }),
-            });
-            console.log(`📊 Canopy GraphQL status: ${gqlRes.status}`);
-            if (gqlRes.ok) {
-              const gqlJson = await gqlRes.json();
-              const gqlResults = gqlJson?.data?.search?.results ?? [];
-              // Normalize to the REST shape expected by our scoring function
-              results = gqlResults.map((r: any) => ({
-                asin: r.asin,
-                title: r.title,
-                price_current: r?.price?.value,
-                price: r?.price?.value,
-                rating: r?.rating?.stars,
-                review_count: r?.rating?.count,
-                image: r?.image,
-                availability: Array.isArray(r?.badges) && r.badges.includes('In Stock') ? 'In Stock' : 'Unknown',
-                is_prime: Array.isArray(r?.badges) && r.badges.includes('Prime'),
-                brand: r?.brand,
-              }));
-            } else {
-              const errText = await gqlRes.text();
-              console.log('❌ GraphQL error body:', errText);
-            }
-          } catch (e) {
-            console.log('❌ GraphQL call threw:', e);
-          }
-        }
-
-        if (!Array.isArray(results) || results.length === 0) {
-          console.log(`⚠️ No Amazon products found for "${suggestion.title}"`);
-          return {
-            ...suggestion,
-            purchaseLinks: [
-              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
-            ]
-          };
-        }
-
-        // Keep compatibility with the rest of the enrichment flow
-        const searchData = { results };
-        console.log(`✅ Canopy search response for "${suggestion.title}":`, {
-          totalResults: results.length,
-          firstResult: results?.[0]?.title
-        });
-
-        // Pick the best matching product using our scoring algorithm
-        const bestProduct = pickBestProduct(searchData.results, suggestion.title, suggestion.estimatedPrice);
-        
-        if (!bestProduct || !bestProduct.asin) {
-          console.log(`⚠️ No suitable product found for "${suggestion.title}" - no ASIN available`);
-          return {
-            ...suggestion,
-            purchaseLinks: [
-              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
-            ]
-          };
-        }
-
-        console.log(`🎯 Selected best product for "${suggestion.title}":`, {
-          title: bestProduct.title,
-          asin: bestProduct.asin,
-          price: bestProduct.price_current || bestProduct.price,
-          rating: bestProduct.rating
-        });
-        
-        // Create proper Amazon links using ASIN
-        const amazonLinks = createAmazonLinks(bestProduct.asin, suggestion.title);
-        console.log(`🔗 Generated Amazon links for ASIN ${bestProduct.asin}:`, amazonLinks);
-        
-        return {
-          ...suggestion,
-          purchaseLinks: amazonLinks,
-          amazonData: {
-            asin: bestProduct.asin,
-            rating: bestProduct.rating,
-            reviewCount: bestProduct.review_count,
-            availability: bestProduct.availability,
-            prime: bestProduct.is_prime,
-            actualPrice: bestProduct.price_current || bestProduct.price,
-            imageUrl: bestProduct.image || bestProduct.image_url,
-          }
-        };
-        
       } catch (error) {
-        console.error(`❌ Error enriching suggestion "${suggestion.title}" with Canopy data:`, error);
-        return {
-          ...suggestion,
-          purchaseLinks: [
-            `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
-          ]
-        };
+        console.error(`❌ Error enriching suggestion "${suggestion.title}":`, error);
       }
+      return suggestion;
     })
   );
 
+  console.log(`✅ Advanced Canopy enrichment completed. Suggestions processed: ${enrichedSuggestions.length}`);
   return enrichedSuggestions;
-};
+}
+
+// Calculate age from birthday
+function calculateAge(birthday: string): number {
+  const birth = new Date(birthday);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  
+  return age;
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -359,23 +447,31 @@ serve(async (req) => {
     {
       "suggestions": [
         {
-          "title": "Nom produit précis (marque/modèle si applicable)",
-          "description": "Description concise et convaincante",
-          "estimatedPrice": 0,
-          "confidence": 0,
-          "reasoning": "Pourquoi ce produit correspond au profil et au budget",
-          "category": "Catégorie autorisée",
-          "alternatives": ["Variante 1", "Variante 2"],
-          "purchaseLinks": [
-            "https://...", // Lien d'achat FR ou Google Shopping
-            "https://..."
-          ]
-        },
-        { ... },
-        { ... }
+          "title": un nom commercial court et attrayant,
+          "description": description détaillée du produit (2-3 phrases),
+          "estimatedPrice": prix estimé en euros (nombre),
+          "confidence": niveau de confiance 1-100 (nombre),
+          "reasoning": justification personnalisée basée sur le profil,
+          "category": catégorie du produit,
+          "alternatives": [liste de 2-3 alternatives similaires],
+          "purchaseLinks": [liens d'achat réels vers des sites français comme Sephora, Fnac, etc.],
+          "brand": marque du produit (chaîne courte),
+          "canonical_name": nom canonique sans adjectifs marketing (marque + modèle),
+          "search_queries": [3-5 variantes de recherche optimisées pour Amazon.fr, éviter adjectifs de couleur non essentiels],
+          "min_price": prix minimum (estimatedPrice - 20%),
+          "max_price": prix maximum (estimatedPrice + 20%)
+        }
       ]
-    }`;
+    }
 
+        Optimise les suggestions pour des marques disponibles en France et accessible via Amazon.fr ou sites français.
+        Assure-toi que les catégories correspondent aux intérêts: ${allowedCategories.join(', ')}.
+        
+        IMPORTANT pour search_queries: Optimise pour Amazon.fr avec marque + modèle + mot-clé distinctif, 
+        évite les adjectifs de style ('blanc', 'doré rose') sauf si indispensables. 
+        Inclus une variante en anglais si c'est plus courant sur Amazon.
+        
+        Réponds uniquement avec un JSON valide contenant un objet "suggestions" avec un array de suggestions.`;
 
     const userPrompt = `
     PROFIL DE LA PERSONNE :
@@ -399,296 +495,86 @@ serve(async (req) => {
 
     Génère 3 PRODUITS CONCRETS dans des CATÉGORIES DIFFÉRENTES parmi les catégories AUTORISÉES ci-dessus et dans le budget de ${budget}€.`;
 
-    // Helper: deterministic fallback when OpenAI is unavailable (quota/key/errors)
-    const createFallbackSuggestions = (): GiftSuggestion[] => {
-      // 85% à 100% du budget
-      const minTarget = Math.min(budget, Math.max(10, Math.round(budget * 0.85)));
-      const targets = [minTarget, Math.round((minTarget + budget) / 2), budget];
-
-      // Templates adaptés à l'âge
-      const BABY_TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
-        'Enfance': [
-          { title: 'Jouet d\'éveil en bois', description: 'Stimule la motricité et les sens' },
-          { title: 'Livre en tissu interactif', description: 'Textures variées pour l\'exploration tactile' },
-        ],
-        'Bébé': [
-          { title: 'Mobile musical en bois', description: 'Berceuses apaisantes et formes douces' },
-          { title: 'Anneau de dentition en silicone', description: 'Soulage les poussées dentaires' },
-        ],
-        'Jeux': [
-          { title: 'Tapis d\'éveil coloré', description: 'Arches avec jouets suspendus pour stimuler bébé' },
-          { title: 'Cubes empilables souples', description: 'Développement de la coordination' },
-        ],
-      };
-
-      const ADULT_TEMPLATES: Record<string, Array<{ title: string; description: string }>> = {
-        'Beauté': [
-          { title: 'Lisseur ghd Gold', description: 'Lisseur professionnel à température contrôlée' },
-          { title: 'Coffret soins visage Clarins', description: 'Routine complète hydratation et éclat' },
-        ],
-        'Bien-être': [
-          { title: 'Coffret spa Rituals The Ritual of Sakura', description: 'Gommage, gel douche, crème et bougie' },
-          { title: 'Masseur cervical Shiatsu Homedics', description: 'Relaxation à domicile, chaleur apaisante' },
-        ],
-        'Cosmétiques': [
-          { title: 'Coffret maquillage Sephora Favorites', description: 'Sélection best-sellers format découverte' },
-          { title: 'Palette yeux Anastasia Beverly Hills Soft Glam', description: 'Teintes neutres et pigmentées' },
-        ],
-        'Parfum': [
-          { title: 'Coffret parfum découverte Sephora', description: 'Sélection de miniatures mixte' },
-          { title: 'Yves Saint Laurent Libre Eau de Parfum 50ml', description: 'Floral moderne, long tenue' },
-        ],
-        'Décoration': [
-          { title: 'Lampe de table Fatboy Edison the Medium', description: 'Ambiance chaleureuse, design iconique' },
-          { title: 'Plaid en laine mérinos Hugo Boss Home', description: 'Confort haut de gamme pour le salon' },
-        ],
-        'Maison': [
-          { title: 'Diffuseur d’arômes en céramique Stone', description: 'Design minimal, relaxation à la maison' },
-          { title: 'Vase design Bloomingville', description: 'Céramique texturée, pièce décorative' },
-        ],
-        'Mode': [
-          { title: 'Écharpe en cachemire', description: 'Accessoire intemporel, ultra-doux' },
-          { title: 'Portefeuille en cuir Fossil', description: 'Maroquinerie élégante et durable' },
-        ],
-        'Accessoires': [
-          { title: 'Ceinture en cuir Levi’s', description: 'Boucle métal, finition premium' },
-          { title: 'Lunettes de soleil Ray-Ban Wayfarer', description: 'Icône de style, verres UV' },
-        ],
-        'Maroquinerie': [
-          { title: 'Sac bandoulière en cuir Lancaster', description: 'Compact, chic, quotidien' },
-          { title: 'Porte-cartes en cuir Tommy Hilfiger', description: 'Profil fin, compartiments essentiels' },
-        ],
-        'Vêtements': [
-          { title: 'Chemise en lin premium', description: 'Respirante, coupe moderne' },
-          { title: 'Sweat zippé Nike Tech Fleece', description: 'Confort et style décontracté' },
-        ],
-        'Bijoux': [
-          { title: 'Bracelet Swarovski Subtle', description: 'Cristaux scintillants, plaqué rhodium' },
-          { title: 'Collier en argent 925 avec pendentif', description: 'Minimaliste et élégant' },
-        ],
-        'Joaillerie': [
-          { title: 'Bague en argent avec oxydes', description: 'Finition brillante, intemporelle' },
-          { title: 'Boucles d’oreilles perles Majorica', description: 'Classiques revisitées' },
-        ],
-        'Montres': [
-          { title: 'Montre Casio Edifice', description: 'Acier inoxydable, style urbain' },
-          { title: 'Montre Fossil Minimalist', description: 'Cuir véritable, cadran épuré' },
-        ],
-      };
-
-      // Choisir les templates appropriés selon l'âge
-      const isChild = personContext.age <= 12;
-      const TEMPLATES = isChild ? BABY_TEMPLATES : ADULT_TEMPLATES;
-
-      const allowedPrimary = allowedCategories.filter((c) => TEMPLATES[c]);
-      const fallbackOrder = isChild 
-        ? ['Enfance', 'Bébé', 'Jeux', 'Mode', 'Décoration'] 
-        : ['Mode', 'Bijoux', 'Décoration', 'Beauté', 'Bien-être', 'Parfum', 'Cosmétiques', 'Maroquinerie', 'Accessoires', 'Montres'];
-      
-      const pickCats: string[] = [];
-      for (const c of allowedPrimary) { if (pickCats.length < 3) pickCats.push(c); }
-      for (const c of fallbackOrder) { if (pickCats.length < 3 && !pickCats.includes(c) && TEMPLATES[c]) pickCats.push(c); }
-
-      const seed = Date.now();
-      return pickCats.map((cat, i) => {
-        const options = TEMPLATES[cat];
-        const p = options[(seed + i) % options.length];
-        return {
-          title: p.title,
-          description: p.description,
-          estimatedPrice: targets[Math.min(i, targets.length - 1)],
-          confidence: 0.85,
-          reasoning: `Suggestion fallback adaptée à l'âge (${personContext.age} ans) et aux intérêts (${cat}) - Budget: ${minTarget}€ - ${budget}€`,
-          category: cat,
-          alternatives: ['Variante de la même gamme', 'Modèle précédent pour ajuster le prix'],
-          purchaseLinks: [p.title, `${p.title} ${cat}`],
-        };
-      });
-    };
-
     console.log('Calling OpenRouter API for gift suggestions...');
 
-    let suggestions: GiftSuggestion[] | null = null;
-
     if (!openrouterApiKey) {
-      console.warn('OPENROUTER_API_KEY non configuree. Utilisation du fallback local.');
-      suggestions = createFallbackSuggestions();
-    } else {
-      try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openrouterApiKey}`,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://uurlvbvsewzshbppcfrl.supabase.co',
-            'X-Title': 'Gift Suggestions App',
-          },
-          body: JSON.stringify({
-            model: 'anthropic/claude-3.5-sonnet',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            max_tokens: 900,
-            temperature: 0.3,
-            top_p: 0.8,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('OpenRouter API error:', errorData);
-          suggestions = createFallbackSuggestions();
-        } else {
-          const data = await response.json();
-          const aiResponse = data.choices?.[0]?.message?.content ?? '';
-          console.log('OpenRouter response:', aiResponse);
-
-          try {
-            const parsed = JSON.parse(aiResponse);
-            suggestions = parsed.suggestions;
-          } catch (parseError) {
-            console.error('Failed to parse AI response, using fallback:', parseError);
-            suggestions = createFallbackSuggestions();
-          }
-        }
-      } catch (e) {
-        console.error('Erreur d\'appel OpenRouter, utilisation du fallback:', e);
-        suggestions = createFallbackSuggestions();
-      }
+      throw new Error('OPENROUTER_API_KEY non configurée');
     }
 
-    // Validate and enforce budget with 85%-100% range
-    const enforceBudget = (suggs: GiftSuggestion[] | null | undefined, max: number): GiftSuggestion[] => {
-      const min = Math.min(max, Math.max(10, Math.round(max * 0.85)));
-      const safe = Array.isArray(suggs) ? suggs : [];
-      return safe
-        .map((s) => {
-          let price = typeof s.estimatedPrice === 'number' && isFinite(s.estimatedPrice)
-            ? Math.round(s.estimatedPrice)
-            : min;
-          price = Math.min(max, Math.max(min, price));
-          return { ...s, estimatedPrice: price };
-        })
-        .filter((s) => s.estimatedPrice <= max);
-    };
-
-    const filterAndAdjustCategories = (arr: GiftSuggestion[] | null | undefined): GiftSuggestion[] => {
-      const safe = Array.isArray(arr) ? arr : [];
-      const allowedNorm = new Set(allowedCategories.map((c) => normalize(c)));
-      const mapped = safe.map((s) => {
-        const catNorm = normalize(s.category);
-        if (allowedNorm.has(catNorm)) return s;
-        const fallbackCat = allowedCategories[0] || s.category;
-        return { ...s, category: fallbackCat, reasoning: `${s.reasoning} • Catégorie réajustée pour correspondre aux centres d’intérêt (${fallbackCat}).` };
-      });
-      return mapped.filter((s) => allowedNorm.has(normalize(s.category)));
-    };
-
-    const normalizePurchaseLinks = (arr: GiftSuggestion[] | null | undefined): GiftSuggestion[] => {
-      const safe = Array.isArray(arr) ? arr : [];
-      const toUrls = (query: string): string[] => [
-        `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`,
-        `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`,
-        `https://www.fnac.com/SearchResult/ResultList.aspx?Search=${encodeURIComponent(query)}`,
-      ];
-      return safe.map((s) => {
-        const raw = Array.isArray(s.purchaseLinks) ? s.purchaseLinks.filter(Boolean) : [];
-        const baseQuery = raw[0] || `${s.title} ${s.category}`;
-        const urlCandidates = [
-          ...raw.filter((x) => typeof x === 'string' && x.startsWith('http')).slice(0, 3),
-          ...toUrls(baseQuery)
-        ];
-        const unique = Array.from(new Set(urlCandidates)).slice(0, 3);
-        return { ...s, purchaseLinks: unique };
-      });
-    };
-
-    suggestions = enforceBudget(suggestions, budget);
-    suggestions = filterAndAdjustCategories(suggestions);
-    suggestions = normalizePurchaseLinks(suggestions);
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      suggestions = normalizePurchaseLinks(createFallbackSuggestions());
-    }
-
-// Enrich suggestions with real Amazon data via Canopy API
-    console.log('🔄 About to enrich suggestions with Canopy Amazon data...');
-    console.log('📋 Suggestions before enrichment:', suggestions.length);
-    console.log('🔑 CANOPY_API_KEY env var check:', !!Deno.env.get('CANOPY_API_KEY'));
-    suggestions = await enrichWithCanopyData(suggestions);
-    console.log('✅ Canopy enrichment completed. Suggestions after enrichment:', suggestions.length);
-
-    // Store suggestions in database for future reference
-    const purchaseRecords = suggestions.map(suggestion => ({
-      user_id: person.user_id,
-      person_id: personId,
-      person_name: person.name,
-      event_title: `${eventType} - ${person.name}`,
-      event_id: null, // Will be linked when event is created
-      days_until: calculateDaysUntilNextEvent(eventType, person.birthday),
-      budget: suggestion.estimatedPrice,
-      suggested_gift: suggestion.title,
-      confidence: suggestion.confidence,
-      status: 'pending' as const,
-      alternative_gifts: suggestion.alternatives,
-      ai_reasoning: suggestion.reasoning
-    }));
-
-    const { error: insertError } = await supabase
-      .from('upcoming_purchases')
-      .insert(purchaseRecords);
-
-    if (insertError) {
-      console.error('Error storing suggestions:', insertError);
-      // Don't throw - we still want to return the suggestions
-    }
-
-    return new Response(JSON.stringify({ 
-      success: true, 
-      suggestions,
-      personName: person.name,
-      allowedCategories
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openrouterApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        "model": "deepseek/deepseek-chat",
+        "messages": [
+          { "role": "system", "content": systemPrompt },
+          { "role": "user", "content": userPrompt }
+        ],
+        "temperature": 0.7,
+        "max_tokens": 2000,
+      }),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`OpenRouter API error (${response.status}):`, errorText);
+      throw new Error(`Erreur API OpenRouter: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('OpenRouter response:', JSON.stringify(data, null, 2));
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error('Réponse vide de l\'API OpenRouter');
+    }
+
+    let parsedResponse;
+    try {
+      parsedResponse = JSON.parse(content);
+    } catch (parseError) {
+      console.error('Erreur parsing JSON:', parseError);
+      console.error('Contenu reçu:', content);
+      throw new Error('Format de réponse invalide');
+    }
+
+    if (!parsedResponse.suggestions || !Array.isArray(parsedResponse.suggestions)) {
+      throw new Error('Format de suggestions invalide');
+    }
+
+    let suggestions: GiftSuggestion[] = parsedResponse.suggestions;
+
+    // Enrich suggestions with Canopy Amazon data
+    const canopyApiKey = Deno.env.get('CANOPY_API_KEY');
+    if (canopyApiKey) {
+      suggestions = await enrichWithCanopyAmazon(suggestions, canopyApiKey);
+    }
+
+    return new Response(
+      JSON.stringify({
+        suggestions,
+        personName: personContext.name,
+        success: true
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
 
   } catch (error) {
     console.error('Error in suggest-gifts function:', error);
-    return new Response(JSON.stringify({ 
-      error: error.message || 'Une erreur est survenue lors de la generation des suggestions' 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'Une erreur inattendue est survenue',
+        success: false
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 });
-
-function calculateAge(birthday: string): number {
-  const today = new Date();
-  const birthDate = new Date(birthday);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  
-  return age;
-}
-
-function calculateDaysUntilNextEvent(eventType: string, birthday: string): number {
-  if (eventType === 'birthday') {
-    const today = new Date();
-    const birthDate = new Date(birthday);
-    const thisYearBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
-    
-    if (thisYearBirthday < today) {
-      thisYearBirthday.setFullYear(today.getFullYear() + 1);
-    }
-    
-    const diffTime = thisYearBirthday.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  }
-  
-  return 30; // Default for other event types
-}

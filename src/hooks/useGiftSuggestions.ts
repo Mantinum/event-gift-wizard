@@ -11,6 +11,11 @@ export interface GiftSuggestion {
   category: string;
   alternatives: string[];
   purchaseLinks: string[];
+  brand?: string;
+  canonical_name?: string;
+  search_queries?: string[];
+  min_price?: number;
+  max_price?: number;
   amazonData?: {
     asin?: string;
     rating?: number;
@@ -19,6 +24,10 @@ export interface GiftSuggestion {
     prime?: boolean;
     actualPrice?: number;
     imageUrl?: string;
+    productUrl?: string;
+    addToCartUrl?: string;
+    searchUrl?: string;
+    matchType?: 'exact' | 'relaxed' | 'search';
   };
 }
 
