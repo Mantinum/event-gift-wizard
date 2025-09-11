@@ -221,7 +221,7 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                         className={`text-xs text-white ${getConfidenceColor(suggestion.confidence)}`}
                       >
                         <Star className="w-3 h-3 mr-1" />
-                        {getConfidenceText(suggestion.confidence)}
+                        {getConfidenceText(suggestion.confidence)} ({Math.round(suggestion.confidence * 100)}%)
                       </Badge>
                       <Badge variant="outline" className="text-xs">
                         <Euro className="w-3 h-3 mr-1" />
@@ -243,21 +243,45 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                     <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
                   </div>
 
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Button 
                       onClick={() => {
-                        // Utilise le premier terme de recherche optimisé, ou le titre si pas de purchaseLinks
-                        const searchTerm = suggestion.purchaseLinks.length > 0 
-                          ? suggestion.purchaseLinks[0] 
-                          : suggestion.title;
+                        const searchTerm = suggestion.title;
+                        const searchQuery = encodeURIComponent(searchTerm);
+                        window.open(`https://www.google.com/search?tbm=shop&q=${searchQuery}`, '_blank');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <ShoppingCart className="h-3 w-3 mr-1" />
+                      Google Shopping
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        const searchTerm = suggestion.title;
                         const searchQuery = encodeURIComponent(searchTerm);
                         window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
                       }}
-                      className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
+                      variant="outline"
                       size="sm"
+                      className="text-xs"
                     >
-                      <ShoppingCart className="h-4 w-4 mr-2" />
-                      Acheter sur Amazon
+                      <ShoppingCart className="h-3 w-3 mr-1" />
+                      Amazon
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        const searchTerm = suggestion.title;
+                        const searchQuery = encodeURIComponent(searchTerm);
+                        window.open(`https://www.fnac.com/SearchResult/ResultList.aspx?Search=${searchQuery}`, '_blank');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <ShoppingCart className="h-3 w-3 mr-1" />
+                      Fnac
                     </Button>
                   </div>
 
