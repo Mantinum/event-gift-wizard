@@ -184,7 +184,7 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                             size="sm"
                             onClick={() => {
                               const q = encodeURIComponent(suggestion.title);
-                              window.open(`https://www.google.com/search?tbm=shop&q=${q}`, '_blank');
+                              window.open(`https://www.google.com/search?q=${q}+acheter+prix`, '_blank');
                             }}
                             className="text-xs"
                           >

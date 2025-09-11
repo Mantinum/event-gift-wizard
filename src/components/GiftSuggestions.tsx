@@ -248,7 +248,7 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                       onClick={() => {
                         const searchTerm = suggestion.title;
                         const searchQuery = encodeURIComponent(searchTerm);
-                        window.open(`https://www.google.com/search?tbm=shop&q=${searchQuery}`, '_blank');
+                        window.open(`https://www.google.com/search?q=${searchQuery}+acheter+prix`, '_blank');
                       }}
                       variant="outline"
                       size="sm"
