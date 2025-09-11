@@ -123,41 +123,87 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         console.log(`🔍 Searching Canopy for: "${suggestion.title}"`);
         
         // Search for the product on Amazon using Canopy API with more results
-        const searchQuery = encodeURIComponent(suggestion.title);
-        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=5`;
-        
-        console.log(`📡 Canopy request URL: ${searchUrl}`);
-        
-        const searchResponse = await fetch(searchUrl, {
-          method: 'GET',
-          headers: {
-            'API-KEY': canopyApiKey,
-          },
-        });
+        const rawQuery = suggestion.title;
+        const searchQuery = encodeURIComponent(rawQuery);
 
-        console.log(`📊 Canopy response status: ${searchResponse.status}`);
+        // Try REST first
+        const restUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=5`;
+        console.log(`📡 Canopy REST request URL: ${restUrl}`);
 
-        if (!searchResponse.ok) {
-          const errorText = await searchResponse.text();
-          console.log(`❌ Canopy search failed for "${suggestion.title}":`, searchResponse.status, searchResponse.statusText);
-          console.log('❌ Error response body:', errorText);
-          
-          // Fallback to search page only if API fails
-          return {
-            ...suggestion,
-            purchaseLinks: [
-              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
-            ]
-          };
+        let results: any[] | undefined;
+        try {
+          const restRes = await fetch(restUrl, {
+            method: 'GET',
+            headers: { 'API-KEY': canopyApiKey },
+          });
+          console.log(`📊 Canopy REST status: ${restRes.status}`);
+          if (restRes.ok) {
+            const restJson = await restRes.json();
+            results = restJson?.results;
+          } else {
+            const errText = await restRes.text();
+            console.log('❌ REST error body:', errText);
+          }
+        } catch (e) {
+          console.log('❌ REST call threw:', e);
         }
 
-        const searchData = await searchResponse.json();
-        console.log(`✅ Canopy search response for "${suggestion.title}":`, {
-          totalResults: searchData.results?.length || 0,
-          firstResult: searchData.results?.[0]?.title
-        });
-        
-        if (!searchData.results || searchData.results.length === 0) {
+        // If REST did not return usable results, try GraphQL as a fallback
+        if (!Array.isArray(results) || results.length === 0) {
+          const gqlEndpoint = 'https://graphql.canopyapi.co/';
+          const gqlQuery = `
+            query Search($q: String!, $country: String!) {
+              search(query: $q, country: $country, page: 1) {
+                results {
+                  asin
+                  title
+                  url
+                  image
+                  price { value currency }
+                  rating { stars count }
+                  badges
+                  brand
+                }
+              }
+            }
+          `;
+          console.log('🔄 Falling back to Canopy GraphQL search');
+          try {
+            const gqlRes = await fetch(gqlEndpoint, {
+              method: 'POST',
+              headers: {
+                'API-KEY': canopyApiKey,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ query: gqlQuery, variables: { q: rawQuery, country: 'FR' } }),
+            });
+            console.log(`📊 Canopy GraphQL status: ${gqlRes.status}`);
+            if (gqlRes.ok) {
+              const gqlJson = await gqlRes.json();
+              const gqlResults = gqlJson?.data?.search?.results ?? [];
+              // Normalize to the REST shape expected by our scoring function
+              results = gqlResults.map((r: any) => ({
+                asin: r.asin,
+                title: r.title,
+                price_current: r?.price?.value,
+                price: r?.price?.value,
+                rating: r?.rating?.stars,
+                review_count: r?.rating?.count,
+                image: r?.image,
+                availability: Array.isArray(r?.badges) && r.badges.includes('In Stock') ? 'In Stock' : 'Unknown',
+                is_prime: Array.isArray(r?.badges) && r.badges.includes('Prime'),
+                brand: r?.brand,
+              }));
+            } else {
+              const errText = await gqlRes.text();
+              console.log('❌ GraphQL error body:', errText);
+            }
+          } catch (e) {
+            console.log('❌ GraphQL call threw:', e);
+          }
+        }
+
+        if (!Array.isArray(results) || results.length === 0) {
           console.log(`⚠️ No Amazon products found for "${suggestion.title}"`);
           return {
             ...suggestion,
@@ -166,6 +212,13 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
             ]
           };
         }
+
+        // Keep compatibility with the rest of the enrichment flow
+        const searchData = { results };
+        console.log(`✅ Canopy search response for "${suggestion.title}":`, {
+          totalResults: results.length,
+          firstResult: results?.[0]?.title
+        });
 
         // Pick the best matching product using our scoring algorithm
         const bestProduct = pickBestProduct(searchData.results, suggestion.title, suggestion.estimatedPrice);

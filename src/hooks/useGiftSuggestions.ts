@@ -67,6 +67,7 @@ export function useGiftSuggestions() {
       }
 
       setSuggestions(data.suggestions);
+      console.log('🔎 Suggestions received (debug):', data.suggestions.map((s: any) => ({ title: s.title, asin: s.amazonData?.asin, purchaseLinks: s.purchaseLinks })));
       
       toast({
         title: "Suggestions générées !",
