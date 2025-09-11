@@ -58,6 +58,9 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
     return 'text-muted-foreground';
   };
 
+  // Normalize confidence to a percentage (0-100)
+  const normalizeConfidence = (c: number) => (c > 1 ? Math.round(c) : Math.round(c * 100));
+
   if (upcomingEvents.length === 0) {
     return (
       <div className="text-center py-8">
@@ -165,8 +168,8 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                           <Badge variant="outline" className="text-xs">
                             {suggestion.category}
                           </Badge>
-                          <span className={`text-xs font-medium ${getConfidenceColor(suggestion.confidence * 100)}`}>
-                            {Math.round(suggestion.confidence * 100)}%
+                          <span className={`text-xs font-medium ${getConfidenceColor(normalizeConfidence(suggestion.confidence))}`}>
+                            {normalizeConfidence(suggestion.confidence)}%
                           </span>
                         </div>
                       </div>
@@ -174,21 +177,45 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                         {suggestion.description}
                       </p>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-success">
-                          ~{suggestion.estimatedPrice}€
-                        </span>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            const searchQuery = encodeURIComponent(suggestion.title);
-                            window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
-                          }}
-                          className="hover:bg-primary hover:text-white transition-colors"
-                        >
-                          <ShoppingCart className="h-3 w-3 mr-1" />
-                          Acheter sur Amazon
-                        </Button>
+                        <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const q = encodeURIComponent(suggestion.title);
+                              window.open(`https://www.google.com/search?tbm=shop&q=${q}`, '_blank');
+                            }}
+                            className="text-xs"
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            Google Shopping
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const q = encodeURIComponent(suggestion.title);
+                              window.open(`https://www.amazon.fr/s?k=${q}`, '_blank');
+                            }}
+                            className="text-xs"
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            Amazon
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const q = encodeURIComponent(suggestion.title);
+                              window.open(`https://www.fnac.com/SearchResult/ResultList.aspx?Search=${q}`, '_blank');
+                            }}
+                            className="text-xs"
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            Fnac
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
