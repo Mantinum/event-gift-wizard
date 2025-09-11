@@ -62,167 +62,125 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   art: ['Art', 'Loisirs créatifs'],
 };
 
-// Scoring function for Amazon search results
-interface Hit {
-  title: string;
-  brand?: string;
-  asin?: string;
-  price?: number;
-  url?: string;
-}
-
-function scoreHit(hit: Hit, expectedBrand?: string, targetPrice?: number, queryTokens: string[] = []): number {
-  const t = (hit.title || "").toLowerCase();
-  
-  // Brand scoring - more generous
-  let brandScore = 0.5;
-  if (expectedBrand) {
-    const brand = expectedBrand.toLowerCase();
-    if (t.includes(brand) || hit.brand?.toLowerCase() === brand) {
-      brandScore = 1.0;
-    } else if (t.includes(brand.substring(0, 4)) && brand.length > 4) {
-      brandScore = 0.7; // Partial brand match
-    }
-  }
-
-  // Price scoring - more forgiving
-  let priceScore = 0.5;
-  const price = hit.price ?? 0;
-  if (targetPrice && price > 0) {
-    const priceDiff = Math.abs(price - targetPrice);
-    const tolerance = Math.max(20, targetPrice * 0.5); // More generous tolerance
-    priceScore = Math.max(0.2, 1 - (priceDiff / tolerance));
-  }
-
-  // Keyword scoring - more flexible
-  let kwMatch = 0.5;
-  const kw = queryTokens.filter(k => k.length > 2);
-  if (kw.length > 0) {
-    const matches = kw.reduce((acc, k) => {
-      const keyword = k.toLowerCase();
-      // Exact match or partial match (for longer words)
-      if (t.includes(keyword)) return acc + 1;
-      if (keyword.length > 4 && t.includes(keyword.substring(0, 4))) return acc + 0.5;
-      return acc;
-    }, 0);
-    kwMatch = matches / kw.length;
-  }
-
-  const score = 0.4 * brandScore + 0.3 * priceScore + 0.3 * kwMatch;
-  console.log(`📊 Scoring "${hit.title?.substring(0, 30)}": brand=${brandScore.toFixed(2)}, price=${priceScore.toFixed(2)}, keywords=${kwMatch.toFixed(2)} => ${score.toFixed(2)}`);
-  
-  return score;
-}
-
-// Sleep function for retry backoff
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Multi-strategy Amazon search with orchestration (SIMPLIFIED VERSION)
+// Simplified Amazon search with detailed debugging
 async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiKey: string): Promise<any> {
-  console.log(`🎯 Simplified Canopy search for: "${suggestion.title}"`);
+  console.log(`🎯 DEBUG: Starting search for: "${suggestion.title}"`);
   
   if (!canopyApiKey) {
-    console.log('❌ No Canopy API key available');
-    return null;
+    console.log('❌ DEBUG: No Canopy API key available');
+    return buildFallbackAmazonData(suggestion);
   }
 
   try {
-    const targetPrice = suggestion.estimatedPrice;
-    const expectedBrand = suggestion.brand;
-    const queries = [
-      suggestion.canonical_name || suggestion.title,
-      ...(suggestion.search_queries || [suggestion.title]),
-      expectedBrand ? expectedBrand + ' ' + suggestion.title.split(' ').slice(0, 3).join(' ') : suggestion.title
-    ].filter(Boolean);
-
-    console.log(`🔍 Search queries: ${JSON.stringify(queries.slice(0, 2))}`);
-
-    // Try first query only for now
-    const query = queries[0];
-    if (query && query.length > 2) {
-      console.log(`🔍 Searching: "${query}"`);
-      const results = await searchCanopyWithRetry(query, canopyApiKey, 'simple');
+    // Use canonical name or title
+    const searchTerm = suggestion.canonical_name || suggestion.title;
+    console.log(`🔍 DEBUG: Search term: "${searchTerm}"`);
+    
+    const results = await searchCanopyWithDebug(searchTerm, canopyApiKey);
+    
+    if (results.length > 0) {
+      console.log(`✅ DEBUG: Found ${results.length} results from Canopy`);
       
-      if (results.length > 0) {
-        console.log(`✅ Found ${results.length} results`);
+      // Log all results to see structure
+      results.forEach((result, index) => {
+        console.log(`🔍 DEBUG: Result ${index + 1}:`, {
+          title: result?.title?.substring(0, 60),
+          asin: result?.asin,
+          ASIN: result?.ASIN,
+          productId: result?.productId,
+          product_id: result?.product_id,
+          id: result?.id,
+          url: result?.url,
+          price: result?.price,
+          hasAnyId: !!(result?.asin || result?.ASIN || result?.productId || result?.product_id)
+        });
+      });
+      
+      // Look for any result with an ASIN-like field
+      const resultWithAsin = results.find((hit: any) => 
+        hit?.asin || hit?.ASIN || hit?.productId || hit?.product_id
+      );
+      
+      if (resultWithAsin) {
+        // Normalize ASIN field
+        const asin = resultWithAsin.asin || resultWithAsin.ASIN || resultWithAsin.productId || resultWithAsin.product_id;
+        console.log(`✅ DEBUG: Found ASIN: ${asin}`);
         
-        // Take first result with ASIN
-        const resultWithAsin = results.find((hit: any) => hit.asin);
-        if (resultWithAsin) {
-          console.log(`✅ Found product with ASIN: ${resultWithAsin.asin}`);
-          return buildAmazonData(resultWithAsin, 'exact');
-        }
-        
-        // Or take first result
-        const firstResult = results[0];
-        if (firstResult) {
-          console.log(`✅ Using first result: ${firstResult.title?.substring(0, 50)}`);
-          return buildAmazonData(firstResult, 'relaxed');
-        }
+        return {
+          asin,
+          rating: resultWithAsin.rating,
+          reviewCount: resultWithAsin.review_count || resultWithAsin.reviewCount,
+          availability: resultWithAsin.availability,
+          prime: resultWithAsin.prime || resultWithAsin.isPrime,
+          actualPrice: resultWithAsin.price || resultWithAsin.actualPrice,
+          imageUrl: resultWithAsin.image_url || resultWithAsin.imageUrl || resultWithAsin.image,
+          productUrl: `https://www.amazon.fr/dp/${asin}`,
+          addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+          searchUrl: undefined,
+          matchType: 'exact'
+        };
+      } else {
+        console.log(`⚠️ DEBUG: No ASIN found in any result, using fallback`);
+        return buildFallbackAmazonData(suggestion);
       }
+    } else {
+      console.log(`⚠️ DEBUG: No results from Canopy, using fallback`);
+      return buildFallbackAmazonData(suggestion);
     }
-
-    console.log(`⚠️ No results found, using fallback`);
-    return buildFallbackAmazonData(suggestion);
     
   } catch (error) {
-    console.error(`❌ Error in searchCanopyAmazonAdvanced: ${error}`);
+    console.error(`❌ DEBUG: Error in searchCanopyAmazonAdvanced: ${error}`);
     return buildFallbackAmazonData(suggestion);
   }
 }
 
-// Search with retry logic and fallback to GraphQL
-async function searchCanopyWithRetry(query: string, canopyApiKey: string, variant: string): Promise<any[]> {
+// Search with detailed debugging
+async function searchCanopyWithDebug(query: string, canopyApiKey: string): Promise<any[]> {
   const cleanQuery = query.replace(/[^\w\s\-àáâãäåæçèéêëìíîïñòóôõöøùúûüýÿ]/g, ' ').trim();
-  if (cleanQuery.length < 3) return [];
-
-  const searchQuery = encodeURIComponent(cleanQuery);
-  const maxRetries = 3;
-  const backoffDelays = [200, 500, 1200];
-
-  // Try REST API with retries
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
-      console.log(`📡 Canopy REST (${variant}, attempt ${i + 1}): ${restUrl}`);
-
-      const response = await fetch(restUrl, {
-        headers: {
-          'Authorization': `Bearer ${canopyApiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log(`📊 Canopy REST status: ${response.status}`);
-
-      if (response.ok) {
-        const data = await response.json();
-        const results = data.results || data.products || [];
-        if (results.length > 0) {
-          console.log(`✅ REST success: ${results.length} results`);
-          return results;
-        }
-      } else if (response.status === 500 && i < maxRetries - 1) {
-        console.log(`⏳ Retrying after ${backoffDelays[i]}ms...`);
-        await sleep(backoffDelays[i]);
-        continue;
-      } else {
-        const errorText = await response.text();
-        console.log(`❌ REST error: ${errorText}`);
-        break;
-      }
-    } catch (error) {
-      console.log(`❌ REST request failed (attempt ${i + 1}): ${error}`);
-      if (i < maxRetries - 1) {
-        await sleep(backoffDelays[i]);
-      }
-    }
+  console.log(`🔍 DEBUG: Cleaned query: "${cleanQuery}"`);
+  
+  if (cleanQuery.length < 3) {
+    console.log('❌ DEBUG: Query too short');
+    return [];
   }
 
-  // Fallback to GraphQL
-  console.log(`🔄 Falling back to Canopy GraphQL for ${variant}`);
+  const searchQuery = encodeURIComponent(cleanQuery);
+  
+  // Try REST API first with detailed logging
+  try {
+    const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
+    console.log(`📡 DEBUG: Canopy REST URL: ${restUrl}`);
+
+    const response = await fetch(restUrl, {
+      headers: {
+        'Authorization': `Bearer ${canopyApiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log(`📊 DEBUG: REST response status: ${response.status}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`🔍 DEBUG: Full REST response:`, JSON.stringify(data, null, 2));
+      
+      const results = data.results || data.products || data.items || data.data || [];
+      console.log(`📊 DEBUG: Results array length: ${results.length}`);
+      
+      if (results.length > 0) {
+        console.log(`🔍 DEBUG: First result full structure:`, JSON.stringify(results[0], null, 2));
+        return results;
+      }
+    } else {
+      const errorText = await response.text();
+      console.log(`❌ DEBUG: REST error: ${errorText}`);
+    }
+  } catch (error) {
+    console.log(`❌ DEBUG: REST request failed: ${error}`);
+  }
+
+  // Fallback to GraphQL with detailed logging
+  console.log(`🔄 DEBUG: Falling back to GraphQL`);
   try {
     const graphqlQuery = `
       query SearchAmazon($searchTerm: String!, $domain: String!) {
@@ -258,74 +216,59 @@ async function searchCanopyWithRetry(query: string, canopyApiKey: string, varian
       })
     });
 
-    console.log(`📊 Canopy GraphQL status: ${graphqlResponse.status}`);
+    console.log(`📊 DEBUG: GraphQL response status: ${graphqlResponse.status}`);
 
     if (graphqlResponse.ok) {
       const graphqlData = await graphqlResponse.json();
+      console.log(`🔍 DEBUG: Full GraphQL response:`, JSON.stringify(graphqlData, null, 2));
+      
       const results = graphqlData.data?.amazon_search?.results || [];
-      console.log(`✅ GraphQL success: ${results.length} results`);
-      return results;
+      console.log(`📊 DEBUG: GraphQL results length: ${results.length}`);
+      
+      if (results.length > 0) {
+        console.log(`🔍 DEBUG: GraphQL first result:`, JSON.stringify(results[0], null, 2));
+        return results;
+      }
     }
   } catch (error) {
-    console.error(`❌ GraphQL fallback failed: ${error}`);
+    console.error(`❌ DEBUG: GraphQL fallback failed: ${error}`);
   }
 
   return [];
 }
 
-// Build Amazon data object for successful matches
-function buildAmazonData(hit: any, matchType: string): any {
-  const asin = hit.asin;
-  console.log(`🔗 Building Amazon data for ASIN: ${asin}, Match type: ${matchType}`);
-  console.log(`📊 Product details: ${hit.title?.substring(0, 50)}..., Price: ${hit.price}`);
-  
-  return {
-    asin,
-    rating: hit.rating,
-    reviewCount: hit.review_count || hit.reviewCount,
-    availability: hit.availability,
-    prime: hit.prime || hit.isPrime,
-    actualPrice: hit.price || hit.actualPrice,
-    imageUrl: hit.image_url || hit.imageUrl || hit.image,
-    productUrl: asin ? `https://www.amazon.fr/dp/${asin}` : hit.url,
-    addToCartUrl: asin ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1` : undefined,
-    searchUrl: undefined,
-    matchType
-  };
-}
-
 // Build fallback Amazon data for search-only
 function buildFallbackAmazonData(suggestion: GiftSuggestion): any {
   const searchQuery = suggestion.canonical_name || suggestion.title;
+  console.log(`🔍 DEBUG: Building fallback search URL for: "${searchQuery}"`);
+  
   return {
     searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
     matchType: 'search'
   };
 }
 
-// Enrich suggestions with advanced Canopy Amazon search
+// Enrich suggestions with Canopy Amazon search
 async function enrichWithCanopyAmazon(suggestions: GiftSuggestion[], canopyApiKey: string): Promise<GiftSuggestion[]> {
-  console.log(`🔑 CANOPY_API_KEY env var check: ${!!canopyApiKey}`);
-  console.log(`📊 Number of suggestions to enrich: ${suggestions.length}`);
-  console.log(`🔄 Starting advanced Canopy enrichment process...`);
+  console.log(`🔑 DEBUG: CANOPY_API_KEY available: ${!!canopyApiKey}`);
+  console.log(`📊 DEBUG: Processing ${suggestions.length} suggestions`);
 
   if (!canopyApiKey) {
-    console.log('❌ No Canopy API key available for enrichment');
+    console.log('❌ DEBUG: No Canopy API key available for enrichment');
     return suggestions;
   }
 
   const enrichedSuggestions = await Promise.all(
-    suggestions.map(async (suggestion) => {
+    suggestions.map(async (suggestion, index) => {
       try {
-        console.log(`🔍 Processing suggestion: "${suggestion.title}"`);
-        console.log(`📊 Brand: ${suggestion.brand}, Canonical: ${suggestion.canonical_name}`);
-        console.log(`🔍 Search queries: ${JSON.stringify(suggestion.search_queries)}`);
+        console.log(`🔍 DEBUG: Processing suggestion ${index + 1}: "${suggestion.title}"`);
+        console.log(`📊 DEBUG: Brand: ${suggestion.brand}, Canonical: ${suggestion.canonical_name}`);
         
         const amazonData = await searchCanopyAmazonAdvanced(suggestion, canopyApiKey);
         
         if (amazonData) {
           suggestion.amazonData = amazonData;
-          console.log(`✅ Enriched "${suggestion.title}" - Match type: ${amazonData.matchType}, ASIN: ${amazonData.asin || 'N/A'}`);
+          console.log(`✅ DEBUG: Enriched "${suggestion.title}" - Match type: ${amazonData.matchType}, ASIN: ${amazonData.asin || 'N/A'}`);
           
           // Update purchase links based on match type
           if (amazonData.asin) {
@@ -338,16 +281,16 @@ async function enrichWithCanopyAmazon(suggestions: GiftSuggestion[], canopyApiKe
             suggestion.purchaseLinks.push(amazonData.searchUrl);
           }
         } else {
-          console.log(`⚠️ No Amazon data found for "${suggestion.title}"`);
+          console.log(`⚠️ DEBUG: No Amazon data found for "${suggestion.title}"`);
         }
       } catch (error) {
-        console.error(`❌ Error enriching suggestion "${suggestion.title}":`, error);
+        console.error(`❌ DEBUG: Error enriching suggestion "${suggestion.title}":`, error);
       }
       return suggestion;
     })
   );
 
-  console.log(`✅ Advanced Canopy enrichment completed. Suggestions processed: ${enrichedSuggestions.length}`);
+  console.log(`✅ DEBUG: Canopy enrichment completed. Suggestions processed: ${enrichedSuggestions.length}`);
   return enrichedSuggestions;
 }
 
@@ -372,10 +315,10 @@ serve(async (req) => {
   }
 
   try {
-    console.log('🚀 Starting suggest-gifts function...');
+    console.log('🚀 DEBUG: Starting suggest-gifts function...');
     
     const requestBody = await req.json();
-    console.log('📝 Request body received:', JSON.stringify(requestBody));
+    console.log('📝 DEBUG: Request body received:', JSON.stringify(requestBody));
     
     const { personId, eventType, budget, additionalContext }: GiftSuggestionRequest = requestBody;
 
@@ -383,12 +326,12 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
-    console.log('🔑 Environment check - Supabase URL available:', !!supabaseUrl);
-    console.log('🔑 Environment check - Supabase Key available:', !!supabaseKey);
+    console.log('🔑 DEBUG: Environment check - Supabase URL available:', !!supabaseUrl);
+    console.log('🔑 DEBUG: Environment check - Supabase Key available:', !!supabaseKey);
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('📝 Person query starting...');
+    console.log('📝 DEBUG: Person query starting...');
     // Get person details from database
     const { data: person, error: personError } = await supabase
       .from('persons')
@@ -396,10 +339,10 @@ serve(async (req) => {
       .eq('id', personId)
       .single();
 
-    console.log('📝 Person query result:', { person: person?.name, error: personError });
+    console.log('📝 DEBUG: Person query result:', { person: person?.name, error: personError });
 
     if (personError || !person) {
-      console.error('❌ Person not found:', personError);
+      console.error('❌ DEBUG: Person not found:', personError);
       throw new Error('Personne non trouvee');
     }
 
@@ -438,7 +381,7 @@ serve(async (req) => {
       // Sensible defaults if no interests mapped
       allowedCategories.push('Mode', 'Bijoux', 'Décoration', 'Beauté');
     }
-    console.log('Allowed categories derived from interests:', allowedCategories);
+    console.log('DEBUG: Allowed categories derived from interests:', allowedCategories);
 
     // Generate AI suggestions using OpenRouter
     const openrouterApiKey = Deno.env.get('OPENROUTER_API_KEY');
@@ -504,7 +447,7 @@ serve(async (req) => {
 
     Génère 3 PRODUITS CONCRETS dans des CATÉGORIES DIFFÉRENTES parmi les catégories AUTORISÉES ci-dessus et dans le budget de ${budget}€.`;
 
-    console.log('Calling OpenRouter API for gift suggestions...');
+    console.log('DEBUG: Calling OpenRouter API for gift suggestions...');
 
     if (!openrouterApiKey) {
       throw new Error('OPENROUTER_API_KEY non configurée');
@@ -529,12 +472,12 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`OpenRouter API error (${response.status}):`, errorText);
+      console.error(`DEBUG: OpenRouter API error (${response.status}):`, errorText);
       throw new Error(`Erreur API OpenRouter: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('OpenRouter response:', JSON.stringify(data, null, 2));
+    console.log('DEBUG: OpenRouter response:', JSON.stringify(data, null, 2));
 
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
@@ -545,8 +488,8 @@ serve(async (req) => {
     try {
       parsedResponse = JSON.parse(content);
     } catch (parseError) {
-      console.error('Erreur parsing JSON:', parseError);
-      console.error('Contenu reçu:', content);
+      console.error('DEBUG: Erreur parsing JSON:', parseError);
+      console.error('DEBUG: Contenu reçu:', content);
       throw new Error('Format de réponse invalide');
     }
 
@@ -559,7 +502,10 @@ serve(async (req) => {
     // Enrich suggestions with Canopy Amazon data
     const canopyApiKey = Deno.env.get('CANOPY_API_KEY');
     if (canopyApiKey) {
+      console.log('DEBUG: Starting Canopy enrichment...');
       suggestions = await enrichWithCanopyAmazon(suggestions, canopyApiKey);
+    } else {
+      console.log('DEBUG: No Canopy API key, skipping enrichment');
     }
 
     return new Response(
@@ -574,9 +520,9 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('❌ Error in suggest-gifts function:', error);
-    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack available');
-    console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+    console.error('❌ DEBUG: Error in suggest-gifts function:', error);
+    console.error('❌ DEBUG: Error stack:', error instanceof Error ? error.stack : 'No stack available');
+    console.error('❌ DEBUG: Error message:', error instanceof Error ? error.message : String(error));
     
     return new Response(
       JSON.stringify({
