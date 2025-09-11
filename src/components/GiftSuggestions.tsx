@@ -234,6 +234,28 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                 <CardDescription>
                   {suggestion.description}
                 </CardDescription>
+                
+                {/* Amazon data enrichment */}
+                {suggestion.amazonData && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {suggestion.amazonData.rating && (
+                      <Badge variant="secondary" className="text-xs">
+                        ⭐ {suggestion.amazonData.rating}/5
+                        {suggestion.amazonData.reviewCount && ` (${suggestion.amazonData.reviewCount} avis)`}
+                      </Badge>
+                    )}
+                    {suggestion.amazonData.prime && (
+                      <Badge variant="outline" className="text-xs text-blue-600 border-blue-600">
+                        Prime ✓
+                      </Badge>
+                    )}
+                    {suggestion.amazonData.availability && suggestion.amazonData.availability !== 'Unknown' && (
+                      <Badge variant={suggestion.amazonData.availability.toLowerCase().includes('stock') ? 'default' : 'destructive'} className="text-xs">
+                        {suggestion.amazonData.availability}
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </CardHeader>
 
               <CardContent className="pt-0">

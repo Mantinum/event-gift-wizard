@@ -11,6 +11,14 @@ export interface GiftSuggestion {
   category: string;
   alternatives: string[];
   purchaseLinks: string[];
+  amazonData?: {
+    asin?: string;
+    rating?: number;
+    reviewCount?: number;
+    availability?: string;
+    prime?: boolean;
+    actualPrice?: number;
+  };
 }
 
 export interface GiftSuggestionRequest {

@@ -176,6 +176,28 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                       <p className="text-sm text-muted-foreground mb-2">
                         {suggestion.description}
                       </p>
+                      
+                      {/* Amazon data enrichment */}
+                      {suggestion.amazonData && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {suggestion.amazonData.rating && (
+                            <Badge variant="secondary" className="text-xs">
+                              ⭐ {suggestion.amazonData.rating}/5
+                              {suggestion.amazonData.reviewCount && ` (${suggestion.amazonData.reviewCount} avis)`}
+                            </Badge>
+                          )}
+                          {suggestion.amazonData.prime && (
+                            <Badge variant="outline" className="text-xs text-blue-600 border-blue-600">
+                              Prime ✓
+                            </Badge>
+                          )}
+                          {suggestion.amazonData.availability && suggestion.amazonData.availability !== 'Unknown' && (
+                            <Badge variant={suggestion.amazonData.availability.toLowerCase().includes('stock') ? 'default' : 'destructive'} className="text-xs">
+                              {suggestion.amazonData.availability}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
                         <div className="flex flex-wrap justify-end gap-2">
