@@ -73,19 +73,45 @@ interface Hit {
 
 function scoreHit(hit: Hit, expectedBrand?: string, targetPrice?: number, queryTokens: string[] = []): number {
   const t = (hit.title || "").toLowerCase();
-  const brandScore = expectedBrand ? 
-    (t.includes(expectedBrand.toLowerCase()) || hit.brand?.toLowerCase() === expectedBrand.toLowerCase() ? 1 : 0) : 0.5;
+  
+  // Brand scoring - more generous
+  let brandScore = 0.5;
+  if (expectedBrand) {
+    const brand = expectedBrand.toLowerCase();
+    if (t.includes(brand) || hit.brand?.toLowerCase() === brand) {
+      brandScore = 1.0;
+    } else if (t.includes(brand.substring(0, 4)) && brand.length > 4) {
+      brandScore = 0.7; // Partial brand match
+    }
+  }
 
+  // Price scoring - more forgiving
+  let priceScore = 0.5;
   const price = hit.price ?? 0;
-  const priceScore = targetPrice ? 
-    1 / (1 + Math.abs(price - targetPrice) / Math.max(10, targetPrice * 0.3)) : 0.5;
+  if (targetPrice && price > 0) {
+    const priceDiff = Math.abs(price - targetPrice);
+    const tolerance = Math.max(20, targetPrice * 0.5); // More generous tolerance
+    priceScore = Math.max(0.2, 1 - (priceDiff / tolerance));
+  }
 
-  // Simple bag-of-words matching
+  // Keyword scoring - more flexible
+  let kwMatch = 0.5;
   const kw = queryTokens.filter(k => k.length > 2);
-  const kwMatch = kw.length ? 
-    kw.reduce((acc, k) => acc + (t.includes(k.toLowerCase()) ? 1 : 0), 0) / kw.length : 0.5;
+  if (kw.length > 0) {
+    const matches = kw.reduce((acc, k) => {
+      const keyword = k.toLowerCase();
+      // Exact match or partial match (for longer words)
+      if (t.includes(keyword)) return acc + 1;
+      if (keyword.length > 4 && t.includes(keyword.substring(0, 4))) return acc + 0.5;
+      return acc;
+    }, 0);
+    kwMatch = matches / kw.length;
+  }
 
-  return 0.5 * brandScore + 0.3 * priceScore + 0.2 * kwMatch;
+  const score = 0.4 * brandScore + 0.3 * priceScore + 0.3 * kwMatch;
+  console.log(`📊 Scoring "${hit.title?.substring(0, 30)}": brand=${brandScore.toFixed(2)}, price=${priceScore.toFixed(2)}, keywords=${kwMatch.toFixed(2)} => ${score.toFixed(2)}`);
+  
+  return score;
 }
 
 // Sleep function for retry backoff
@@ -124,7 +150,7 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
       })).sort((a: any, b: any) => b.score - a.score);
       
       console.log(`📊 Top result score: ${scored[0]?.score || 0}`);
-      if (scored[0]?.score >= 0.62) {
+      if (scored[0]?.score >= 0.45) { // Lowered threshold
         console.log(`✅ Exact match found with score ${scored[0].score}`);
         return buildAmazonData(scored[0], 'exact');
       }
@@ -149,7 +175,7 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
         })).sort((a: any, b: any) => b.score - a.score);
         
         console.log(`📊 Top relaxed result score: ${scored[0]?.score || 0}`);
-        if (scored[0]?.score >= 0.62) {
+        if (scored[0]?.score >= 0.40) { // Lower threshold for relaxed
           console.log(`✅ Relaxed match found with score ${scored[0].score}`);
           return buildAmazonData(scored[0], 'relaxed');
         }
@@ -169,10 +195,41 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
       })).sort((a: any, b: any) => b.score - a.score);
       
       console.log(`📊 Top English result score: ${scored[0]?.score || 0}`);
-      if (scored[0]?.score >= 0.58) { // Slightly lower threshold for English
+      if (scored[0]?.score >= 0.35) { // Even lower threshold for English
         console.log(`✅ English match found with score ${scored[0].score}`);
         return buildAmazonData(scored[0], 'relaxed');
       }
+    }
+  }
+
+  // Strategy 4: Generic brand search (if brand is available)
+  if (expectedBrand && expectedBrand.length > 2) {
+    console.log(`🔍 Generic brand search: "${expectedBrand}"`);
+    const results = await searchCanopyWithRetry(expectedBrand, canopyApiKey, 'brand-only');
+    if (results.length > 0) {
+      const scored = results.map((hit: any) => ({
+        ...hit,
+        score: scoreHit(hit, expectedBrand, targetPrice, [expectedBrand])
+      })).sort((a: any, b: any) => b.score - a.score);
+      
+      console.log(`📊 Top brand result score: ${scored[0]?.score || 0}`);
+      if (scored[0]?.score >= 0.30) { // Very low threshold for brand-only
+        console.log(`✅ Brand match found with score ${scored[0].score}`);
+        return buildAmazonData(scored[0], 'relaxed');
+      }
+    }
+  }
+
+  // Strategy 5: Take any result with ASIN (last resort)
+  console.log(`🔍 Last resort: trying basic search`);
+  const basicQuery = suggestion.title.split(' ').slice(0, 3).join(' ');
+  const basicResults = await searchCanopyWithRetry(basicQuery, canopyApiKey, 'basic');
+  if (basicResults.length > 0) {
+    // Take the first result with an ASIN, regardless of score
+    const resultWithAsin = basicResults.find((hit: any) => hit.asin);
+    if (resultWithAsin) {
+      console.log(`✅ Last resort match found with ASIN: ${resultWithAsin.asin}`);
+      return buildAmazonData(resultWithAsin, 'relaxed');
     }
   }
 
@@ -283,14 +340,17 @@ async function searchCanopyWithRetry(query: string, canopyApiKey: string, varian
 // Build Amazon data object for successful matches
 function buildAmazonData(hit: any, matchType: string): any {
   const asin = hit.asin;
+  console.log(`🔗 Building Amazon data for ASIN: ${asin}, Match type: ${matchType}`);
+  console.log(`📊 Product details: ${hit.title?.substring(0, 50)}..., Price: ${hit.price}`);
+  
   return {
     asin,
     rating: hit.rating,
-    reviewCount: hit.review_count,
+    reviewCount: hit.review_count || hit.reviewCount,
     availability: hit.availability,
-    prime: hit.prime,
-    actualPrice: hit.price,
-    imageUrl: hit.image_url,
+    prime: hit.prime || hit.isPrime,
+    actualPrice: hit.price || hit.actualPrice,
+    imageUrl: hit.image_url || hit.imageUrl || hit.image,
     productUrl: asin ? `https://www.amazon.fr/dp/${asin}` : hit.url,
     addToCartUrl: asin ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1` : undefined,
     searchUrl: undefined,
