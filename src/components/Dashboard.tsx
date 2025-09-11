@@ -14,8 +14,7 @@ import {
   Sparkles,
   Wand2
 } from 'lucide-react';
-import { Event, Person, UpcomingPurchase } from '@/types';
-import { generateAIUpcomingPurchases } from '@/utils/giftAI';
+import { Event, Person } from '@/types';
 import AutoGiftSuggestions from './AutoGiftSuggestions';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -25,9 +24,21 @@ interface DashboardProps {
 }
 
 const Dashboard = ({ events, persons }: DashboardProps) => {
-  const upcomingPurchases = generateAIUpcomingPurchases(events, persons);
-  const totalBudget = upcomingPurchases.reduce((sum, purchase) => sum + purchase.budget, 0);
-  const reviewingPurchases = upcomingPurchases.filter(p => p.status === 'reviewing').length;
+  // Calculs pour les statistiques
+  const upcomingEvents = events.filter(event => {
+    const eventDate = new Date(event.date);
+    const today = new Date();
+    const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntil > 0 && daysUntil <= 30;
+  });
+  
+  const totalBudget = upcomingEvents.reduce((sum, event) => sum + event.budget, 0);
+  const urgentEvents = upcomingEvents.filter(event => {
+    const eventDate = new Date(event.date);
+    const today = new Date();
+    const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return daysUntil <= 3;
+  }).length;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -63,7 +74,7 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Achats planifiés</p>
-                <p className="text-2xl font-bold text-primary">{upcomingPurchases.length}</p>
+                <p className="text-2xl font-bold text-primary">{upcomingEvents.length}</p>
                 <p className="text-xs text-muted-foreground mt-1">Dans les 30 prochains jours</p>
               </div>
               <ShoppingCart className="h-8 w-8 text-primary" />
@@ -76,7 +87,7 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Urgents</p>
-                <p className="text-2xl font-bold text-warning">{reviewingPurchases}</p>
+                <p className="text-2xl font-bold text-warning">{urgentEvents}</p>
                 <p className="text-xs text-muted-foreground mt-1">≤ 3 jours restants</p>
               </div>
               <Clock className="h-8 w-8 text-warning" />
@@ -111,57 +122,6 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
         </Card>
       </div>
 
-      {/* Prochains événements */}
-      {upcomingPurchases.length > 0 && (
-        <Card className="shadow-card">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Gift className="h-5 w-5 text-primary" />
-              <span>Prochains événements à prévoir</span>
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Événements dans les 30 prochains jours avec suggestions de cadeaux
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {upcomingPurchases.slice(0, 6).map((purchase) => (
-              <div key={purchase.id} className="p-4 rounded-lg border border-border bg-card/30 hover:bg-card/50 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <h4 className="font-medium text-foreground">{purchase.personName}</h4>
-                      <span className="text-sm text-muted-foreground">•</span>
-                      <span className="text-sm text-muted-foreground">{purchase.eventTitle}</span>
-                    </div>
-                    <p className="text-sm font-medium text-primary mb-1">{purchase.suggestedGift}</p>
-                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                      <span className="flex items-center space-x-1">
-                        <Clock className="h-3 w-3" />
-                        <span>{purchase.daysUntil} jour{purchase.daysUntil > 1 ? 's' : ''}</span>
-                      </span>
-                      <span className="flex items-center space-x-1">
-                        <Euro className="h-3 w-3" />
-                        <span>{formatCurrency(purchase.budget)}</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="ml-4">
-                    {purchase.daysUntil <= 3 ? (
-                      <Badge variant="destructive" className="text-xs">
-                        Urgent
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">
-                        À prévoir
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Gift suggestions with OpenAI */}
       <Card className="shadow-card">
