@@ -65,104 +65,81 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
     return suggestions;
   }
 
-  console.log('Enriching suggestions with Canopy Amazon data...');
+  console.log('🔄 Starting Canopy enrichment process...');
+  console.log('🔑 API Key (first 10 chars):', canopyApiKey?.substring(0, 10) + '...');
 
   const enrichedSuggestions = await Promise.all(
     suggestions.map(async (suggestion) => {
       try {
         console.log(`🔍 Searching Canopy for: "${suggestion.title}"`);
         
-        // Search for the product on Amazon using Canopy REST API
+        // Search for the product on Amazon using Canopy API
         const searchQuery = encodeURIComponent(suggestion.title);
-        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=1`;
+        const searchUrl = `https://api.canopyapi.co/v1/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=1`;
         
         console.log(`📡 Canopy request URL: ${searchUrl}`);
+        console.log(`🔐 Using X-API-Key header`);
         
         const searchResponse = await fetch(searchUrl, {
           method: 'GET',
           headers: {
             'X-API-Key': canopyApiKey,
-            'Content-Type': 'application/json',
           },
         });
 
+        console.log(`📊 Canopy response status: ${searchResponse.status}`);
+
         if (!searchResponse.ok) {
-          console.log(`❌ Canopy search failed for "${suggestion.title}":`, searchResponse.status, searchResponse.statusText);
           const errorText = await searchResponse.text();
-          console.log('Error details:', errorText);
-          return suggestion;
+          console.log(`❌ Canopy search failed for "${suggestion.title}":`, searchResponse.status, searchResponse.statusText);
+          console.log('❌ Error response body:', errorText);
+          
+          // Return suggestion with enhanced Amazon search link
+          return {
+            ...suggestion,
+            purchaseLinks: [
+              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
+            ]
+          };
         }
 
         const searchData = await searchResponse.json();
         console.log(`✅ Canopy search response for "${suggestion.title}":`, JSON.stringify(searchData, null, 2));
         
-        if (!searchData.products || searchData.products.length === 0) {
+        if (!searchData.results || searchData.results.length === 0) {
           console.log(`⚠️ No Amazon products found for "${suggestion.title}"`);
-          return suggestion;
-        }
-
-        const product = searchData.products[0];
-
-        // Get detailed product information using the ASIN
-        const detailUrl = `https://rest.canopyapi.co/api/amazon/product?asin=${product.asin}&domain=amazon.fr`;
-        
-        const detailResponse = await fetch(detailUrl, {
-          method: 'GET',
-          headers: {
-            'API-KEY': canopyApiKey,
-          },
-        });
-
-        if (!detailResponse.ok) {
-          console.log(`Canopy detail failed for ASIN ${product.asin}:`, detailResponse.statusText);
           return {
             ...suggestion,
-            amazonData: {
-              asin: product.asin,
-              actualPrice: product.price || suggestion.estimatedPrice,
-            }
+            purchaseLinks: [
+              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
+            ]
           };
         }
 
-        const detailData = await detailResponse.json();
-
-        // Extract Amazon data
-        const amazonData = {
-          asin: product.asin,
-          rating: detailData.rating?.value || undefined,
-          reviewCount: detailData.rating?.count || undefined,
-          availability: detailData.availability || 'Unknown',
-          prime: detailData.prime || false,
-          actualPrice: product.price?.value || suggestion.estimatedPrice,
-        };
-
-        // Update purchase links with Amazon direct link
-        const updatedPurchaseLinks = [
-          `https://www.amazon.fr/dp/${product.asin}`,
-          ...suggestion.purchaseLinks.filter(link => !link.includes('amazon.fr'))
-        ].slice(0, 3);
-
-        // Update confidence based on Amazon data availability
-        let updatedConfidence = suggestion.confidence;
-        if (amazonData.rating && amazonData.rating >= 4.0) {
-          updatedConfidence = Math.min(1.0, updatedConfidence + 0.1);
-        }
-        if (amazonData.reviewCount && amazonData.reviewCount >= 100) {
-          updatedConfidence = Math.min(1.0, updatedConfidence + 0.05);
-        }
-
+        const product = searchData.results[0];
+        
         return {
           ...suggestion,
-          estimatedPrice: amazonData.actualPrice,
-          confidence: updatedConfidence,
-          amazonData,
-          purchaseLinks: updatedPurchaseLinks,
-          reasoning: `${suggestion.reasoning} • Enrichi avec données Amazon : ${amazonData.rating ? `Note ${amazonData.rating}/5` : ''} ${amazonData.reviewCount ? `(${amazonData.reviewCount} avis)` : ''} ${amazonData.prime ? '• Prime disponible' : ''}`
+          purchaseLinks: [product.url || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`],
+          amazonData: {
+            asin: product.asin,
+            rating: product.rating,
+            reviewCount: product.review_count,
+            availability: product.availability,
+            prime: product.is_prime,
+            actualPrice: product.price_current,
+          }
         };
 
+        
       } catch (error) {
         console.error(`❌ Error enriching suggestion "${suggestion.title}" with Canopy data:`, error);
-        return suggestion;
+        return {
+          ...suggestion,
+          purchaseLinks: [
+            `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
+          ]
+        };
       }
     })
   );
