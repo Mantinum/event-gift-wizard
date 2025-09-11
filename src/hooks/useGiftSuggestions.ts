@@ -18,6 +18,7 @@ export interface GiftSuggestion {
     availability?: string;
     prime?: boolean;
     actualPrice?: number;
+    imageUrl?: string;
   };
 }
 

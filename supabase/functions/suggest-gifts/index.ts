@@ -52,6 +52,56 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   art: ['Art', 'Loisirs créatifs'],
 };
 
+// Helper function to pick the best product from search results
+const pickBestProduct = (products: any[], expectedTitle: string, targetBudget?: number) => {
+  if (!products || products.length === 0) return null;
+  
+  const scored = products.map(product => {
+    // Score based on title similarity (simple word matching)
+    const titleWords = expectedTitle.toLowerCase().split(' ').filter(w => w.length > 2);
+    const productTitle = (product.title || '').toLowerCase();
+    const titleScore = titleWords.reduce((score, word) => {
+      return score + (productTitle.includes(word) ? 1 : 0);
+    }, 0) / Math.max(titleWords.length, 1);
+    
+    // Score based on budget proximity
+    const price = product.price_current || product.price || 0;
+    const budgetScore = targetBudget && price > 0 
+      ? 1 / (1 + Math.abs(price - targetBudget) / targetBudget)
+      : 0.5;
+    
+    // Score based on rating (if available)
+    const ratingScore = product.rating ? Math.min(product.rating / 5, 1) : 0.5;
+    
+    const totalScore = 0.5 * titleScore + 0.3 * budgetScore + 0.2 * ratingScore;
+    
+    return { product, score: totalScore, titleScore, budgetScore, ratingScore };
+  });
+  
+  scored.sort((a, b) => b.score - a.score);
+  console.log(`🎯 Product scoring for "${expectedTitle}":`, scored.map(s => ({
+    title: s.product.title,
+    score: s.score.toFixed(3),
+    titleScore: s.titleScore.toFixed(3),
+    budgetScore: s.budgetScore.toFixed(3),
+    ratingScore: s.ratingScore.toFixed(3),
+    price: s.product.price_current || s.product.price
+  })));
+  
+  return scored[0]?.product;
+};
+
+// Function to create Amazon links from ASIN
+const createAmazonLinks = (asin: string, title: string): string[] => {
+  if (!asin) return [];
+  
+  return [
+    `https://www.amazon.fr/dp/${asin}`, // Direct product page
+    `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`, // Add to cart
+    `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(title)}`, // Price comparison
+  ];
+};
+
 // Canopy API integration functions
 const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<GiftSuggestion[]> => {
   const canopyApiKey = Deno.env.get('CANOPY_API_KEY');
@@ -66,19 +116,17 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
   }
 
   console.log('🔄 Starting Canopy enrichment process...');
-  console.log('🔑 API Key (first 10 chars):', canopyApiKey?.substring(0, 10) + '...');
 
   const enrichedSuggestions = await Promise.all(
     suggestions.map(async (suggestion) => {
       try {
         console.log(`🔍 Searching Canopy for: "${suggestion.title}"`);
         
-        // Search for the product on Amazon using Canopy API
+        // Search for the product on Amazon using Canopy API with more results
         const searchQuery = encodeURIComponent(suggestion.title);
-        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=1`;
+        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=5`;
         
         console.log(`📡 Canopy request URL: ${searchUrl}`);
-        console.log(`🔐 Using API-KEY header`);
         
         const searchResponse = await fetch(searchUrl, {
           method: 'GET',
@@ -94,7 +142,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
           console.log(`❌ Canopy search failed for "${suggestion.title}":`, searchResponse.status, searchResponse.statusText);
           console.log('❌ Error response body:', errorText);
           
-          // Return suggestion with enhanced Amazon search link
+          // Fallback to search page only if API fails
           return {
             ...suggestion,
             purchaseLinks: [
@@ -104,7 +152,10 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         }
 
         const searchData = await searchResponse.json();
-        console.log(`✅ Canopy search response for "${suggestion.title}":`, JSON.stringify(searchData, null, 2));
+        console.log(`✅ Canopy search response for "${suggestion.title}":`, {
+          totalResults: searchData.results?.length || 0,
+          firstResult: searchData.results?.[0]?.title
+        });
         
         if (!searchData.results || searchData.results.length === 0) {
           console.log(`⚠️ No Amazon products found for "${suggestion.title}"`);
@@ -116,21 +167,42 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
           };
         }
 
-        const product = searchData.results[0];
+        // Pick the best matching product using our scoring algorithm
+        const bestProduct = pickBestProduct(searchData.results, suggestion.title, suggestion.estimatedPrice);
+        
+        if (!bestProduct || !bestProduct.asin) {
+          console.log(`⚠️ No suitable product found for "${suggestion.title}"`);
+          return {
+            ...suggestion,
+            purchaseLinks: [
+              `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`
+            ]
+          };
+        }
+
+        console.log(`🎯 Selected best product for "${suggestion.title}":`, {
+          title: bestProduct.title,
+          asin: bestProduct.asin,
+          price: bestProduct.price_current || bestProduct.price,
+          rating: bestProduct.rating
+        });
+        
+        // Create proper Amazon links using ASIN
+        const amazonLinks = createAmazonLinks(bestProduct.asin, suggestion.title);
         
         return {
           ...suggestion,
-          purchaseLinks: [product.url || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=nb_sb_noss`],
+          purchaseLinks: amazonLinks,
           amazonData: {
-            asin: product.asin,
-            rating: product.rating,
-            reviewCount: product.review_count,
-            availability: product.availability,
-            prime: product.is_prime,
-            actualPrice: product.price_current,
+            asin: bestProduct.asin,
+            rating: bestProduct.rating,
+            reviewCount: bestProduct.review_count,
+            availability: bestProduct.availability,
+            prime: bestProduct.is_prime,
+            actualPrice: bestProduct.price_current || bestProduct.price,
+            imageUrl: bestProduct.image || bestProduct.image_url,
           }
         };
-
         
       } catch (error) {
         console.error(`❌ Error enriching suggestion "${suggestion.title}" with Canopy data:`, error);
