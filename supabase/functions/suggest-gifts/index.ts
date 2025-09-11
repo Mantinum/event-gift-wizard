@@ -109,34 +109,36 @@ serve(async (req) => {
     // Generate AI suggestions using OpenRouter
     const openrouterApiKey = Deno.env.get('OPENROUTER_API_KEY');
 
-    const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
-    Analyse le profil et génère 3 suggestions de PRODUITS TROUVABLES facilement en ligne.
+    const systemPrompt = `Tu es un expert FR en cadeaux personnalisés pour le marché français. Ta mission: proposer 3 PRODUITS CONCRETS, avec marque/modèle quand c'est pertinent, achetables en ligne en France.
 
-    CONTRAINTE CATEGORIES: TU DOIS RESTREINDRE les suggestions aux catégories suivantes UNIQUEMENT: ${allowedCategories.join(', ')}. N'ajoute aucune catégorie extérieure.
+    RÈGLES STRICTES:
+    - CATEGORIES AUTORISÉES UNIQUEMENT: ${allowedCategories.join(', ')} (n'en sors jamais)
+    - BUDGET: chaque produit doit coûter <= budget (en EUR). Si au-dessus, choisis une variante/format qui rentre dans le budget.
+    - DIVERSITÉ: 3 catégories différentes (mais toutes autorisées).
+    - PRÉCISION: évite les intitulés génériques. Préfère des noms précis (ex: "ghd Gold Styler", "Lampe Fatboy Edison Medium").
+    - MARCHANDS FR: liens cliquables vers des pages d'achat FR (Amazon.fr, Fnac, Darty, Decathlon, Sephora, etc.) ou sinon un lien Google Shopping.
 
-    CONTRAINTE BUDGET: toutes les suggestions doivent respecter STRICTEMENT le budget (prix <= budget). Si un produit dépasse, propose automatiquement une alternative moins chère qui rentre dans le budget.
-
-    CONTRAINTE DIVERSITÉ: Les 3 suggestions DOIVENT être dans des catégories DIFFÉRENTES (mais toujours parmi les catégories autorisées).
-
-    IMPORTANT pour les noms de produits et recherche Amazon:
-    - Utilise des noms GÉNÉRIQUES pour les "title" (ex: "Crème hydratante anti-âge" au lieu de "Crème La Roche-Posay Toleriane")
-    - Dans "purchaseLinks", mets des TERMES DE RECHERCHE AMAZON optimisés (ex: "creme hydratante anti age", "serum visage")
-    - Évite les noms de marques spécifiques sauf si très connues (Chanel, Dior)
-    - Privilégie les termes que les gens tapent réellement dans Amazon
-
-    Structure attendue pour chaque suggestion:
+    FORMAT EXACT (JSON uniquement, pas de texte hors JSON):
     {
-      "title": "Nom générique du produit",
-      "description": "Description attrayante",
-      "estimatedPrice": prix_en_nombre,
-      "confidence": score_de_0_à_100,
-      "reasoning": "Pourquoi c'est adapté à cette personne",
-      "category": "catégorie_autorisée",
-      "alternatives": ["Alternative 1", "Alternative 2"],
-      "purchaseLinks": ["terme recherche amazon 1", "terme recherche amazon 2"]
-    }
+      "suggestions": [
+        {
+          "title": "Nom produit précis (marque/modèle si applicable)",
+          "description": "Description concise et convaincante",
+          "estimatedPrice": 0,
+          "confidence": 0,
+          "reasoning": "Pourquoi ce produit correspond au profil et au budget",
+          "category": "Catégorie autorisée",
+          "alternatives": ["Variante 1", "Variante 2"],
+          "purchaseLinks": [
+            "https://...", // Lien d'achat FR ou Google Shopping
+            "https://..."
+          ]
+        },
+        { ... },
+        { ... }
+      ]
+    }`;
 
-    Réponds UNIQUEMENT avec un JSON valide ayant "suggestions" (array de 3 objets).`;
 
     const userPrompt = `
     PROFIL DE LA PERSONNE :
@@ -262,7 +264,7 @@ serve(async (req) => {
           reasoning: `Suggestion fallback adaptée à l'âge (${personContext.age} ans) et aux intérêts (${cat}) - Budget: ${minTarget}€ - ${budget}€`,
           category: cat,
           alternatives: ['Variante de la même gamme', 'Modèle précédent pour ajuster le prix'],
-          purchaseLinks: p.searchTerms,
+          purchaseLinks: [p.title, `${p.title} ${cat}`],
         };
       });
     };
@@ -290,9 +292,9 @@ serve(async (req) => {
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
             ],
-            max_tokens: 1200,
-            temperature: 0.8,
-            top_p: 0.9,
+            max_tokens: 900,
+            temperature: 0.3,
+            top_p: 0.8,
           }),
         });
 
@@ -346,10 +348,30 @@ serve(async (req) => {
       return mapped.filter((s) => allowedNorm.has(normalize(s.category)));
     };
 
+    const normalizePurchaseLinks = (arr: GiftSuggestion[] | null | undefined): GiftSuggestion[] => {
+      const safe = Array.isArray(arr) ? arr : [];
+      const toUrls = (query: string): string[] => [
+        `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(query)}`,
+        `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`,
+        `https://www.fnac.com/SearchResult/ResultList.aspx?Search=${encodeURIComponent(query)}`,
+      ];
+      return safe.map((s) => {
+        const raw = Array.isArray(s.purchaseLinks) ? s.purchaseLinks.filter(Boolean) : [];
+        const baseQuery = raw[0] || `${s.title} ${s.category}`;
+        const urlCandidates = [
+          ...raw.filter((x) => typeof x === 'string' && x.startsWith('http')).slice(0, 3),
+          ...toUrls(baseQuery)
+        ];
+        const unique = Array.from(new Set(urlCandidates)).slice(0, 3);
+        return { ...s, purchaseLinks: unique };
+      });
+    };
+
     suggestions = enforceBudget(suggestions, budget);
     suggestions = filterAndAdjustCategories(suggestions);
+    suggestions = normalizePurchaseLinks(suggestions);
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      suggestions = createFallbackSuggestions();
+      suggestions = normalizePurchaseLinks(createFallbackSuggestions());
     }
 
     // Store suggestions in database for future reference
