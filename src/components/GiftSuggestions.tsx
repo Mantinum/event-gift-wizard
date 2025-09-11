@@ -254,6 +254,25 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                         {suggestion.amazonData.availability}
                       </Badge>
                     )}
+                    {suggestion.amazonData.actualPrice && (
+                      <Badge variant="outline" className="text-xs text-green-600 border-green-600">
+                        Prix réel: {suggestion.amazonData.actualPrice}€
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                
+                {/* Product image */}
+                {suggestion.amazonData?.imageUrl && (
+                  <div className="mt-3">
+                    <img 
+                      src={suggestion.amazonData.imageUrl} 
+                      alt={suggestion.title}
+                      className="w-24 h-24 object-contain rounded-md border border-border"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
                   </div>
                 )}
               </CardHeader>
@@ -265,19 +284,48 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                     <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
                   </div>
 
-                  <Button 
-                    onClick={() => {
-                      const searchTerm = suggestion.title;
-                      const searchQuery = encodeURIComponent(searchTerm);
-                      window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
-                    }}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                  >
-                    <ShoppingCart className="h-3 w-3 mr-1" />
-                    Amazon
-                  </Button>
+                  <div className="flex gap-2 flex-wrap">
+                    {/* Bouton Amazon avec lien direct ou recherche */}
+                    <Button 
+                      onClick={() => {
+                        // Utiliser le lien direct si disponible, sinon fallback sur recherche
+                        const directLink = suggestion.purchaseLinks.find(link => 
+                          link.includes('amazon.fr/dp/') || link.includes('amazon.fr/gp/aws/cart/add')
+                        );
+                        
+                        if (directLink) {
+                          window.open(directLink, '_blank');
+                        } else {
+                          // Fallback: recherche générique
+                          const searchTerm = suggestion.title;
+                          const searchQuery = encodeURIComponent(searchTerm);
+                          window.open(`https://www.amazon.fr/s?k=${searchQuery}`, '_blank');
+                        }
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                    >
+                      <ShoppingCart className="h-3 w-3 mr-1" />
+                      {suggestion.amazonData?.asin ? 'Voir sur Amazon' : 'Rechercher sur Amazon'}
+                    </Button>
+
+                    {/* Bouton "Ajouter au panier" si lien direct disponible */}
+                    {suggestion.purchaseLinks.find(link => link.includes('gp/aws/cart/add')) && (
+                      <Button 
+                        onClick={() => {
+                          const cartLink = suggestion.purchaseLinks.find(link => link.includes('gp/aws/cart/add'));
+                          if (cartLink) window.open(cartLink, '_blank');
+                        }}
+                        variant="default"
+                        size="sm" 
+                        className="text-xs bg-gradient-primary text-white"
+                      >
+                        <ShoppingCart className="h-3 w-3 mr-1" />
+                        Ajouter au panier
+                      </Button>
+                    )}
+                  </div>
 
                   {suggestion.alternatives.length > 0 && (
                     <div>
@@ -293,15 +341,38 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                     </div>
                   )}
 
-                  {suggestion.purchaseLinks.length > 0 && (
+                  {/* Liens d'achat supplémentaires (non-Amazon) */}
+                  {suggestion.purchaseLinks.filter(link => 
+                    !link.includes('amazon.fr/dp/') && 
+                    !link.includes('amazon.fr/gp/aws/cart/add') &&
+                    !link.includes('amazon.fr/s?k=')
+                  ).length > 0 && (
                     <div>
-                      <h5 className="font-medium mb-2 text-sm">Suggestions de recherche :</h5>
+                      <h5 className="font-medium mb-2 text-sm">Autres boutiques :</h5>
                       <div className="flex flex-wrap gap-2">
-                        {suggestion.purchaseLinks.map((link, linkIndex) => (
-                          <Badge key={linkIndex} variant="outline" className="text-xs">
-                            {link}
-                          </Badge>
-                        ))}
+                        {suggestion.purchaseLinks
+                          .filter(link => 
+                            !link.includes('amazon.fr/dp/') && 
+                            !link.includes('amazon.fr/gp/aws/cart/add') &&
+                            !link.includes('amazon.fr/s?k=')
+                          )
+                          .map((link, linkIndex) => (
+                            <Button
+                              key={linkIndex}
+                              variant="outline"
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => window.open(link, '_blank')}
+                            >
+                              {link.includes('galerieslafayette') ? 'Galeries Lafayette' :
+                               link.includes('madeindesign') ? 'Made in Design' :
+                               link.includes('lightonline') ? 'Light Online' :
+                               link.includes('swarovski') ? 'Swarovski' :
+                               link.includes('diptyqueparis') ? 'Diptyque' :
+                               link.includes('nocibe') ? 'Nocibé' :
+                               'Voir le produit'}
+                            </Button>
+                          ))}
                       </div>
                     </div>
                   )}
