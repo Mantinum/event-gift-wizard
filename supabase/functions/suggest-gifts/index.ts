@@ -61,21 +61,21 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
     return suggestions;
   }
 
+  console.log('Enriching suggestions with Canopy Amazon data...');
+
   const enrichedSuggestions = await Promise.all(
     suggestions.map(async (suggestion) => {
       try {
-        // Search for the product on Amazon using Canopy API
-        const searchResponse = await fetch(`https://api.canopyapi.co/v1/products/search`, {
-          method: 'POST',
+        // Search for the product on Amazon using Canopy REST API
+        const searchQuery = encodeURIComponent(suggestion.title);
+        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?q=${searchQuery}&domain=amazon.fr&limit=1`;
+        
+        const searchResponse = await fetch(searchUrl, {
+          method: 'GET',
           headers: {
-            'Authorization': `Bearer ${canopyApiKey}`,
+            'API-KEY': canopyApiKey,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            query: suggestion.title,
-            marketplace: 'amazon.fr',
-            max_results: 1
-          })
         });
 
         if (!searchResponse.ok) {
@@ -92,11 +92,13 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
 
         const product = searchData.products[0];
 
-        // Get detailed product information
-        const detailResponse = await fetch(`https://api.canopyapi.co/v1/products/${product.asin}`, {
+        // Get detailed product information using the ASIN
+        const detailUrl = `https://rest.canopyapi.co/api/amazon/product?asin=${product.asin}&domain=amazon.fr`;
+        
+        const detailResponse = await fetch(detailUrl, {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${canopyApiKey}`,
+            'API-KEY': canopyApiKey,
           },
         });
 
@@ -106,7 +108,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
             ...suggestion,
             amazonData: {
               asin: product.asin,
-              actualPrice: product.price?.value || suggestion.estimatedPrice,
+              actualPrice: product.price || suggestion.estimatedPrice,
             }
           };
         }
