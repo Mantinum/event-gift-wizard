@@ -376,13 +376,23 @@ serve(async (req) => {
   }
 
   try {
-    const { personId, eventType, budget, additionalContext }: GiftSuggestionRequest = await req.json();
+    console.log('🚀 Starting suggest-gifts function...');
+    
+    const requestBody = await req.json();
+    console.log('📝 Request body received:', JSON.stringify(requestBody));
+    
+    const { personId, eventType, budget, additionalContext }: GiftSuggestionRequest = requestBody;
 
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    console.log('🔑 Environment check - Supabase URL available:', !!supabaseUrl);
+    console.log('🔑 Environment check - Supabase Key available:', !!supabaseKey);
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    console.log('📝 Person query starting...');
     // Get person details from database
     const { data: person, error: personError } = await supabase
       .from('persons')
@@ -390,7 +400,10 @@ serve(async (req) => {
       .eq('id', personId)
       .single();
 
+    console.log('📝 Person query result:', { person: person?.name, error: personError });
+
     if (personError || !person) {
+      console.error('❌ Person not found:', personError);
       throw new Error('Personne non trouvee');
     }
 
@@ -565,11 +578,18 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error in suggest-gifts function:', error);
+    console.error('❌ Error in suggest-gifts function:', error);
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack available');
+    console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+    
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : 'Une erreur inattendue est survenue',
-        success: false
+        success: false,
+        debug: {
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          timestamp: new Date().toISOString()
+        }
       }),
       {
         status: 500,
