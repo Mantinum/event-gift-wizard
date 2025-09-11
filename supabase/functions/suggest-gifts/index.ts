@@ -549,9 +549,10 @@ serve(async (req) => {
       suggestions = normalizePurchaseLinks(createFallbackSuggestions());
     }
 
-    // Enrich suggestions with real Amazon data via Canopy API
+// Enrich suggestions with real Amazon data via Canopy API
     console.log('🔄 About to enrich suggestions with Canopy Amazon data...');
     console.log('📋 Suggestions before enrichment:', suggestions.length);
+    console.log('🔑 CANOPY_API_KEY env var check:', !!Deno.env.get('CANOPY_API_KEY'));
     suggestions = await enrichWithCanopyData(suggestions);
     console.log('✅ Canopy enrichment completed. Suggestions after enrichment:', suggestions.length);
 
