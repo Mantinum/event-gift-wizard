@@ -149,7 +149,6 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
               });
             }
           } else {
-          } else {
             const errText = await restRes.text();
             console.log('❌ REST error body:', errText);
           }
