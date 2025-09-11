@@ -75,15 +75,15 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         
         // Search for the product on Amazon using Canopy API
         const searchQuery = encodeURIComponent(suggestion.title);
-        const searchUrl = `https://api.canopyapi.co/v1/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=1`;
+        const searchUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=1`;
         
         console.log(`📡 Canopy request URL: ${searchUrl}`);
-        console.log(`🔐 Using X-API-Key header`);
+        console.log(`🔐 Using API-KEY header`);
         
         const searchResponse = await fetch(searchUrl, {
           method: 'GET',
           headers: {
-            'X-API-Key': canopyApiKey,
+            'API-KEY': canopyApiKey,
           },
         });
 
