@@ -81,7 +81,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         const searchResponse = await fetch(searchUrl, {
           method: 'GET',
           headers: {
-            'API-KEY': canopyApiKey,
+            'X-API-Key': canopyApiKey,
             'Content-Type': 'application/json',
           },
         });
