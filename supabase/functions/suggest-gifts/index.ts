@@ -106,8 +106,8 @@ serve(async (req) => {
     }
     console.log('Allowed categories derived from interests:', allowedCategories);
 
-    // Generate AI suggestions using OpenAI
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    // Generate AI suggestions using OpenRouter
+    const openrouterApiKey = Deno.env.get('OPENROUTER_API_KEY');
 
     const systemPrompt = `Tu es un expert en suggestions de cadeaux personnalisés avec accès aux catalogues produits.
     Analyse le profil et génère 3 suggestions de PRODUITS TROUVABLES facilement en ligne.
@@ -267,39 +267,43 @@ serve(async (req) => {
       });
     };
 
-    console.log('Calling OpenAI API for gift suggestions...');
+    console.log('Calling OpenRouter API for gift suggestions...');
 
     let suggestions: GiftSuggestion[] | null = null;
 
-    if (!openAIApiKey) {
-      console.warn('OPENAI_API_KEY non configuree. Utilisation du fallback local.');
+    if (!openrouterApiKey) {
+      console.warn('OPENROUTER_API_KEY non configuree. Utilisation du fallback local.');
       suggestions = createFallbackSuggestions();
     } else {
       try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${openAIApiKey}`,
+            'Authorization': `Bearer ${openrouterApiKey}`,
             'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://uurlvbvsewzshbppcfrl.supabase.co',
+            'X-Title': 'Gift Suggestions App',
           },
           body: JSON.stringify({
-            model: 'gpt-5-2025-08-07',
+            model: 'anthropic/claude-3.5-sonnet',
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt }
             ],
-            max_completion_tokens: 1200,
+            max_tokens: 1200,
+            temperature: 0.8,
+            top_p: 0.9,
           }),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.error('OpenAI API error:', errorData);
+          console.error('OpenRouter API error:', errorData);
           suggestions = createFallbackSuggestions();
         } else {
           const data = await response.json();
           const aiResponse = data.choices?.[0]?.message?.content ?? '';
-          console.log('OpenAI response:', aiResponse);
+          console.log('OpenRouter response:', aiResponse);
 
           try {
             const parsed = JSON.parse(aiResponse);
@@ -310,7 +314,7 @@ serve(async (req) => {
           }
         }
       } catch (e) {
-        console.error('Erreur d\'appel OpenAI, utilisation du fallback:', e);
+        console.error('Erreur d\'appel OpenRouter, utilisation du fallback:', e);
         suggestions = createFallbackSuggestions();
       }
     }
