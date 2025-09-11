@@ -127,7 +127,7 @@ const enrichWithCanopyData = async (suggestions: GiftSuggestion[]): Promise<Gift
         const searchQuery = encodeURIComponent(rawQuery);
 
         // Try REST first
-        const restUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=5`;
+        const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=5`;
         console.log(`📡 Canopy REST request URL: ${restUrl}`);
 
         let results: any[] | undefined;
