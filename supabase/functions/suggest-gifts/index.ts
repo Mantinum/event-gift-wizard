@@ -119,122 +119,58 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Multi-strategy Amazon search with orchestration
+// Multi-strategy Amazon search with orchestration (SIMPLIFIED VERSION)
 async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiKey: string): Promise<any> {
-  console.log(`🎯 Advanced Canopy search for: "${suggestion.title}"`);
+  console.log(`🎯 Simplified Canopy search for: "${suggestion.title}"`);
   
   if (!canopyApiKey) {
     console.log('❌ No Canopy API key available');
     return null;
   }
 
-  const targetPrice = suggestion.estimatedPrice;
-  const expectedBrand = suggestion.brand;
-  const queries = [
-    suggestion.canonical_name,
-    ...(suggestion.search_queries || []),
-    suggestion.brand + ' ' + suggestion.title.split(' ').slice(0, 3).join(' ')
-  ].filter(Boolean);
+  try {
+    const targetPrice = suggestion.estimatedPrice;
+    const expectedBrand = suggestion.brand;
+    const queries = [
+      suggestion.canonical_name || suggestion.title,
+      ...(suggestion.search_queries || [suggestion.title]),
+      expectedBrand ? expectedBrand + ' ' + suggestion.title.split(' ').slice(0, 3).join(' ') : suggestion.title
+    ].filter(Boolean);
 
-  console.log(`🔍 Search queries: ${JSON.stringify(queries)}`);
-  console.log(`🎯 Target price: ${targetPrice}, Expected brand: ${expectedBrand}`);
+    console.log(`🔍 Search queries: ${JSON.stringify(queries.slice(0, 2))}`);
 
-  // Strategy 1: Exact search
-  for (const query of queries.slice(0, 2)) {
-    console.log(`🔍 Exact search: "${query}"`);
-    const results = await searchCanopyWithRetry(query, canopyApiKey, 'exact');
-    if (results.length > 0) {
-      const scored = results.map((hit: any) => ({
-        ...hit,
-        score: scoreHit(hit, expectedBrand, targetPrice, query.split(' '))
-      })).sort((a: any, b: any) => b.score - a.score);
+    // Try first query only for now
+    const query = queries[0];
+    if (query && query.length > 2) {
+      console.log(`🔍 Searching: "${query}"`);
+      const results = await searchCanopyWithRetry(query, canopyApiKey, 'simple');
       
-      console.log(`📊 Top result score: ${scored[0]?.score || 0}`);
-      if (scored[0]?.score >= 0.45) { // Lowered threshold
-        console.log(`✅ Exact match found with score ${scored[0].score}`);
-        return buildAmazonData(scored[0], 'exact');
-      }
-    }
-  }
-
-  // Strategy 2: Relaxed search (remove color/size descriptors)
-  for (const query of queries) {
-    const relaxedQuery = query
-      .replace(/\b(blanc|noir|rouge|bleu|vert|jaune|rose|doré|argenté|gold|silver|white|black|red|blue|green|yellow)\b/gi, '')
-      .replace(/\b(petit|grand|mini|maxi|S|M|L|XL)\b/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    if (relaxedQuery !== query && relaxedQuery.length > 3) {
-      console.log(`🔍 Relaxed search: "${relaxedQuery}"`);
-      const results = await searchCanopyWithRetry(relaxedQuery, canopyApiKey, 'relaxed');
       if (results.length > 0) {
-        const scored = results.map((hit: any) => ({
-          ...hit,
-          score: scoreHit(hit, expectedBrand, targetPrice, relaxedQuery.split(' '))
-        })).sort((a: any, b: any) => b.score - a.score);
+        console.log(`✅ Found ${results.length} results`);
         
-        console.log(`📊 Top relaxed result score: ${scored[0]?.score || 0}`);
-        if (scored[0]?.score >= 0.40) { // Lower threshold for relaxed
-          console.log(`✅ Relaxed match found with score ${scored[0].score}`);
-          return buildAmazonData(scored[0], 'relaxed');
+        // Take first result with ASIN
+        const resultWithAsin = results.find((hit: any) => hit.asin);
+        if (resultWithAsin) {
+          console.log(`✅ Found product with ASIN: ${resultWithAsin.asin}`);
+          return buildAmazonData(resultWithAsin, 'exact');
+        }
+        
+        // Or take first result
+        const firstResult = results[0];
+        if (firstResult) {
+          console.log(`✅ Using first result: ${firstResult.title?.substring(0, 50)}`);
+          return buildAmazonData(firstResult, 'relaxed');
         }
       }
     }
-  }
 
-  // Strategy 3: English translation for international brands
-  if (expectedBrand) {
-    const englishQuery = `${expectedBrand} ${suggestion.title.split(' ').slice(1, 4).join(' ')}`;
-    console.log(`🔍 English search: "${englishQuery}"`);
-    const results = await searchCanopyWithRetry(englishQuery, canopyApiKey, 'english');
-    if (results.length > 0) {
-      const scored = results.map((hit: any) => ({
-        ...hit,
-        score: scoreHit(hit, expectedBrand, targetPrice, englishQuery.split(' '))
-      })).sort((a: any, b: any) => b.score - a.score);
-      
-      console.log(`📊 Top English result score: ${scored[0]?.score || 0}`);
-      if (scored[0]?.score >= 0.35) { // Even lower threshold for English
-        console.log(`✅ English match found with score ${scored[0].score}`);
-        return buildAmazonData(scored[0], 'relaxed');
-      }
-    }
+    console.log(`⚠️ No results found, using fallback`);
+    return buildFallbackAmazonData(suggestion);
+    
+  } catch (error) {
+    console.error(`❌ Error in searchCanopyAmazonAdvanced: ${error}`);
+    return buildFallbackAmazonData(suggestion);
   }
-
-  // Strategy 4: Generic brand search (if brand is available)
-  if (expectedBrand && expectedBrand.length > 2) {
-    console.log(`🔍 Generic brand search: "${expectedBrand}"`);
-    const results = await searchCanopyWithRetry(expectedBrand, canopyApiKey, 'brand-only');
-    if (results.length > 0) {
-      const scored = results.map((hit: any) => ({
-        ...hit,
-        score: scoreHit(hit, expectedBrand, targetPrice, [expectedBrand])
-      })).sort((a: any, b: any) => b.score - a.score);
-      
-      console.log(`📊 Top brand result score: ${scored[0]?.score || 0}`);
-      if (scored[0]?.score >= 0.30) { // Very low threshold for brand-only
-        console.log(`✅ Brand match found with score ${scored[0].score}`);
-        return buildAmazonData(scored[0], 'relaxed');
-      }
-    }
-  }
-
-  // Strategy 5: Take any result with ASIN (last resort)
-  console.log(`🔍 Last resort: trying basic search`);
-  const basicQuery = suggestion.title.split(' ').slice(0, 3).join(' ');
-  const basicResults = await searchCanopyWithRetry(basicQuery, canopyApiKey, 'basic');
-  if (basicResults.length > 0) {
-    // Take the first result with an ASIN, regardless of score
-    const resultWithAsin = basicResults.find((hit: any) => hit.asin);
-    if (resultWithAsin) {
-      console.log(`✅ Last resort match found with ASIN: ${resultWithAsin.asin}`);
-      return buildAmazonData(resultWithAsin, 'relaxed');
-    }
-  }
-
-  console.log(`⚠️ No good match found, falling back to search URL`);
-  return buildFallbackAmazonData(suggestion);
 }
 
 // Search with retry logic and fallback to GraphQL
