@@ -62,125 +62,191 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   art: ['Art', 'Loisirs créatifs'],
 };
 
-// Simplified Amazon search with detailed debugging
+// Improved Amazon search with cleaned queries and retry logic
 async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiKey: string): Promise<any> {
-  console.log(`🎯 DEBUG: Starting search for: "${suggestion.title}"`);
+  console.log(`🎯 IMPROVED: Starting search for: "${suggestion.title}"`);
   
   if (!canopyApiKey) {
-    console.log('❌ DEBUG: No Canopy API key available');
+    console.log('❌ IMPROVED: No Canopy API key available');
     return buildFallbackAmazonData(suggestion);
   }
 
   try {
-    // Use canonical name or title
-    const searchTerm = suggestion.canonical_name || suggestion.title;
-    console.log(`🔍 DEBUG: Search term: "${searchTerm}"`);
+    // 1. Canonical cleaning - remove colors, sizes, marketing fluff
+    const rawTitle = suggestion.canonical_name || suggestion.title;
+    const canonical = rawTitle
+      .replace(/\b(blanc|noir|doré|dorée|rose|marron|rouge|bleu|vert|jaune|argent|argenté|gold|silver|white|black|red|blue|green|yellow|brown)\b/gi, '')
+      .replace(/\b(taille\s+\w+|petit|grand|mini|maxi|S|M|L|XL)\b/gi, '')
+      .replace(/[(),]/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
     
-    const results = await searchCanopyWithDebug(searchTerm, canopyApiKey);
+    const searchTerm = canonical || rawTitle;
+    console.log(`🧹 IMPROVED: Cleaned query: "${rawTitle}" → "${searchTerm}"`);
+    
+    // 2. Try enhanced search with retry
+    let results = await searchCanopyWithRetryAndFallback(searchTerm, canopyApiKey, 'canonical');
+    
+    // 3. If no results, try English translation for international brands
+    if (results.length === 0 && suggestion.brand) {
+      const englishQuery = `${suggestion.brand} ${searchTerm.replace(suggestion.brand, '').trim()}`;
+      console.log(`🌍 IMPROVED: Trying English fallback: "${englishQuery}"`);
+      results = await searchCanopyWithRetryAndFallback(englishQuery, canopyApiKey, 'english');
+    }
+    
+    // 4. If still no results, try just the brand
+    if (results.length === 0 && suggestion.brand && suggestion.brand.length > 2) {
+      console.log(`🏷️ IMPROVED: Trying brand-only: "${suggestion.brand}"`);
+      results = await searchCanopyWithRetryAndFallback(suggestion.brand, canopyApiKey, 'brand-only');
+    }
     
     if (results.length > 0) {
-      console.log(`✅ DEBUG: Found ${results.length} results from Canopy`);
+      console.log(`✅ IMPROVED: Found ${results.length} total results from Canopy`);
       
-      // Log all results to see structure
-      results.forEach((result, index) => {
-        console.log(`🔍 DEBUG: Result ${index + 1}:`, {
-          title: result?.title?.substring(0, 60),
-          asin: result?.asin,
-          ASIN: result?.ASIN,
-          productId: result?.productId,
-          product_id: result?.product_id,
-          id: result?.id,
-          url: result?.url,
-          price: result?.price,
-          hasAnyId: !!(result?.asin || result?.ASIN || result?.productId || result?.product_id)
-        });
-      });
+      // 5. Enhanced scoring with threshold
+      const scored = results
+        .filter(result => result?.asin || result?.ASIN || result?.productId || result?.product_id)
+        .map(result => {
+          const score = calculateProductScore(result, suggestion);
+          return { ...result, score };
+        })
+        .sort((a, b) => b.score - a.score);
       
-      // Look for any result with an ASIN-like field
-      const resultWithAsin = results.find((hit: any) => 
-        hit?.asin || hit?.ASIN || hit?.productId || hit?.product_id
-      );
+      console.log(`📊 IMPROVED: Scored results: ${scored.length}, best score: ${scored[0]?.score || 0}`);
       
-      if (resultWithAsin) {
-        // Normalize ASIN field
-        const asin = resultWithAsin.asin || resultWithAsin.ASIN || resultWithAsin.productId || resultWithAsin.product_id;
-        console.log(`✅ DEBUG: Found ASIN: ${asin}`);
+      // 6. Apply score threshold
+      const bestMatch = scored[0];
+      if (bestMatch && bestMatch.score >= 0.40) {
+        const asin = bestMatch.asin || bestMatch.ASIN || bestMatch.productId || bestMatch.product_id;
+        console.log(`✅ IMPROVED: Selected product with ASIN: ${asin} (score: ${bestMatch.score})`);
         
         return {
           asin,
-          rating: resultWithAsin.rating,
-          reviewCount: resultWithAsin.review_count || resultWithAsin.reviewCount,
-          availability: resultWithAsin.availability,
-          prime: resultWithAsin.prime || resultWithAsin.isPrime,
-          actualPrice: resultWithAsin.price || resultWithAsin.actualPrice,
-          imageUrl: resultWithAsin.image_url || resultWithAsin.imageUrl || resultWithAsin.image,
+          rating: bestMatch.rating,
+          reviewCount: bestMatch.review_count || bestMatch.reviewCount,
+          availability: bestMatch.availability,
+          prime: bestMatch.prime || bestMatch.isPrime,
+          actualPrice: bestMatch.price || bestMatch.actualPrice,
+          imageUrl: bestMatch.image_url || bestMatch.imageUrl || bestMatch.image,
           productUrl: `https://www.amazon.fr/dp/${asin}`,
           addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
           searchUrl: undefined,
-          matchType: 'exact'
+          matchType: bestMatch.score >= 0.70 ? 'exact' : 'relaxed'
         };
       } else {
-        console.log(`⚠️ DEBUG: No ASIN found in any result, using fallback`);
-        return buildFallbackAmazonData(suggestion);
+        console.log(`⚠️ IMPROVED: Best score ${bestMatch?.score || 0} below threshold 0.40 - using fallback`);
       }
     } else {
-      console.log(`⚠️ DEBUG: No results from Canopy, using fallback`);
-      return buildFallbackAmazonData(suggestion);
+      console.log(`❌ IMPROVED: No results found after all attempts`);
     }
+
+    console.log(`🔍 IMPROVED: FALLBACK_SEARCH for: "${searchTerm}"`);
+    return buildFallbackAmazonData(suggestion);
     
   } catch (error) {
-    console.error(`❌ DEBUG: Error in searchCanopyAmazonAdvanced: ${error}`);
+    console.error(`❌ IMPROVED: Error in search: ${error}`);
     return buildFallbackAmazonData(suggestion);
   }
 }
 
-// Search with detailed debugging
-async function searchCanopyWithDebug(query: string, canopyApiKey: string): Promise<any[]> {
+// Enhanced product scoring
+function calculateProductScore(result: any, suggestion: GiftSuggestion): number {
+  const title = (result.title || "").toLowerCase();
+  const brand = suggestion.brand?.toLowerCase();
+  const targetPrice = suggestion.estimatedPrice;
+  const productPrice = result.price || 0;
+  
+  // Brand matching (40% weight)
+  let brandScore = 0.5;
+  if (brand) {
+    if (title.includes(brand)) brandScore = 1.0;
+    else if (brand.length > 4 && title.includes(brand.substring(0, 4))) brandScore = 0.7;
+  }
+  
+  // Price proximity (30% weight) - more generous tolerance
+  let priceScore = 0.5;
+  if (targetPrice && productPrice > 0) {
+    const priceDiff = Math.abs(productPrice - targetPrice);
+    const tolerance = Math.max(30, targetPrice * 0.6); // 60% tolerance
+    priceScore = Math.max(0.2, 1 - (priceDiff / tolerance));
+  }
+  
+  // Title keyword matching (30% weight)
+  const keywords = suggestion.title.toLowerCase().split(' ').filter(w => w.length > 3);
+  const matches = keywords.filter(keyword => title.includes(keyword)).length;
+  const keywordScore = keywords.length > 0 ? matches / keywords.length : 0.5;
+  
+  const totalScore = 0.4 * brandScore + 0.3 * priceScore + 0.3 * keywordScore;
+  
+  console.log(`📊 IMPROVED: Scoring "${result.title?.substring(0, 40)}": brand=${brandScore.toFixed(2)} price=${priceScore.toFixed(2)} keywords=${keywordScore.toFixed(2)} => ${totalScore.toFixed(2)}`);
+  
+  return totalScore;
+}
+
+// Enhanced search with retry logic and fallback strategies
+async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: string, variant: string): Promise<any[]> {
   const cleanQuery = query.replace(/[^\w\s\-àáâãäåæçèéêëìíîïñòóôõöøùúûüýÿ]/g, ' ').trim();
-  console.log(`🔍 DEBUG: Cleaned query: "${cleanQuery}"`);
+  console.log(`🔍 IMPROVED: ${variant} search for: "${cleanQuery}"`);
   
   if (cleanQuery.length < 3) {
-    console.log('❌ DEBUG: Query too short');
+    console.log('❌ IMPROVED: Query too short');
     return [];
   }
 
   const searchQuery = encodeURIComponent(cleanQuery);
   
-  // Try REST API first with detailed logging
-  try {
-    const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
-    console.log(`📡 DEBUG: Canopy REST URL: ${restUrl}`);
+  // Enhanced REST API with retry logic
+  const maxRetries = 2;
+  const backoffDelays = [300, 800];
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
+      console.log(`📡 IMPROVED: REST attempt ${attempt + 1}: ${restUrl}`);
 
-    const response = await fetch(restUrl, {
-      headers: {
-        'Authorization': `Bearer ${canopyApiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
+      const response = await fetch(restUrl, {
+        headers: {
+          'Authorization': `Bearer ${canopyApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-    console.log(`📊 DEBUG: REST response status: ${response.status}`);
-    
-    if (response.ok) {
-      const data = await response.json();
-      console.log(`🔍 DEBUG: Full REST response:`, JSON.stringify(data, null, 2));
+      console.log(`📊 IMPROVED: REST status: ${response.status}`);
       
-      const results = data.results || data.products || data.items || data.data || [];
-      console.log(`📊 DEBUG: Results array length: ${results.length}`);
-      
-      if (results.length > 0) {
-        console.log(`🔍 DEBUG: First result full structure:`, JSON.stringify(results[0], null, 2));
-        return results;
+      if (response.ok) {
+        const data = await response.json();
+        const results = data.results || data.products || data.items || data.data || [];
+        console.log(`📊 IMPROVED: REST returned ${results.length} results`);
+        
+        if (results.length > 0) {
+          // Log first result structure
+          console.log(`🔍 IMPROVED: First result sample:`, {
+            title: results[0]?.title?.substring(0, 50),
+            asin: results[0]?.asin,
+            price: results[0]?.price,
+            hasAsin: !!(results[0]?.asin || results[0]?.ASIN || results[0]?.productId)
+          });
+          return results;
+        }
+      } else if (response.status >= 500 && attempt < maxRetries) {
+        console.log(`⏳ IMPROVED: Server error, retrying in ${backoffDelays[attempt]}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
+        continue;
+      } else {
+        const errorText = await response.text();
+        console.log(`❌ IMPROVED: REST error: ${response.status} - ${errorText}`);
+        break;
       }
-    } else {
-      const errorText = await response.text();
-      console.log(`❌ DEBUG: REST error: ${errorText}`);
+    } catch (error) {
+      console.log(`❌ IMPROVED: REST request failed (attempt ${attempt + 1}): ${error}`);
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
+      }
     }
-  } catch (error) {
-    console.log(`❌ DEBUG: REST request failed: ${error}`);
   }
 
-  // Fallback to GraphQL with detailed logging
-  console.log(`🔄 DEBUG: Falling back to GraphQL`);
+  // Fallback to GraphQL
+  console.log(`🔄 IMPROVED: Falling back to GraphQL for ${variant}`);
   try {
     const graphqlQuery = `
       query SearchAmazon($searchTerm: String!, $domain: String!) {
@@ -216,22 +282,27 @@ async function searchCanopyWithDebug(query: string, canopyApiKey: string): Promi
       })
     });
 
-    console.log(`📊 DEBUG: GraphQL response status: ${graphqlResponse.status}`);
+    console.log(`📊 IMPROVED: GraphQL status: ${graphqlResponse.status}`);
 
     if (graphqlResponse.ok) {
       const graphqlData = await graphqlResponse.json();
-      console.log(`🔍 DEBUG: Full GraphQL response:`, JSON.stringify(graphqlData, null, 2));
-      
       const results = graphqlData.data?.amazon_search?.results || [];
-      console.log(`📊 DEBUG: GraphQL results length: ${results.length}`);
+      console.log(`📊 IMPROVED: GraphQL returned ${results.length} results`);
       
       if (results.length > 0) {
-        console.log(`🔍 DEBUG: GraphQL first result:`, JSON.stringify(results[0], null, 2));
+        console.log(`🔍 IMPROVED: GraphQL first result:`, {
+          title: results[0]?.title?.substring(0, 50),
+          asin: results[0]?.asin,
+          price: results[0]?.price
+        });
         return results;
       }
+    } else {
+      const errorText = await graphqlResponse.text();
+      console.log(`❌ IMPROVED: GraphQL error: ${errorText}`);
     }
   } catch (error) {
-    console.error(`❌ DEBUG: GraphQL fallback failed: ${error}`);
+    console.error(`❌ IMPROVED: GraphQL fallback failed: ${error}`);
   }
 
   return [];
@@ -268,20 +339,27 @@ async function enrichWithCanopyAmazon(suggestions: GiftSuggestion[], canopyApiKe
         
         if (amazonData) {
           suggestion.amazonData = amazonData;
-          console.log(`✅ DEBUG: Enriched "${suggestion.title}" - Match type: ${amazonData.matchType}, ASIN: ${amazonData.asin || 'N/A'}`);
           
-          // Update purchase links based on match type
           if (amazonData.asin) {
+            console.log(`✅ IMPROVED: Enriched "${suggestion.title}" with ASIN: ${amazonData.asin} (${amazonData.matchType})`);
+            // Replace purchase links with direct Amazon links
             suggestion.purchaseLinks = [
               amazonData.productUrl,
               amazonData.addToCartUrl,
-              ...suggestion.purchaseLinks.slice(2) // Keep other non-Amazon links
+              ...suggestion.purchaseLinks.filter(link => 
+                !link.includes('amazon.fr/s?k=') && 
+                !link.includes('amazon.fr/dp/') && 
+                !link.includes('amazon.fr/gp/aws/cart')
+              )
             ].filter(Boolean);
-          } else if (amazonData.searchUrl && !suggestion.purchaseLinks.includes(amazonData.searchUrl)) {
-            suggestion.purchaseLinks.push(amazonData.searchUrl);
+          } else {
+            console.log(`🔍 IMPROVED: Enriched "${suggestion.title}" with search fallback`);
+            if (amazonData.searchUrl && !suggestion.purchaseLinks.includes(amazonData.searchUrl)) {
+              suggestion.purchaseLinks.push(amazonData.searchUrl);
+            }
           }
         } else {
-          console.log(`⚠️ DEBUG: No Amazon data found for "${suggestion.title}"`);
+          console.log(`⚠️ IMPROVED: No Amazon data found for "${suggestion.title}"`);
         }
       } catch (error) {
         console.error(`❌ DEBUG: Error enriching suggestion "${suggestion.title}":`, error);
