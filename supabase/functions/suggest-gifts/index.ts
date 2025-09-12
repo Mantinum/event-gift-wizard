@@ -20,6 +20,7 @@ serve(async (req) => {
     console.log('Request received:', { personId, eventType, budget });
 
     const openAIKey = Deno.env.get('OPENAI_API_KEY');
+    console.log('OpenAI Key available:', !!openAIKey);
     if (!openAIKey) {
       console.error('Missing OpenAI API key');
       return new Response(JSON.stringify({
@@ -179,26 +180,31 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
       })
     });
 
+    console.log('OpenAI response status:', giftResponse.status);
     if (!giftResponse.ok) {
       const errorText = await giftResponse.text();
       console.error('OpenAI error:', giftResponse.status, errorText);
-      throw new Error(`OpenAI failed: ${giftResponse.status}`);
+      throw new Error(`OpenAI failed: ${giftResponse.status} - ${errorText}`);
     }
 
     const giftData = await giftResponse.json();
+    console.log('OpenAI raw response:', JSON.stringify(giftData, null, 2));
     let suggestions = [];
     
     try {
       // Parse Chat Completions API format
       const content = giftData.choices?.[0]?.message?.content;
+      console.log('OpenAI content:', content);
       if (!content) {
         throw new Error('No content in OpenAI response');
       }
       const parsed = JSON.parse(content);
       suggestions = parsed.suggestions || [];
+      console.log('Parsed suggestions count:', suggestions.length);
     } catch (error) {
       console.error('Error parsing OpenAI response:', error);
-      throw new Error('Invalid OpenAI response format');
+      console.error('Raw response structure:', Object.keys(giftData));
+      throw new Error(`Invalid OpenAI response format: ${error.message}`);
     }
 
     // Validate and process each suggestion with enhanced ASIN handling
