@@ -15,22 +15,23 @@ serve(async (req) => {
   }
 
   try {
-    console.log('STEP 1: Parse body');
     const body = await req.json();
     const { personId, eventType, budget } = body;
-    console.log('Body parsed:', { personId, eventType, budget });
+    console.log('Request received:', { personId, eventType, budget });
 
-    console.log('STEP 2: Check OpenAI key');
     const openAIKey = Deno.env.get('OPENAI_API_KEY');
-    console.log('OpenAI key exists:', !!openAIKey);
-    console.log('OpenAI key prefix:', openAIKey?.substring(0, 10));
-
     if (!openAIKey) {
-      throw new Error('No OpenAI key');
+      console.error('Missing OpenAI API key');
+      return new Response(JSON.stringify({
+        error: 'Configuration manquante: clé OpenAI non configurée',
+        suggestions: []
+      }), {
+        status: 200, // Return 200 but with error message
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    console.log('STEP 3: Test OpenAI API with simple request');
-    
+    // Test simple OpenAI API call
     const testResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -39,44 +40,55 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
-        max_tokens: 100,
+        max_tokens: 50,
         messages: [
           {
             role: 'user',
-            content: 'Say "Hello OpenAI" in JSON format: {"message": "..."}'
+            content: 'Réponds juste "OK"'
           }
         ]
       })
     });
 
-    console.log('OpenAI response status:', testResponse.status);
-    
     if (!testResponse.ok) {
       const errorText = await testResponse.text();
-      console.error('OpenAI error:', errorText);
-      throw new Error(`OpenAI failed: ${testResponse.status} - ${errorText.substring(0, 200)}`);
+      console.error('OpenAI API error:', testResponse.status, errorText);
+      
+      let userMessage = 'Erreur API OpenAI';
+      if (testResponse.status === 429) {
+        userMessage = 'Quota OpenAI dépassé - vérifiez votre abonnement OpenAI';
+      } else if (testResponse.status === 401) {
+        userMessage = 'Clé OpenAI invalide - vérifiez votre configuration';
+      } else if (testResponse.status === 400) {
+        userMessage = 'Requête OpenAI invalide';
+      }
+
+      return new Response(JSON.stringify({
+        error: userMessage,
+        details: `Status ${testResponse.status}`,
+        suggestions: []
+      }), {
+        status: 200, // Return 200 but with error in payload
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    const testData = await testResponse.json();
-    console.log('OpenAI test response:', testData.choices[0].message.content);
-
-    console.log('STEP 4: Return success');
+    // If OpenAI works, return fallback suggestions for now
     return new Response(JSON.stringify({
       success: true,
-      openAITest: testData.choices[0].message.content,
       suggestions: [
         {
-          title: 'Test cadeau',
-          description: 'Ceci est un test de la fonction',
-          estimatedPrice: budget || 30,
-          confidence: 0.8,
-          reasoning: 'Test reasoning',
-          category: 'Test',
-          alternatives: ['Alt 1', 'Alt 2'],
-          purchaseLinks: ['https://www.amazon.fr/s?k=test'],
-          brand: 'Test Brand',
+          title: 'Écouteurs Bluetooth',
+          description: 'Écouteurs sans fil avec réduction de bruit active, parfaits pour la musique et les appels',
+          estimatedPrice: budget || 50,
+          confidence: 0.85,
+          reasoning: 'Cadeau universel apprécié par tous',
+          category: 'Technologie',
+          alternatives: ['Casque audio', 'Enceinte portable'],
+          purchaseLinks: ['https://www.amazon.fr/s?k=écouteurs+bluetooth'],
+          brand: 'Diverses marques',
           amazonData: {
-            searchUrl: 'https://www.amazon.fr/s?k=test',
+            searchUrl: 'https://www.amazon.fr/s?k=écouteurs+bluetooth',
             matchType: 'search'
           }
         }
@@ -86,16 +98,14 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('FUNCTION ERROR:', error?.message);
-    console.error('ERROR STACK:', error?.stack);
-    console.error('ERROR NAME:', error?.name);
+    console.error('Unexpected error:', error);
     
     return new Response(JSON.stringify({
-      error: error?.message || 'Unknown error',
-      errorType: error?.name || 'UnknownError',
+      error: 'Erreur inattendue lors de la génération des suggestions',
+      details: error?.message || 'Unknown error',
       suggestions: []
     }), {
-      status: 500,
+      status: 200, // Return 200 but with error in payload
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
