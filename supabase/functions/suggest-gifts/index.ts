@@ -21,11 +21,12 @@ async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
     const params = new URLSearchParams({
       engine: 'amazon',
       amazon_domain: 'amazon.fr',
-      q: query,
+      language: 'fr_FR',
+      k: query, // ✅ Correct parameter for Amazon Search API
       api_key: serpApiKey
     });
 
-    const response = await fetch(`https://serpapi.com/search?${params}`);
+    const response = await fetch(`https://serpapi.com/search.json?${params}`);
     
     if (!response.ok) {
       console.error(`SerpApi error: ${response.status}`);
@@ -34,21 +35,72 @@ async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
 
     const data = await response.json();
     
-    // Get the first organic result with ASIN
-    const organicResults = data.organic_results || [];
-    const firstResult = organicResults.find((result: any) => result.asin);
+    // Helper function to extract ASIN from link
+    const extractAsinFromLink = (link: string): string | null => {
+      const match = link.match(/\/dp\/([A-Z0-9]{10})/i);
+      return match ? match[1] : null;
+    };
     
-    if (firstResult && firstResult.asin) {
-      const asin = firstResult.asin;
-      console.log(`✅ Found ASIN: ${asin} for query: "${query}"`);
+    // Check sponsored results first (often best-sellers)
+    const sponsoredResults = data.sponsored_results || [];
+    for (const result of sponsoredResults.slice(0, 10)) {
+      if (result.asin) {
+        const asin = result.asin;
+        console.log(`✅ Found ASIN in sponsored: ${asin} for query: "${query}"`);
+        return {
+          asin,
+          productUrl: `https://www.amazon.fr/dp/${asin}`,
+          addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+          title: result.title,
+          price: result.price_string
+        };
+      }
       
-      return {
-        asin,
-        productUrl: `https://www.amazon.fr/dp/${asin}`,
-        addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
-        title: firstResult.title,
-        price: firstResult.price_string
-      };
+      // Try to extract ASIN from link if no direct asin
+      if (result.link) {
+        const asin = extractAsinFromLink(result.link);
+        if (asin) {
+          console.log(`✅ Extracted ASIN from sponsored link: ${asin} for query: "${query}"`);
+          return {
+            asin,
+            productUrl: `https://www.amazon.fr/dp/${asin}`,
+            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+            title: result.title,
+            price: result.price_string
+          };
+        }
+      }
+    }
+    
+    // Check organic results
+    const organicResults = data.organic_results || [];
+    for (const result of organicResults.slice(0, 10)) {
+      if (result.asin) {
+        const asin = result.asin;
+        console.log(`✅ Found ASIN in organic: ${asin} for query: "${query}"`);
+        return {
+          asin,
+          productUrl: `https://www.amazon.fr/dp/${asin}`,
+          addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+          title: result.title,
+          price: result.price_string
+        };
+      }
+      
+      // Try to extract ASIN from link if no direct asin
+      if (result.link) {
+        const asin = extractAsinFromLink(result.link);
+        if (asin) {
+          console.log(`✅ Extracted ASIN from organic link: ${asin} for query: "${query}"`);
+          return {
+            asin,
+            productUrl: `https://www.amazon.fr/dp/${asin}`,
+            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+            title: result.title,
+            price: result.price_string
+          };
+        }
+      }
     }
     
     console.log(`❌ No ASIN found for query: "${query}"`);
@@ -251,9 +303,9 @@ Fournis des produits concrets avec marque et modèle, et des search_queries pré
         let finalUrl = '';
         let purchaseLinks: string[] = [];
         
-        // Essayer chaque search_query avec SerpApi
+        // Essayer chaque search_query avec SerpApi (jusqu'à 5)
         if (suggestion.search_queries && suggestion.search_queries.length > 0) {
-          for (const query of suggestion.search_queries.slice(0, 3)) { // Max 3 tentatives par suggestion
+          for (const query of suggestion.search_queries.slice(0, 5)) { // Max 5 tentatives par suggestion
             amazonResult = await searchAmazonProduct(query, serpApiKey);
             if (amazonResult && amazonResult.asin) {
               console.log(`✅ Produit trouvé via SerpApi pour "${query}"`);
