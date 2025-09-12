@@ -62,6 +62,20 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   art: ['Art', 'Loisirs créatifs'],
 };
 
+// Extract ASIN from Amazon URLs
+function extractAsinFromUrl(u?: string): string | null {
+  if (!u) return null;
+  try {
+    const m1 = u.match(/\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i);
+    if (m1) return m1[1].toUpperCase();
+    const m2 = u.match(/\/gp\/product\/([A-Z0-9]{10})(?:[/?]|$)/i);
+    if (m2) return m2[1].toUpperCase();
+    const p = new URL(u).searchParams.get('asin');
+    if (p && /^[A-Z0-9]{10}$/i.test(p)) return p.toUpperCase();
+  } catch {}
+  return null;
+}
+
 // Improved Amazon search with cleaned queries and retry logic
 async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiKey: string): Promise<any> {
   console.log(`🎯 IMPROVED: Starting search for: "${suggestion.title}"`);
@@ -103,9 +117,15 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
     if (results.length > 0) {
       console.log(`✅ IMPROVED: Found ${results.length} total results from Canopy`);
       
-      // 5. Enhanced scoring with threshold
-      const scored = results
-        .filter(result => result?.asin || result?.ASIN || result?.productId || result?.product_id)
+      // 5. Enhanced scoring with ASIN extraction from URLs
+      const enriched = results.map(r => {
+        const asin = r.asin || r.ASIN || r.productId || r.product_id || extractAsinFromUrl(r.url);
+        if (asin) r.asin = asin; // normalize
+        return r;
+      });
+
+      const scored = enriched
+        .filter(r => r.asin) // only filter after ASIN extraction
         .map(result => {
           const score = calculateProductScore(result, suggestion);
           return { ...result, score };
@@ -114,10 +134,10 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
       
       console.log(`📊 IMPROVED: Scored results: ${scored.length}, best score: ${scored[0]?.score || 0}`);
       
-      // 6. Apply score threshold
+      // 6. Prioritize direct links if ASIN available
       const bestMatch = scored[0];
-      if (bestMatch && bestMatch.score >= 0.40) {
-        const asin = bestMatch.asin || bestMatch.ASIN || bestMatch.productId || bestMatch.product_id;
+      if (bestMatch?.asin) {
+        const asin = bestMatch.asin.toUpperCase();
         console.log(`✅ IMPROVED: Selected product with ASIN: ${asin} (score: ${bestMatch.score})`);
         
         return {
@@ -131,10 +151,8 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
           productUrl: `https://www.amazon.fr/dp/${asin}`,
           addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
           searchUrl: undefined,
-          matchType: bestMatch.score >= 0.70 ? 'exact' : 'relaxed'
+          matchType: bestMatch.score >= 0.70 ? 'exact' : (bestMatch.score >= 0.35 ? 'relaxed' : 'relaxed')
         };
-      } else {
-        console.log(`⚠️ IMPROVED: Best score ${bestMatch?.score || 0} below threshold 0.40 - using fallback`);
       }
     } else {
       console.log(`❌ IMPROVED: No results found after all attempts`);
@@ -207,6 +225,7 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
       const response = await fetch(restUrl, {
         headers: {
           'API-KEY': canopyApiKey,
+          'X-API-KEY': canopyApiKey,
           'Content-Type': 'application/json'
         }
       });
@@ -214,8 +233,8 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
       console.log(`📊 IMPROVED: REST status: ${response.status}`);
       
       if (response.ok) {
-        const data = await response.json();
-        const results = data.results || data.products || data.items || data.data || [];
+        const payload = await response.json().catch(() => ({}));
+        const results = payload.results ?? payload.products ?? payload.items ?? payload.data?.results ?? payload.data ?? [];
         console.log(`📊 IMPROVED: REST returned ${results.length} results`);
         
         if (results.length > 0) {
