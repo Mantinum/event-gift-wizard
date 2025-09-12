@@ -74,16 +74,17 @@ serve(async (req) => {
       }
     }
 
-    // Generate gift suggestions using OpenAI Responses API with enhanced validation
-    const giftResponse = await fetch('https://api.openai.com/v1/responses', {
+    // Generate gift suggestions using OpenAI Chat Completions API with JSON schema
+    const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini',
+        model: 'gpt-4o-mini',
         temperature: 0.3,
+        max_tokens: 2000,
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -133,7 +134,7 @@ serve(async (req) => {
             }
           }
         },
-        input: [
+        messages: [
           {
             role: 'system',
             content: `Tu es un expert FR en cadeaux Amazon. Tu dois suggérer 3 cadeaux concrets.
@@ -188,10 +189,10 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
     let suggestions = [];
     
     try {
-      // Parse Responses API format
-      const content = giftData.output?.[0]?.content?.[0]?.text;
+      // Parse Chat Completions API format
+      const content = giftData.choices?.[0]?.message?.content;
       if (!content) {
-        throw new Error('No content in Responses API response');
+        throw new Error('No content in OpenAI response');
       }
       const parsed = JSON.parse(content);
       suggestions = parsed.suggestions || [];
