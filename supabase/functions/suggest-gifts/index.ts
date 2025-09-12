@@ -114,6 +114,15 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
       results = await searchCanopyWithRetryAndFallback(englishQuery, canopyApiKey, 'english');
     }
     
+    // 3.5. Try LLM search queries variants
+    if (results.length === 0 && Array.isArray(suggestion.search_queries) && suggestion.search_queries.length) {
+      for (const alt of suggestion.search_queries.slice(0, 5)) {
+        console.log(`🧭 VARIANT: Trying LLM search_query "${alt}"`);
+        const r = await searchCanopyWithRetryAndFallback(alt, canopyApiKey, 'llm-variant');
+        if (r.length) { results = r; break; }
+      }
+    }
+    
     // 4. If still no results, try just the brand
     if (results.length === 0 && suggestion.brand && suggestion.brand.length > 2) {
       console.log(`🏷️ IMPROVED: Trying brand-only: "${suggestion.brand}"`);
@@ -219,53 +228,59 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
 
   const searchQuery = encodeURIComponent(cleanQuery);
   
-  // Enhanced REST API with retry logic
+  // Enhanced REST API with retry logic and multiple URL variants
   const maxRetries = 2;
   const backoffDelays = [300, 800];
   
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const restUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=10`;
-      console.log(`📡 IMPROVED: REST attempt ${attempt + 1}: ${restUrl}`);
+  const restUrls = [
+    `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=10`,
+    `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&country=FR&limit=10`,
+  ];
 
-      const response = await fetch(restUrl, {
-        headers: {
-          'API-KEY': canopyApiKey,
-          'X-API-KEY': canopyApiKey,
-          'Content-Type': 'application/json'
-        }
-      });
+  for (const restUrl of restUrls) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📡 IMPROVED: REST attempt ${attempt + 1}: ${restUrl}`);
 
-      console.log(`📊 IMPROVED: REST status: ${response.status}`);
-      
-      if (response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const results = payload.results ?? payload.products ?? payload.items ?? payload.data?.results ?? payload.data ?? [];
-        console.log(`📊 IMPROVED: REST returned ${results.length} results`);
+        const response = await fetch(restUrl, {
+          headers: {
+            'API-KEY': canopyApiKey,
+            'X-API-KEY': canopyApiKey,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        console.log(`📊 IMPROVED: REST status: ${response.status}`);
         
-        if (results.length > 0) {
-          // Log first result structure
-          console.log(`🔍 IMPROVED: First result sample:`, {
-            title: results[0]?.title?.substring(0, 50),
-            asin: results[0]?.asin,
-            price: results[0]?.price,
-            hasAsin: !!(results[0]?.asin || results[0]?.ASIN || results[0]?.productId)
-          });
-          return results;
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          const results = payload.results ?? payload.products ?? payload.items ?? payload.data?.results ?? payload.data ?? [];
+          console.log(`📊 IMPROVED: REST returned ${results.length} results`);
+          
+          if (results.length > 0) {
+            // Log first result structure
+            console.log(`🔍 IMPROVED: First result sample:`, {
+              title: results[0]?.title?.substring(0, 50),
+              asin: results[0]?.asin,
+              price: results[0]?.price,
+              hasAsin: !!(results[0]?.asin || results[0]?.ASIN || results[0]?.productId)
+            });
+            return results;
+          }
+        } else if (response.status >= 500 && attempt < maxRetries) {
+          console.log(`⏳ IMPROVED: Server error, retrying in ${backoffDelays[attempt]}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
+          continue;
+        } else {
+          const errorText = await response.text();
+          console.log(`❌ IMPROVED: REST error: ${response.status} - ${errorText}`);
+          break;
         }
-      } else if (response.status >= 500 && attempt < maxRetries) {
-        console.log(`⏳ IMPROVED: Server error, retrying in ${backoffDelays[attempt]}ms...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
-        continue;
-      } else {
-        const errorText = await response.text();
-        console.log(`❌ IMPROVED: REST error: ${response.status} - ${errorText}`);
-        break;
-      }
-    } catch (error) {
-      console.log(`❌ IMPROVED: REST request failed (attempt ${attempt + 1}): ${error}`);
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
+      } catch (error) {
+        console.log(`❌ IMPROVED: REST request failed (attempt ${attempt + 1}): ${error}`);
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, backoffDelays[attempt]));
+        }
       }
     }
   }
