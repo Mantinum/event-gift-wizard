@@ -103,7 +103,13 @@ async function searchCanopyAmazonAdvanced(suggestion: GiftSuggestion, canopyApiK
     
     // 3. If no results, try English translation for international brands
     if (results.length === 0 && suggestion.brand) {
-      const englishQuery = `${suggestion.brand} ${searchTerm.replace(suggestion.brand, '').trim()}`;
+      const brand = suggestion.brand.trim();
+      let englishQuery = searchTerm;
+      if (brand) {
+        const re = new RegExp(`\\b${brand.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')}\\b`, 'i');
+        englishQuery = englishQuery.replace(re, '').trim();
+        englishQuery = `${brand} ${englishQuery}`.trim();
+      }
       console.log(`🌍 IMPROVED: Trying English fallback: "${englishQuery}"`);
       results = await searchCanopyWithRetryAndFallback(englishQuery, canopyApiKey, 'english');
     }
@@ -267,6 +273,7 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
   // Fallback to GraphQL
   console.log(`🔄 IMPROVED: Falling back to GraphQL for ${variant}`);
   try {
+    // Try primary GraphQL schema first
     const graphqlQuery = `
       query SearchAmazon($searchTerm: String!, $domain: String!) {
         amazon_search(searchTerm: $searchTerm, domain: $domain, limit: 10) {
@@ -318,8 +325,43 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
       }
     } else {
       const errorText = await graphqlResponse.text();
-      console.log(`❌ IMPROVED: GraphQL error: ${errorText}`);
+      console.log(`❌ IMPROVED: Primary GraphQL error: ${errorText}`);
     }
+
+    // Try alternative GraphQL schema if primary failed
+    console.log(`🔄 IMPROVED: Trying alternative GraphQL schema`);
+    const graphqlQueryAlt = `
+      query Search($q: String!) {
+        amazonSearch(q: $q, country: FR, limit: 10) {
+          results { title asin price rating review_count availability prime image_url url }
+        }
+      }
+    `;
+    
+    const gqlAltResponse = await fetch('https://graphql.canopyapi.co/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${canopyApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        query: graphqlQueryAlt,
+        variables: { q: cleanQuery }
+      })
+    });
+    
+    if (gqlAltResponse.ok) {
+      const altData = await gqlAltResponse.json();
+      const altResults = altData.data?.amazonSearch?.results ?? [];
+      console.log(`📊 IMPROVED: Alternative GraphQL returned ${altResults.length} results`);
+      if (altResults.length > 0) {
+        return altResults;
+      }
+    } else {
+      const altErrorText = await gqlAltResponse.text();
+      console.log(`❌ IMPROVED: Alternative GraphQL error: ${altErrorText}`);
+    }
+
   } catch (error) {
     console.error(`❌ IMPROVED: GraphQL fallback failed: ${error}`);
   }
