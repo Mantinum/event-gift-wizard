@@ -40,178 +40,125 @@ interface GiftSuggestion {
 }
 
 serve(async (req) => {
-  console.log('🚀 Edge function started');
+  console.log('=== EDGE FUNCTION START ===');
+  console.log('Method:', req.method);
+  console.log('Headers:', Object.fromEntries(req.headers.entries()));
   
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    console.log('✅ CORS preflight handled');
+    console.log('✅ Returning CORS response');
     return new Response(null, { headers: corsHeaders });
   }
 
+  let step = 'INIT';
   try {
-    console.log('📥 Processing POST request');
+    step = 'PARSE_BODY';
+    console.log('📥 Step: PARSE_BODY');
     const body = await req.json();
-    console.log('📊 Request body:', body);
+    console.log('📊 Request body received:', JSON.stringify(body));
     
+    step = 'EXTRACT_PARAMS';
+    console.log('📥 Step: EXTRACT_PARAMS');
     const { personId, eventType, budget, additionalContext } = body as GiftSuggestionRequest;
+    console.log('🔍 Params extracted:', { personId, eventType, budget, additionalContext });
     
-    console.log('🔍 Request parsed:', { personId, eventType, budget, additionalContext });
-    
-    // Check environment variables
+    step = 'CHECK_ENV';
+    console.log('📥 Step: CHECK_ENV');
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
-    console.log('🔑 Environment check:', {
-      openAI: openAIApiKey ? 'SET' : 'MISSING',
-      supabaseUrl: supabaseUrl ? 'SET' : 'MISSING',
-      supabaseKey: supabaseKey ? 'SET' : 'MISSING'
+    console.log('🔑 Environment variables:', {
+      openAI: openAIApiKey ? `SET (${openAIApiKey.substring(0, 10)}...)` : 'MISSING',
+      supabaseUrl: supabaseUrl ? `SET (${supabaseUrl})` : 'MISSING',
+      supabaseKey: supabaseKey ? `SET (${supabaseKey.substring(0, 10)}...)` : 'MISSING'
     });
 
     if (!openAIApiKey) {
       throw new Error('OpenAI API key not configured');
     }
-
-    // Get the Authorization header
-    const authHeader = req.headers.get('authorization');
-    console.log('🔐 Auth header:', authHeader ? 'PRESENT' : 'MISSING');
-    
-    if (!authHeader) {
-      throw new Error('Authorization required');
+    if (!supabaseUrl) {
+      throw new Error('Supabase URL not configured');
+    }
+    if (!supabaseKey) {
+      throw new Error('Supabase key not configured');
     }
 
-    // Initialize Supabase client with user context
-    const supabase = createClient(supabaseUrl!, supabaseKey!, {
+    step = 'CHECK_AUTH';
+    console.log('📥 Step: CHECK_AUTH');
+    const authHeader = req.headers.get('authorization');
+    console.log('🔐 Auth header:', authHeader ? `PRESENT (${authHeader.substring(0, 20)}...)` : 'MISSING');
+    
+    if (!authHeader) {
+      throw new Error('Authorization header missing');
+    }
+
+    step = 'INIT_SUPABASE';
+    console.log('📥 Step: INIT_SUPABASE');
+    const supabase = createClient(supabaseUrl, supabaseKey, {
       global: {
         headers: {
           Authorization: authHeader
         }
       }
     });
+    console.log('✅ Supabase client created');
 
-    // Fetch person data
-    console.log(`🔍 Fetching person with ID: ${personId}`);
+    step = 'FETCH_PERSON';
+    console.log('📥 Step: FETCH_PERSON');
+    console.log(`🔍 Querying person with ID: ${personId}`);
+    
     const { data: person, error: personError } = await supabase
       .from('persons')
       .select('*')
       .eq('id', personId)
       .maybeSingle();
 
-    console.log('👤 Person query result:', { 
-      personFound: !!person, 
-      personName: person?.name,
-      error: personError?.message 
-    });
+    console.log('👤 Person query completed');
+    console.log('👤 Person data:', person ? `Found: ${person.name}` : 'Not found');
+    console.log('👤 Person error:', personError ? JSON.stringify(personError) : 'None');
 
     if (personError) {
-      console.error('❌ Person query error:', personError);
-      throw new Error(`Person query failed: ${personError.message}`);
+      throw new Error(`Person query failed: ${JSON.stringify(personError)}`);
     }
 
     if (!person) {
-      throw new Error('Person not found');
+      throw new Error(`Person with ID ${personId} not found`);
     }
 
-    // Calculate person's age
-    const birth = new Date(person.birthday);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-
-    const interests = Array.isArray(person.interests) ? person.interests.join(', ') : '';
-    const preferredCategories = Array.isArray(person.preferred_categories) 
-      ? person.preferred_categories.join(', ') 
-      : '';
-
-    // Build context for AI
-    const prompt = `Génère 3 suggestions de cadeaux personnalisées pour ${person.name} (${age} ans, ${person.relationship}).
-
-Intérêts: ${interests || 'Non spécifié'}
-Budget: ${budget}€
-Événement: ${eventType}
-
-Réponds avec un JSON valide contenant exactement cette structure:
-{
-  "suggestions": [
-    {
-      "title": "Nom du produit",
-      "description": "Description du produit",
-      "estimatedPrice": 25,
-      "confidence": 0.8,
-      "reasoning": "Pourquoi ce cadeau convient",
-      "category": "Catégorie",
-      "alternatives": ["Alternative 1", "Alternative 2"],
-      "purchaseLinks": ["https://www.amazon.fr/s?k=produit"],
-      "brand": "Marque",
-      "amazonData": {
-        "searchUrl": "https://www.amazon.fr/s?k=produit",
-        "matchType": "search"
-      }
-    }
-  ]
-}`;
-
-    console.log('🤖 Calling OpenAI API...');
+    step = 'SUCCESS_RESPONSE';
+    console.log('📥 Step: SUCCESS_RESPONSE');
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        max_tokens: 2000,
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un expert en suggestions de cadeaux. Réponds uniquement avec du JSON valide.'
-          },
-          {
-            role: 'user',
-            content: prompt
+    // Return a simple success response for now to isolate the issue
+    const result = {
+      success: true,
+      message: 'Function executed successfully',
+      personName: person.name,
+      step: step,
+      suggestions: [
+        {
+          title: "Test Suggestion",
+          description: "This is a test suggestion",
+          estimatedPrice: 25,
+          confidence: 0.8,
+          reasoning: "Test reasoning",
+          category: "Test",
+          alternatives: ["Alternative 1"],
+          purchaseLinks: ["https://www.amazon.fr/s?k=test"],
+          brand: "Test Brand",
+          amazonData: {
+            searchUrl: "https://www.amazon.fr/s?k=test",
+            matchType: "search" as const
           }
-        ]
-      })
-    });
-
-    console.log(`🤖 OpenAI response status: ${response.status}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ OpenAI API error: ${response.status} - ${errorText}`);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices[0].message.content;
+        }
+      ]
+    };
     
-    console.log('📝 OpenAI response length:', content?.length);
-    console.log('📝 Content preview:', content?.substring(0, 100));
-
-    let suggestions;
-    try {
-      const parsed = JSON.parse(content);
-      suggestions = parsed.suggestions || [];
-    } catch (parseError) {
-      console.error('❌ JSON parse error:', parseError);
-      console.error('❌ Raw content:', content);
-      throw new Error('Invalid JSON from OpenAI');
-    }
-
-    console.log(`✅ Generated ${suggestions.length} suggestions`);
-
+    console.log('✅ Returning success response');
     return new Response(
-      JSON.stringify({
-        suggestions,
-        personName: person.name,
-        eventType,
-        budget
-      }),
+      JSON.stringify(result),
       { 
+        status: 200,
         headers: { 
           ...corsHeaders, 
           'Content-Type': 'application/json' 
@@ -220,17 +167,27 @@ Réponds avec un JSON valide contenant exactement cette structure:
     );
 
   } catch (error) {
-    console.error('💥 Function error:', error);
+    console.error('💥 ERROR at step:', step);
+    console.error('💥 Error type:', error?.constructor?.name);
+    console.error('💥 Error message:', error?.message);
+    console.error('💥 Error stack:', error?.stack);
+    
+    const errorResponse = { 
+      success: false,
+      error: error?.message || 'Unknown error occurred',
+      step: step,
+      suggestions: [],
+      debug: {
+        timestamp: new Date().toISOString(),
+        errorType: error?.constructor?.name || 'UnknownError',
+        step: step
+      }
+    };
+    
+    console.log('❌ Returning error response:', JSON.stringify(errorResponse));
     
     return new Response(
-      JSON.stringify({ 
-        error: error?.message || 'Une erreur est survenue',
-        suggestions: [],
-        debug: {
-          timestamp: new Date().toISOString(),
-          errorType: error?.name || 'UnknownError'
-        }
-      }),
+      JSON.stringify(errorResponse),
       { 
         status: 500,
         headers: { 
