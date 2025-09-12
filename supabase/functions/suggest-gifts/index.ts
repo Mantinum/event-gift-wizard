@@ -53,7 +53,7 @@ serve(async (req) => {
     console.log('Step 5: Query person');
     const { data: person, error } = await supabase
       .from('persons')
-      .select('name, interests')
+      .select('*')
       .eq('id', personId)
       .maybeSingle();
 
@@ -66,24 +66,116 @@ serve(async (req) => {
       throw new Error('Person not found');
     }
 
-    console.log('Step 6: Generate simple response');
-    const suggestions = [
-      {
-        title: `Cadeau personnalisé pour ${person.name}`,
-        description: `Suggestion basée sur les intérêts : ${person.interests?.join(', ') || 'aucun'}`,
-        estimatedPrice: budget || 30,
-        confidence: 0.8,
-        reasoning: `Ce cadeau convient parfaitement à ${person.name} pour un ${eventType}`,
-        category: "Personnalisé",
-        alternatives: ["Alternative 1", "Alternative 2"],
-        purchaseLinks: [`https://www.amazon.fr/s?k=cadeau+${eventType}`],
-        brand: "Suggestion IA",
-        amazonData: {
-          searchUrl: `https://www.amazon.fr/s?k=cadeau+${eventType}`,
-          matchType: "search"
-        }
+    console.log('Step 6: Call OpenAI for real suggestions');
+    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    if (!openAIApiKey) {
+      throw new Error('OpenAI API key missing');
+    }
+
+    // Calculate age
+    const birth = new Date(person.birthday);
+    const age = new Date().getFullYear() - birth.getFullYear();
+    
+    const interests = Array.isArray(person.interests) ? person.interests.join(', ') : '';
+    
+    const prompt = `Génère 3 suggestions de cadeaux réalistes pour ${person.name}, ${age} ans, intérêts: ${interests}.
+Budget: ${budget}€, Événement: ${eventType}
+
+IMPORTANT: 
+- Propose des produits réels disponibles sur Amazon
+- Reste dans le budget
+- Adapte aux intérêts de la personne
+- Pour les liens, utilise des termes de recherche précis
+
+Format JSON UNIQUEMENT:
+{
+  "suggestions": [
+    {
+      "title": "Nom précis du produit",
+      "description": "Description courte du produit et pourquoi il convient",
+      "estimatedPrice": ${Math.min(budget, 50)},
+      "confidence": 0.85,
+      "reasoning": "Pourquoi ce cadeau convient à ${person.name}",
+      "category": "Catégorie",
+      "alternatives": ["Alt1", "Alt2"],
+      "purchaseLinks": ["https://www.amazon.fr/s?k=terme+de+recherche+précis"],
+      "brand": "Marque",
+      "amazonData": {
+        "searchUrl": "https://www.amazon.fr/s?k=terme+de+recherche+précis",
+        "matchType": "search"
       }
-    ];
+    }
+  ]
+}`;
+
+    console.log('Calling OpenAI...');
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 2500,
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'system',
+            content: 'Tu es un expert en cadeaux. Réponds UNIQUEMENT avec du JSON valide, pas de texte avant/après.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI error:', errorText);
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let content = data.choices[0].message.content.trim();
+    
+    // Clean up potential markdown formatting
+    content = content.replace(/```json\n?/g, '').replace(/```$/g, '');
+    
+    console.log('OpenAI response preview:', content.substring(0, 200));
+
+    let suggestions;
+    try {
+      const parsed = JSON.parse(content);
+      suggestions = parsed.suggestions || [];
+    } catch (parseError) {
+      console.error('JSON parse failed:', parseError);
+      console.error('Raw content:', content);
+      
+      // Fallback to manual suggestions if OpenAI JSON fails
+      suggestions = [
+        {
+          title: interests.includes('Tech') ? 'Écouteurs Bluetooth' : interests.includes('Sport') ? 'Bouteille d\'eau sport' : 'Livre bestseller',
+          description: `Cadeau parfait pour ${person.name} qui aime ${interests || 'découvrir de nouvelles choses'}`,
+          estimatedPrice: Math.min(budget, 40),
+          confidence: 0.75,
+          reasoning: `Ce cadeau correspond aux intérêts de ${person.name} et reste dans le budget`,
+          category: interests.includes('Tech') ? 'Technologie' : interests.includes('Sport') ? 'Sport' : 'Culture',
+          alternatives: ['Variante premium', 'Version économique'],
+          purchaseLinks: [`https://www.amazon.fr/s?k=${interests.includes('Tech') ? 'ecouteurs+bluetooth' : interests.includes('Sport') ? 'bouteille+sport' : 'livre+bestseller'}`],
+          brand: 'Suggestion',
+          amazonData: {
+            searchUrl: `https://www.amazon.fr/s?k=${interests.includes('Tech') ? 'ecouteurs+bluetooth' : interests.includes('Sport') ? 'bouteille+sport' : 'livre+bestseller'}`,
+            matchType: 'search'
+          }
+        }
+      ];
+    }
+
+    console.log(`Generated ${suggestions.length} suggestions`);
 
     console.log('Step 7: Return response');
     return new Response(JSON.stringify({
