@@ -126,35 +126,140 @@ serve(async (req) => {
       throw new Error(`Person with ID ${personId} not found`);
     }
 
+    step = 'CALCULATE_AGE';
+    console.log('📥 Step: CALCULATE_AGE');
+    const birth = new Date(person.birthday);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+
+    const interests = Array.isArray(person.interests) ? person.interests.join(', ') : '';
+    const preferredCategories = Array.isArray(person.preferred_categories) 
+      ? person.preferred_categories.join(', ') 
+      : '';
+
+    step = 'BUILD_PROMPT';
+    console.log('📥 Step: BUILD_PROMPT');
+    const prompt = `Tu es un expert en cadeaux personnalisés. Génère 3 suggestions de cadeaux pour cette personne :
+
+**Profil :**
+- Nom : ${person.name}
+- Âge : ${age} ans
+- Genre : ${person.gender || 'Non spécifié'}
+- Relation : ${person.relationship}
+- Intérêts : ${interests || 'Non spécifié'}
+- Notes : ${person.notes || 'Aucune'}
+- Budget : ${budget}€
+- Événement : ${eventType}
+- Contexte : ${additionalContext || 'Aucun'}
+
+**Instructions importantes :**
+1. Adapte chaque suggestion au profil et aux intérêts de la personne
+2. Reste dans le budget indiqué
+3. Propose des produits réels et populaires
+4. Pour chaque suggestion, utilise un terme de recherche simple (ex: "casque bluetooth", "livre cuisine", "plante verte")
+
+Réponds UNIQUEMENT avec ce JSON exact (sans texte supplémentaire) :
+{
+  "suggestions": [
+    {
+      "title": "Nom précis du produit",
+      "description": "Description détaillée en 2-3 phrases",
+      "estimatedPrice": prix_en_nombre,
+      "confidence": 0.85,
+      "reasoning": "Explication personnalisée basée sur les intérêts de ${person.name}",
+      "category": "Catégorie",
+      "alternatives": ["Alternative 1", "Alternative 2"],
+      "purchaseLinks": ["https://www.amazon.fr/s?k=terme_de_recherche"],
+      "brand": "Marque si applicable",
+      "amazonData": {
+        "searchUrl": "https://www.amazon.fr/s?k=terme_de_recherche",
+        "matchType": "search"
+      }
+    }
+  ]
+}`;
+
+    step = 'CALL_OPENAI';
+    console.log('📥 Step: CALL_OPENAI');
+    console.log('🤖 Calling OpenAI with prompt length:', prompt.length);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        max_tokens: 3000,
+        temperature: 0.7,
+        messages: [
+          {
+            role: 'system',
+            content: 'Tu es un expert en suggestions de cadeaux personnalisés. Réponds uniquement avec du JSON valide, sans texte avant ou après.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    console.log(`🤖 OpenAI response status: ${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ OpenAI API error: ${response.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    step = 'PARSE_OPENAI_RESPONSE';
+    console.log('📥 Step: PARSE_OPENAI_RESPONSE');
+    const data = await response.json();
+    const content = data.choices[0].message.content;
+    
+    console.log('📝 OpenAI response length:', content?.length);
+    console.log('📝 Content preview:', content?.substring(0, 150));
+
+    let suggestions;
+    try {
+      // Clean the content in case there's extra text
+      let cleanContent = content.trim();
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/```json\n?/, '').replace(/```$/, '');
+      }
+      
+      const parsed = JSON.parse(cleanContent);
+      suggestions = parsed.suggestions || [];
+      
+      if (!Array.isArray(suggestions) || suggestions.length === 0) {
+        throw new Error('No suggestions in OpenAI response');
+      }
+      
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError);
+      console.error('❌ Raw content:', content);
+      throw new Error(`Invalid JSON from OpenAI: ${parseError.message}`);
+    }
+
+    console.log(`✅ Successfully parsed ${suggestions.length} suggestions`);
+
     step = 'SUCCESS_RESPONSE';
     console.log('📥 Step: SUCCESS_RESPONSE');
     
-    // Return a simple success response for now to isolate the issue
     const result = {
-      success: true,
-      message: 'Function executed successfully',
+      suggestions,
       personName: person.name,
-      step: step,
-      suggestions: [
-        {
-          title: "Test Suggestion",
-          description: "This is a test suggestion",
-          estimatedPrice: 25,
-          confidence: 0.8,
-          reasoning: "Test reasoning",
-          category: "Test",
-          alternatives: ["Alternative 1"],
-          purchaseLinks: ["https://www.amazon.fr/s?k=test"],
-          brand: "Test Brand",
-          amazonData: {
-            searchUrl: "https://www.amazon.fr/s?k=test",
-            matchType: "search" as const
-          }
-        }
-      ]
+      eventType,
+      budget
     };
     
-    console.log('✅ Returning success response');
+    console.log('✅ Returning success response with real suggestions');
     return new Response(
       JSON.stringify(result),
       { 
