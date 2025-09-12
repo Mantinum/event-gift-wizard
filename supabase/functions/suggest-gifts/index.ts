@@ -103,7 +103,7 @@ serve(async (req) => {
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries"],
+                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries", "asin", "product_url"],
                     properties: {
                       title: { type: "string" },
                       description: { type: "string" },
@@ -119,14 +119,12 @@ serve(async (req) => {
                         maxItems: 5, 
                         items: { type: "string" } 
                       },
-                      // Champs optionnels :
+                      // Champs avec valeurs par défaut vides si non connus :
                       asin: { 
-                        type: "string", 
-                        pattern: "^[A-Z0-9]{10}$" 
+                        type: "string"
                       },
                       product_url: { 
-                        type: "string", 
-                        pattern: "^https?://(?:www\\.)?amazon\\.fr/(?:dp|gp/product)/[A-Z0-9]{10}(/.*)?$" 
+                        type: "string"
                       }
                     }
                   }
@@ -160,9 +158,9 @@ EXEMPLE de réponse attendue:
 }
 
 RÈGLES STRICTES:
-- Si tu es CERTAIN d'un ASIN, remplis "asin" (même si "product_url" reste absent).
-- "product_url" UNIQUEMENT si au format https://www.amazon.fr/dp/ASIN.
-- Si tu n'es pas sûr: LAISSE asin/product_url ABSENTS et fournis 3–5 "search_queries" (marque+modèle, sans adjectifs de couleur).
+- Si tu es CERTAIN d'un ASIN, remplis "asin" (sinon laisse une chaîne vide "").
+- "product_url" UNIQUEMENT si au format https://www.amazon.fr/dp/ASIN (sinon laisse une chaîne vide "").
+- Si tu n'es pas sûr: LAISSE asin/product_url VIDES ("") et fournis 3–5 "search_queries" (marque+modèle, sans adjectifs de couleur).
 - search_queries: toujours 3-5 requêtes précises et variées
 
 IMPORTANT: Préfère laisser asin/product_url vides + bonnes search_queries qu'un mauvais lien.`
@@ -235,8 +233,8 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
           }
         }
         
-        // 2) If no valid URL, try explicit ASIN field
-        if (!finalUrl && suggestion.asin && /^[A-Z0-9]{10}$/i.test(suggestion.asin)) {
+        // 2) If no valid URL, try explicit ASIN field (if not empty)
+        if (!finalUrl && suggestion.asin && suggestion.asin !== "" && /^[A-Z0-9]{10}$/i.test(suggestion.asin)) {
           const asin = suggestion.asin.toUpperCase();
           console.log(`Validating explicit ASIN: ${asin}`);
           const validation = await validateAsinUrl(asin);
