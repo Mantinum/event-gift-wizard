@@ -155,15 +155,29 @@ serve(async (req) => {
     
     console.log('🔍 Request received:', { personId, eventType, budget, additionalContext });
     
-    // Initialize Supabase client
+    // Get the Authorization header
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      console.error('❌ No authorization header found');
+      throw new Error('Authorization required');
+    }
+
+    // Initialize Supabase client with user context
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     console.log('🔗 Supabase config:', { 
       url: supabaseUrl ? 'SET' : 'MISSING', 
-      key: supabaseKey ? 'SET' : 'MISSING' 
+      key: supabaseKey ? 'SET' : 'MISSING',
+      hasAuth: !!authHeader
     });
     
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader
+        }
+      }
+    });
 
     // Fetch person data
     console.log(`🔍 Fetching person with ID: ${personId}`);
@@ -171,9 +185,9 @@ serve(async (req) => {
       .from('persons')
       .select('*')
       .eq('id', personId)
-      .single();
+      .maybeSingle();
 
-    console.log('📊 Person query result:', { person, error: personError });
+    console.log('📊 Person query result:', { person: !!person, error: personError });
 
     if (personError) {
       console.error('❌ Error fetching person:', personError);
@@ -181,7 +195,7 @@ serve(async (req) => {
     }
 
     if (!person) {
-      console.error('❌ Person is null');
+      console.error('❌ Person not found');
       throw new Error('Person not found');
     }
 
