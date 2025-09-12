@@ -50,7 +50,7 @@ serve(async (req) => {
       }
     }
 
-    // Generate gift suggestions using OpenAI
+    // Generate gift suggestions using OpenAI with strict validation
     const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -60,53 +60,46 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 2000,
-        temperature: 0.7,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
         messages: [
           {
             role: 'system',
-            content: `Tu es un expert en suggestions de cadeaux. Tu dois suggérer 3 cadeaux concrets avec des LIENS DIRECTS vers des produits spécifiques sur Amazon.fr ou d'autres sites français.
+            content: `Tu es un expert en suggestions de cadeaux. Tu dois suggérer 3 cadeaux concrets.
 
-IMPORTANT: Pour chaque suggestion, tu DOIS fournir:
-1. Un lien direct vers un produit spécifique (pas une recherche)
-2. Un prix précis basé sur le produit réel
-3. Une justification personnalisée
+RÈGLES STRICTES pour product_url:
+- Utilise UNIQUEMENT le format: https://www.amazon.fr/dp/ASIN
+- Si tu n'es pas 100% SûR de l'ASIN exact, laisse product_url vide
+- Dans ce cas, fournis 3-5 search_queries précises (marque+modèle, PAS d'adjectifs de couleur)
 
-Format de réponse en JSON:
+Format JSON obligatoire:
 {
   "suggestions": [
     {
       "title": "Nom précis du produit",
-      "description": "Description détaillée du produit",
+      "description": "Description détaillée",
       "estimatedPrice": 29.99,
       "confidence": 0.9,
-      "reasoning": "Pourquoi ce cadeau convient à cette personne",
-      "category": "Catégorie du produit",
-      "alternatives": ["Alternative 1", "Alternative 2"],
-      "purchaseLinks": ["https://www.amazon.fr/dp/ASINXXXXX", "https://www.fnac.com/..."],
-      "brand": "Marque du produit",
-      "amazonData": {
-        "searchUrl": "https://www.amazon.fr/dp/ASINXXXXX",
-        "matchType": "direct"
-      }
+      "reasoning": "Justification personnalisée",
+      "category": "Catégorie",
+      "brand": "Marque",
+      "canonical_name": "nom-produit-pour-recherche",
+      "product_url": "https://www.amazon.fr/dp/ASIN" ou "",
+      "search_queries": ["requête 1", "requête 2", "requête 3"]
     }
   ]
-}`
+}
+
+IMPORTANT: Si incertain sur l'ASIN, préfère search_queries que product_url invalide.`
           },
           {
             role: 'user',
             content: `Génère 3 suggestions de cadeaux pour:
-- Type d'événement: ${eventType}
-- Budget approximatif: ${budget}€
-- Informations sur la personne: ${personData ? JSON.stringify(personData) : 'Informations limitées'}
+- Événement: ${eventType}
+- Budget: ${budget}€
+- Personne: ${personData ? JSON.stringify(personData) : 'Informations limitées'}
 
-Trouve des produits RÉELS avec des liens directs vers Amazon.fr, Fnac, Darty, etc. Utilise tes connaissances des produits populaires et leurs ASINs Amazon pour créer des liens directs valides.
-
-Exemples de liens directs valides:
-- https://www.amazon.fr/dp/B08N5WRWNW (Echo Dot)
-- https://www.amazon.fr/dp/B07PHPXHQS (Kindle)
-- https://www.amazon.fr/dp/B08C1W5N87 (iPad)
-
-Génère des suggestions avec de vrais liens directs similaires.`
+Sois prudent avec les product_url - utilise seulement si tu connais l'ASIN exact.`
           }
         ]
       })
@@ -114,31 +107,8 @@ Génère des suggestions avec de vrais liens directs similaires.`
 
     if (!giftResponse.ok) {
       const errorText = await giftResponse.text();
-      console.error('OpenAI gift generation error:', giftResponse.status, errorText);
-      
-      // Return fallback suggestions if OpenAI fails
-      return new Response(JSON.stringify({
-        success: true,
-        suggestions: [
-          {
-            title: 'Écouteurs Sony WH-CH720N',
-            description: 'Casque sans fil avec réduction de bruit, autonomie 35h, parfait pour la musique et les appels',
-            estimatedPrice: budget || 89,
-            confidence: 0.8,
-            reasoning: 'Cadeau technologique apprécié par tous',
-            category: 'Audio',
-            alternatives: ['AirPods', 'JBL Tune 760NC'],
-            purchaseLinks: ['https://www.amazon.fr/dp/B0BTYGHG7L'],
-            brand: 'Sony',
-            amazonData: {
-              searchUrl: 'https://www.amazon.fr/dp/B0BTYGHG7L',
-              matchType: 'direct'
-            }
-          }
-        ]
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      console.error('OpenAI error:', giftResponse.status, errorText);
+      throw new Error(`OpenAI failed: ${giftResponse.status}`);
     }
 
     const giftData = await giftResponse.json();
@@ -146,39 +116,81 @@ Génère des suggestions avec de vrais liens directs similaires.`
     
     try {
       const content = giftData.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        suggestions = parsed.suggestions || [];
-      }
+      const parsed = JSON.parse(content);
+      suggestions = parsed.suggestions || [];
     } catch (error) {
       console.error('Error parsing OpenAI response:', error);
+      throw new Error('Invalid OpenAI response format');
     }
 
-    // If parsing failed, return fallback
-    if (suggestions.length === 0) {
-      suggestions = [
-        {
-          title: 'Livre bestseller récent',
-          description: 'Une sélection parmi les livres les plus populaires du moment',
-          estimatedPrice: budget || 20,
-          confidence: 0.7,
-          reasoning: 'Cadeau universel et enrichissant',
-          category: 'Littérature',
-          alternatives: ['BD', 'Magazine'],
-          purchaseLinks: ['https://www.amazon.fr/dp/B08FHHQK4Q'],
-          brand: 'Diverses',
-          amazonData: {
-            searchUrl: 'https://www.amazon.fr/dp/B08FHHQK4Q',
-            matchType: 'direct'
+    // Validate and process each suggestion
+    const processedSuggestions = await Promise.all(
+      suggestions.map(async (suggestion) => {
+        let finalUrl = '';
+        let purchaseLinks = [];
+        
+        if (suggestion.product_url) {
+          // Validate Amazon URL format
+          const asinMatch = suggestion.product_url.match(/https:\/\/www\.amazon\.fr\/dp\/([A-Z0-9]{10})/);
+          
+          if (asinMatch) {
+            const asin = asinMatch[1];
+            console.log(`Validating ASIN: ${asin}`);
+            
+            try {
+              // Validate ASIN with HEAD request
+              const validationResponse = await fetch(`https://www.amazon.fr/dp/${asin}`, {
+                method: 'HEAD',
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; bot)'
+                }
+              });
+              
+              if (validationResponse.status === 200 || validationResponse.status === 301 || validationResponse.status === 302) {
+                finalUrl = `https://www.amazon.fr/dp/${asin}`;
+                purchaseLinks = [
+                  finalUrl,
+                  `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1` // Add to cart
+                ];
+                console.log(`ASIN ${asin} validated successfully`);
+              } else {
+                console.log(`ASIN ${asin} validation failed: ${validationResponse.status}`);
+              }
+            } catch (error) {
+              console.log(`ASIN validation error: ${error.message}`);
+            }
           }
         }
-      ];
-    }
+        
+        // Fallback to search if no valid URL
+        if (!finalUrl) {
+          const searchQuery = suggestion.search_queries?.[0] || suggestion.canonical_name || suggestion.title;
+          finalUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`;
+          purchaseLinks = [finalUrl];
+        }
+        
+        return {
+          title: suggestion.title,
+          description: suggestion.description,
+          estimatedPrice: suggestion.estimatedPrice || budget || 30,
+          confidence: suggestion.confidence || 0.7,
+          reasoning: suggestion.reasoning || 'Suggestion générée par IA',
+          category: suggestion.category || 'Général',
+          alternatives: suggestion.search_queries || [],
+          purchaseLinks: purchaseLinks,
+          brand: suggestion.brand || 'Diverses marques',
+          amazonData: {
+            searchUrl: finalUrl,
+            matchType: finalUrl.includes('/dp/') ? 'direct' : 'search',
+            asin: finalUrl.includes('/dp/') ? finalUrl.split('/dp/')[1] : null
+          }
+        };
+      })
+    );
 
     return new Response(JSON.stringify({
       success: true,
-      suggestions: suggestions
+      suggestions: processedSuggestions
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
