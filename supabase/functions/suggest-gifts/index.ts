@@ -74,28 +74,34 @@ serve(async (req) => {
       }
     }
 
-    // Generate gift suggestions using OpenAI with enhanced validation
-    const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Generate gift suggestions using OpenAI Responses API with enhanced validation
+    const giftResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini-2025-08-07',
-        max_completion_tokens: 2000,
-        response_format: { 
+        model: 'gpt-5-mini',
+        temperature: 0.3,
+        response_format: {
           type: "json_schema",
           json_schema: {
             name: "gift_suggestions",
             strict: true,
             schema: {
               type: "object",
+              required: ["suggestions"],
+              additionalProperties: false,
               properties: {
                 suggestions: {
                   type: "array",
+                  minItems: 3,
+                  maxItems: 3,
                   items: {
                     type: "object",
+                    additionalProperties: false,
+                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries"],
                     properties: {
                       title: { type: "string" },
                       description: { type: "string" },
@@ -105,24 +111,32 @@ serve(async (req) => {
                       category: { type: "string" },
                       brand: { type: "string" },
                       canonical_name: { type: "string" },
-                      asin: { type: "string" },
-                      product_url: { type: "string" },
-                      search_queries: { type: "array", items: { type: "string" } }
-                    },
-                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "asin", "product_url", "search_queries"],
-                    additionalProperties: false
+                      search_queries: { 
+                        type: "array", 
+                        minItems: 3, 
+                        maxItems: 5, 
+                        items: { type: "string" } 
+                      },
+                      // Champs optionnels :
+                      asin: { 
+                        type: "string", 
+                        pattern: "^[A-Z0-9]{10}$" 
+                      },
+                      product_url: { 
+                        type: "string", 
+                        pattern: "^https?://(?:www\\.)?amazon\\.fr/(?:dp|gp/product)/[A-Z0-9]{10}(/.*)?$" 
+                      }
+                    }
                   }
                 }
-              },
-              required: ["suggestions"],
-              additionalProperties: false
+              }
             }
           }
         },
-        messages: [
+        input: [
           {
             role: 'system',
-            content: `Tu es un expert en suggestions de cadeaux Amazon. Tu dois suggérer 3 cadeaux concrets avec des ASINs valides quand possible.
+            content: `Tu es un expert FR en cadeaux Amazon. Tu dois suggérer 3 cadeaux concrets.
 
 EXEMPLE de réponse attendue:
 {
@@ -136,21 +150,20 @@ EXEMPLE de réponse attendue:
       "category": "Photo",
       "brand": "Fujifilm",
       "canonical_name": "Fujifilm Instax Mini 12",
+      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm"],
       "asin": "B0BXYZ1234",
-      "product_url": "https://www.amazon.fr/dp/B0BXYZ1234",
-      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo"]
+      "product_url": "https://www.amazon.fr/dp/B0BXYZ1234"
     }
   ]
 }
 
 RÈGLES STRICTES:
-- asin: ASIN Amazon de 10 caractères (B0XXXXX ou B00XXXX) si tu le connais, sinon ""
-- product_url: UNIQUEMENT format https://www.amazon.fr/dp/ASIN si tu es sûr, sinon ""
-- Si tu connais l'ASIN, remplis asin même si tu laisses product_url vide
-- search_queries: 3-5 requêtes précises (marque+modèle, SANS adjectifs de couleur)
-- Si incertain sur l'ASIN, laisse product_url et asin vides, donne de bonnes search_queries
+- Si tu es CERTAIN d'un ASIN, remplis "asin" (même si "product_url" reste absent).
+- "product_url" UNIQUEMENT si au format https://www.amazon.fr/dp/ASIN.
+- Si tu n'es pas sûr: LAISSE asin/product_url ABSENTS et fournis 3–5 "search_queries" (marque+modèle, sans adjectifs de couleur).
+- search_queries: toujours 3-5 requêtes précises et variées
 
-IMPORTANT: Préfère un asin/product_url vide + bonnes search_queries qu'un mauvais lien.`
+IMPORTANT: Préfère laisser asin/product_url vides + bonnes search_queries qu'un mauvais lien.`
           },
           {
             role: 'user',
@@ -159,7 +172,7 @@ IMPORTANT: Préfère un asin/product_url vide + bonnes search_queries qu'un mauv
 - Budget: ${budget}€
 - Personne: ${personData ? JSON.stringify(personData) : 'Informations limitées'}
 
-Sois prudent avec les product_url - utilise seulement si tu connais l'ASIN exact.`
+Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
           }
         ]
       })
@@ -175,7 +188,11 @@ Sois prudent avec les product_url - utilise seulement si tu connais l'ASIN exact
     let suggestions = [];
     
     try {
-      const content = giftData.choices[0].message.content;
+      // Parse Responses API format
+      const content = giftData.output?.[0]?.content?.[0]?.text;
+      if (!content) {
+        throw new Error('No content in Responses API response');
+      }
       const parsed = JSON.parse(content);
       suggestions = parsed.suggestions || [];
     } catch (error) {
@@ -232,10 +249,10 @@ Sois prudent avec les product_url - utilise seulement si tu connais l'ASIN exact
         
         // 3) Fallback to search (try multiple query variants)
         if (!finalUrl) {
-          const queries = suggestion.search_queries ?? [];
-          const primary = suggestion.canonical_name || suggestion.title;
-          const allQueries = [...queries, primary].filter(Boolean);
-          const searchQuery = allQueries[0] || 'cadeau';
+          const queries = [...(suggestion.search_queries ?? []), suggestion.canonical_name, suggestion.title]
+            .filter(Boolean) as string[];
+          // Choose the best query (shortest or most precise)
+          const searchQuery = queries.sort((a, b) => a.length - b.length)[0] || 'cadeau';
           
           finalUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`;
           purchaseLinks = [finalUrl];
