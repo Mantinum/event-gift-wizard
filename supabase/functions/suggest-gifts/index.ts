@@ -201,12 +201,12 @@ async function searchCanopyWithRetryAndFallback(query: string, canopyApiKey: str
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const restUrl = `https://rest.canopyapi.co/api/amazon/search?searchTerm=${searchQuery}&domain=amazon.fr&limit=10`;
+      const restUrl = `https://rest.canopyapi.co/api/amazon/search?query=${searchQuery}&domain=amazon.fr&limit=10`;
       console.log(`📡 IMPROVED: REST attempt ${attempt + 1}: ${restUrl}`);
 
       const response = await fetch(restUrl, {
         headers: {
-          'Authorization': `Bearer ${canopyApiKey}`,
+          'API-KEY': canopyApiKey,
           'Content-Type': 'application/json'
         }
       });
