@@ -7,6 +7,58 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// SerpApi Amazon search function
+async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
+  asin?: string;
+  productUrl?: string;
+  addToCartUrl?: string;
+  title?: string;
+  price?: string;
+} | null> {
+  try {
+    console.log(`🔍 SerpApi search for: "${query}"`);
+    
+    const params = new URLSearchParams({
+      engine: 'amazon',
+      amazon_domain: 'amazon.fr',
+      q: query,
+      api_key: serpApiKey
+    });
+
+    const response = await fetch(`https://serpapi.com/search?${params}`);
+    
+    if (!response.ok) {
+      console.error(`SerpApi error: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    // Get the first organic result with ASIN
+    const organicResults = data.organic_results || [];
+    const firstResult = organicResults.find((result: any) => result.asin);
+    
+    if (firstResult && firstResult.asin) {
+      const asin = firstResult.asin;
+      console.log(`✅ Found ASIN: ${asin} for query: "${query}"`);
+      
+      return {
+        asin,
+        productUrl: `https://www.amazon.fr/dp/${asin}`,
+        addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+        title: firstResult.title,
+        price: firstResult.price_string
+      };
+    }
+    
+    console.log(`❌ No ASIN found for query: "${query}"`);
+    return null;
+  } catch (error) {
+    console.error(`SerpApi search failed for "${query}":`, error);
+    return null;
+  }
+}
+
 serve(async (req) => {
   console.log('=== FUNCTION START ===');
   
@@ -19,15 +71,31 @@ serve(async (req) => {
     const { personId, eventType, budget } = body;
     console.log('Request received:', { personId, eventType, budget });
 
+    // Check API keys
     const openAIKey = Deno.env.get('OPENAI_API_KEY');
+    const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+    
     console.log('OpenAI Key available:', !!openAIKey);
+    console.log('SerpApi Key available:', !!serpApiKey);
+    
     if (!openAIKey) {
       console.error('Missing OpenAI API key');
       return new Response(JSON.stringify({
         error: 'Configuration manquante: clé OpenAI non configurée',
         suggestions: []
       }), {
-        status: 200, // Return 200 but with error message
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!serpApiKey) {
+      console.error('Missing SerpApi API key');
+      return new Response(JSON.stringify({
+        error: 'Configuration manquante: clé SerpApi non configurée',
+        suggestions: []
+      }), {
+        status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -51,31 +119,9 @@ serve(async (req) => {
       }
     }
 
-    // Validation function for Amazon ASINs
-    async function validateAsinUrl(asin: string): Promise<'ok'|'soft'|'ko'> {
-      const url = `https://www.amazon.fr/dp/${asin}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2000);
-      
-      try {
-        const response = await fetch(url, { 
-          method: 'HEAD', 
-          redirect: 'manual', 
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bot)' }
-        });
-        
-        if ([200, 301, 302, 303, 307, 308].includes(response.status)) return 'ok';
-        if ([403, 503].includes(response.status)) return 'soft'; // Amazon blocking, but tolerate
-        return 'ko';
-      } catch (error) {
-        return 'soft'; // Network/timeout → tolerant
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-
-    // Generate gift suggestions using OpenAI Chat Completions API with JSON schema
+    // ===== ÉTAPE 1: Génération IA avec OpenAI =====
+    console.log('🤖 Étape 1: Génération des suggestions IA');
+    
     const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -103,7 +149,7 @@ serve(async (req) => {
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries", "asin", "product_url"],
+                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries"],
                     properties: {
                       title: { type: "string" },
                       description: { type: "string" },
@@ -118,13 +164,6 @@ serve(async (req) => {
                         minItems: 3, 
                         maxItems: 5, 
                         items: { type: "string" } 
-                      },
-                      // Champs avec valeurs par défaut vides si non connus :
-                      asin: { 
-                        type: "string"
-                      },
-                      product_url: { 
-                        type: "string"
                       }
                     }
                   }
@@ -136,34 +175,32 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `Tu es un expert FR en cadeaux Amazon. Tu dois suggérer 3 cadeaux concrets.
+            content: `Tu es un expert en suggestions de cadeaux. Tu dois suggérer 3 cadeaux concrets et précis.
 
 EXEMPLE de réponse attendue:
 {
   "suggestions": [
     {
-      "title": "Fujifilm Instax Mini 12",
-      "description": "Appareil photo instantané compact et moderne",
+      "title": "Fujifilm Instax Mini 12 Appareil Photo Instantané",
+      "description": "Appareil photo instantané compact et moderne, parfait pour capturer des moments mémorables",
       "estimatedPrice": 79.99,
       "confidence": 0.9,
-      "reasoning": "Compatible avec le profil et budget",
+      "reasoning": "Produit populaire et adapté au budget, idéal pour les jeunes adultes",
       "category": "Photo",
       "brand": "Fujifilm",
       "canonical_name": "Fujifilm Instax Mini 12",
-      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm"],
-      "asin": "B0BXYZ1234",
-      "product_url": "https://www.amazon.fr/dp/B0BXYZ1234"
+      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm", "Fujifilm Instax Mini"]
     }
   ]
 }
 
-RÈGLES STRICTES:
-- Si tu es CERTAIN d'un ASIN, remplis "asin" (sinon laisse une chaîne vide "").
-- "product_url" UNIQUEMENT si au format https://www.amazon.fr/dp/ASIN (sinon laisse une chaîne vide "").
-- Si tu n'es pas sûr: LAISSE asin/product_url VIDES ("") et fournis 3–5 "search_queries" (marque+modèle, sans adjectifs de couleur).
-- search_queries: toujours 3-5 requêtes précises et variées
-
-IMPORTANT: Préfère laisser asin/product_url vides + bonnes search_queries qu'un mauvais lien.`
+CONSIGNES IMPORTANTES:
+- Produits concrets avec marque et modèle précis
+- search_queries: 3-5 requêtes optimisées pour Amazon (marque + modèle + mots-clés)
+- Éviter les adjectifs de couleur dans les search_queries
+- Diversité entre les 3 suggestions (catégories différentes)
+- Prix cohérent avec le budget
+- Confidence entre 0.7 et 1.0`
           },
           {
             role: 'user',
@@ -172,7 +209,7 @@ IMPORTANT: Préfère laisser asin/product_url vides + bonnes search_queries qu'u
 - Budget: ${budget}€
 - Personne: ${personData ? JSON.stringify(personData) : 'Informations limitées'}
 
-Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
+Fournis des produits concrets avec marque et modèle, et des search_queries précises pour Amazon.`
           }
         ]
       })
@@ -186,13 +223,11 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
     }
 
     const giftData = await giftResponse.json();
-    console.log('OpenAI raw response:', JSON.stringify(giftData, null, 2));
-    let suggestions = [];
+    console.log('✅ OpenAI suggestions generated');
     
+    let suggestions = [];
     try {
-      // Parse Chat Completions API format
       const content = giftData.choices?.[0]?.message?.content;
-      console.log('OpenAI content:', content);
       if (!content) {
         throw new Error('No content in OpenAI response');
       }
@@ -201,72 +236,61 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
       console.log('Parsed suggestions count:', suggestions.length);
     } catch (error) {
       console.error('Error parsing OpenAI response:', error);
-      console.error('Raw response structure:', Object.keys(giftData));
       throw new Error(`Invalid OpenAI response format: ${error.message}`);
     }
 
-    // Validate and process each suggestion with enhanced ASIN handling
+    // ===== ÉTAPE 2: Résolution produit via SerpApi =====
+    console.log('🔍 Étape 2: Résolution des liens Amazon via SerpApi');
+    
     const processedSuggestions = await Promise.all(
-      suggestions.map(async (suggestion) => {
-        const asinRe = /https?:\/\/(?:www\.)?amazon\.fr\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i;
-        let matchType: 'direct' | 'direct-unverified' | 'search' = 'search';
+      suggestions.map(async (suggestion, index) => {
+        console.log(`\n--- Traitement suggestion ${index + 1}: "${suggestion.title}" ---`);
+        
+        let amazonResult = null;
+        let matchType: 'direct' | 'search' = 'search';
         let finalUrl = '';
         let purchaseLinks: string[] = [];
         
-        // 1) Try product_url first
-        const urlMatch = suggestion.product_url?.match(asinRe);
-        if (urlMatch) {
-          const asin = urlMatch[1].toUpperCase();
-          console.log(`Validating ASIN from URL: ${asin}`);
-          const validation = await validateAsinUrl(asin);
-          
-          if (validation !== 'ko') {
-            finalUrl = `https://www.amazon.fr/dp/${asin}`;
-            purchaseLinks = [
-              finalUrl,
-              `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`
-            ];
-            matchType = validation === 'ok' ? 'direct' : 'direct-unverified';
-            console.log(`ASIN ${asin} from URL validated: ${validation}`);
-          } else {
-            console.log(`ASIN ${asin} from URL validation failed`);
+        // Essayer chaque search_query avec SerpApi
+        if (suggestion.search_queries && suggestion.search_queries.length > 0) {
+          for (const query of suggestion.search_queries.slice(0, 3)) { // Max 3 tentatives par suggestion
+            amazonResult = await searchAmazonProduct(query, serpApiKey);
+            if (amazonResult && amazonResult.asin) {
+              console.log(`✅ Produit trouvé via SerpApi pour "${query}"`);
+              matchType = 'direct';
+              finalUrl = amazonResult.productUrl!;
+              purchaseLinks = [
+                amazonResult.productUrl!,
+                amazonResult.addToCartUrl!
+              ];
+              break;
+            }
           }
         }
         
-        // 2) If no valid URL, try explicit ASIN field (if not empty)
-        if (!finalUrl && suggestion.asin && suggestion.asin !== "" && /^[A-Z0-9]{10}$/i.test(suggestion.asin)) {
-          const asin = suggestion.asin.toUpperCase();
-          console.log(`Validating explicit ASIN: ${asin}`);
-          const validation = await validateAsinUrl(asin);
-          
-          if (validation !== 'ko') {
-            finalUrl = `https://www.amazon.fr/dp/${asin}`;
+        // Fallback: essayer avec le nom canonique si pas de résultat
+        if (!amazonResult && suggestion.canonical_name) {
+          console.log(`🔄 Tentative fallback avec: "${suggestion.canonical_name}"`);
+          amazonResult = await searchAmazonProduct(suggestion.canonical_name, serpApiKey);
+          if (amazonResult && amazonResult.asin) {
+            console.log(`✅ Produit trouvé via fallback`);
+            matchType = 'direct';
+            finalUrl = amazonResult.productUrl!;
             purchaseLinks = [
-              finalUrl,
-              `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`
+              amazonResult.productUrl!,
+              amazonResult.addToCartUrl!
             ];
-            matchType = validation === 'ok' ? 'direct' : 'direct-unverified';
-            console.log(`Explicit ASIN ${asin} validated: ${validation}`);
-          } else {
-            console.log(`Explicit ASIN ${asin} validation failed`);
           }
         }
         
-        // 3) Fallback to search (try multiple query variants)
-        if (!finalUrl) {
-          const queries = [...(suggestion.search_queries ?? []), suggestion.canonical_name, suggestion.title]
-            .filter(Boolean) as string[];
-          // Choose the best query (shortest or most precise)
-          const searchQuery = queries.sort((a, b) => a.length - b.length)[0] || 'cadeau';
-          
+        // Dernière option: lien de recherche Amazon
+        if (!amazonResult) {
+          const searchQuery = suggestion.search_queries?.[0] || suggestion.canonical_name || suggestion.title;
           finalUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`;
           purchaseLinks = [finalUrl];
           matchType = 'search';
-          console.log(`Falling back to search with query: ${searchQuery}`);
+          console.log(`❌ Aucun ASIN trouvé, fallback recherche: "${searchQuery}"`);
         }
-        
-        // Extract ASIN from final URL for amazonData
-        const finalAsin = finalUrl.includes('/dp/') ? finalUrl.match(/\/dp\/([A-Z0-9]{10})/i)?.[1] : undefined;
         
         return {
           title: suggestion.title,
@@ -279,15 +303,22 @@ Si tu connais des ASINs Amazon FR précis, remplis le champ asin.`
           purchaseLinks: purchaseLinks,
           brand: suggestion.brand || 'Diverses marques',
           amazonData: {
-            asin: finalAsin,
-            productUrl: finalUrl.includes('/dp/') ? finalUrl : undefined,
-            addToCartUrl: finalUrl.includes('/dp/') ? purchaseLinks[1] : undefined,
-            searchUrl: !finalUrl.includes('/dp/') ? finalUrl : undefined,
-            matchType
+            asin: amazonResult?.asin,
+            productUrl: amazonResult?.productUrl,
+            addToCartUrl: amazonResult?.addToCartUrl,
+            searchUrl: matchType === 'search' ? finalUrl : undefined,
+            matchType,
+            serpApiTitle: amazonResult?.title,
+            serpApiPrice: amazonResult?.price
           }
         };
       })
     );
+
+    console.log(`\n🎁 Résultat final: ${processedSuggestions.length} suggestions traitées`);
+    processedSuggestions.forEach((suggestion, i) => {
+      console.log(`${i + 1}. ${suggestion.title} - ${suggestion.amazonData?.matchType === 'direct' ? '✅ Lien direct' : '🔍 Recherche'}`);
+    });
 
     return new Response(JSON.stringify({
       success: true,
