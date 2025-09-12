@@ -57,7 +57,7 @@ async function generateGiftSuggestions(prompt: string): Promise<GiftSuggestion[]
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-2025-04-14',
+        model: 'gpt-5-2025-08-07',
         max_completion_tokens: 4000,
         messages: [
           {
@@ -153,24 +153,35 @@ serve(async (req) => {
   try {
     const { personId, eventType, budget, additionalContext } = await req.json() as GiftSuggestionRequest;
     
+    console.log('🔍 Request received:', { personId, eventType, budget, additionalContext });
+    
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    console.log('🔗 Supabase config:', { 
+      url: supabaseUrl ? 'SET' : 'MISSING', 
+      key: supabaseKey ? 'SET' : 'MISSING' 
+    });
+    
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Fetch person data
+    console.log(`🔍 Fetching person with ID: ${personId}`);
     const { data: person, error: personError } = await supabase
       .from('persons')
       .select('*')
       .eq('id', personId)
       .single();
 
+    console.log('📊 Person query result:', { person, error: personError });
+
     if (personError) {
-      console.error('Error fetching person:', personError);
-      throw new Error('Person not found');
+      console.error('❌ Error fetching person:', personError);
+      throw new Error(`Person query failed: ${personError.message}`);
     }
 
     if (!person) {
+      console.error('❌ Person is null');
       throw new Error('Person not found');
     }
 
