@@ -14,43 +14,167 @@ interface GiftSuggestionRequest {
   additionalContext?: string;
 }
 
+interface GiftSuggestion {
+  title: string;
+  description: string;
+  estimatedPrice: number;
+  confidence: number;
+  reasoning: string;
+  category: string;
+  alternatives: string[];
+  purchaseLinks: string[];
+  brand?: string;
+  canonical_name?: string;
+  search_queries?: string[];
+  amazonData?: {
+    searchUrl?: string;
+    matchType?: 'search';
+  };
+}
+
+interface GiftOutput {
+  suggestions: GiftSuggestion[];
+}
+
+async function generateGiftsWithGPT5(profile: any): Promise<GiftOutput> {
+  const apiKey = Deno.env.get('OPENAI_API_KEY');
+  if (!apiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  console.log('🤖 Calling GPT-5 with Responses API...');
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-5-mini',
+      reasoning_effort: 'minimal',
+      verbosity: 'low',
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'gift_suggestions',
+          schema: {
+            type: 'object',
+            properties: {
+              suggestions: {
+                type: 'array',
+                minItems: 3,
+                maxItems: 3,
+                items: {
+                  type: 'object',
+                  required: ['title', 'description', 'estimatedPrice', 'confidence', 'reasoning', 'category', 'alternatives', 'purchaseLinks'],
+                  properties: {
+                    title: { type: 'string', minLength: 5 },
+                    description: { type: 'string', minLength: 20 },
+                    estimatedPrice: { type: 'number' },
+                    confidence: { type: 'number' },
+                    reasoning: { type: 'string', minLength: 10 },
+                    category: { type: 'string' },
+                    alternatives: { type: 'array', items: { type: 'string' } },
+                    purchaseLinks: { type: 'array', items: { type: 'string' } },
+                    brand: { type: 'string' },
+                    canonical_name: { type: 'string' },
+                    search_queries: { type: 'array', items: { type: 'string' } }
+                  }
+                }
+              }
+            },
+            required: ['suggestions'],
+            additionalProperties: false
+          },
+          strict: true
+        }
+      },
+      input: [
+        {
+          role: 'system',
+          content: 'Tu es un expert français en idées cadeaux. Réponds UNIQUEMENT en JSON valide correspondant au schéma fourni. Propose des produits CONCRETS disponibles en France.'
+        },
+        {
+          role: 'user',
+          content: `Profil de la personne: ${JSON.stringify(profile)}
+
+Génère 3 suggestions de cadeaux CONCRETS et RÉALISTES pour cette personne :
+- Reste dans le budget indiqué
+- Adapte aux intérêts et à l'âge de la personne
+- Pour les purchaseLinks, utilise des recherches Amazon.fr précises
+- Pour search_queries, fournis 3-5 termes optimisés Amazon (marque+modèle, évite les couleurs)
+- Assure-toi que estimatedPrice reste dans le budget
+- confidence doit être entre 0.7 et 0.9
+- reasoning doit expliquer pourquoi ce cadeau convient à cette personne spécifiquement`
+        }
+      ]
+    })
+  });
+
+  console.log(`🤖 GPT-5 response status: ${response.status}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`❌ GPT-5 API error: ${response.status} - ${errorText}`);
+    throw new Error(`GPT-5 API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  console.log('🤖 GPT-5 response structure:', {
+    hasOutput: !!data.output,
+    outputLength: data.output?.length || 0
+  });
+
+  // Responses API retourne le JSON validé dans data.output[0].content[0].text
+  const jsonContent = data.output[0].content[0].text;
+  console.log('🤖 Raw JSON content preview:', jsonContent.substring(0, 200));
+  
+  const giftOutput = JSON.parse(jsonContent) as GiftOutput;
+  
+  // Enrichir avec amazonData pour compatibilité
+  giftOutput.suggestions.forEach(suggestion => {
+    if (suggestion.purchaseLinks.length > 0) {
+      suggestion.amazonData = {
+        searchUrl: suggestion.purchaseLinks[0],
+        matchType: 'search'
+      };
+    }
+  });
+
+  return giftOutput;
+}
+
 serve(async (req) => {
-  console.log('=== FUNCTION START ===');
+  console.log('=== GIFT SUGGESTIONS FUNCTION START ===');
   
   if (req.method === 'OPTIONS') {
-    console.log('CORS handled');
+    console.log('✅ CORS handled');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    console.log('Step 1: Parse request');
+    console.log('📥 Step 1: Parse request');
     const body = await req.json();
-    console.log('Request parsed:', body);
-    
-    const { personId, eventType, budget } = body as GiftSuggestionRequest;
+    const { personId, eventType, budget, additionalContext } = body as GiftSuggestionRequest;
+    console.log('📊 Request:', { personId, eventType, budget });
 
-    console.log('Step 2: Check environment');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
-    
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase config missing');
-    }
-
-    console.log('Step 3: Get auth header');
+    console.log('🔐 Step 2: Setup authentication');
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
-      throw new Error('No authorization header');
+      throw new Error('Authorization required');
     }
 
-    console.log('Step 4: Create Supabase client');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: {
         headers: { Authorization: authHeader }
       }
     });
 
-    console.log('Step 5: Query person');
+    console.log('👤 Step 3: Fetch person data');
     const { data: person, error } = await supabase
       .from('persons')
       .select('*')
@@ -58,128 +182,40 @@ serve(async (req) => {
       .maybeSingle();
 
     if (error) {
-      console.error('DB Error:', error);
-      throw new Error(`DB error: ${error.message}`);
+      console.error('❌ DB Error:', error);
+      throw new Error(`Database error: ${error.message}`);
     }
 
     if (!person) {
       throw new Error('Person not found');
     }
 
-    console.log('Step 6: Call OpenAI for real suggestions');
-    const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-    
-    if (!openAIApiKey) {
-      throw new Error('OpenAI API key missing');
-    }
+    console.log('✅ Person found:', person.name);
 
     // Calculate age
     const birth = new Date(person.birthday);
     const age = new Date().getFullYear() - birth.getFullYear();
+
+    // Build profile for AI
+    const profile = {
+      name: person.name,
+      age: age,
+      gender: person.gender,
+      relationship: person.relationship,
+      interests: person.interests || [],
+      notes: person.notes,
+      budget: budget,
+      eventType: eventType,
+      additionalContext: additionalContext
+    };
+
+    console.log('🤖 Step 4: Generate suggestions with GPT-5');
+    const giftOutput = await generateGiftsWithGPT5(profile);
     
-    const interests = Array.isArray(person.interests) ? person.interests.join(', ') : '';
-    
-    const prompt = `Génère 3 suggestions de cadeaux réalistes pour ${person.name}, ${age} ans, intérêts: ${interests}.
-Budget: ${budget}€, Événement: ${eventType}
+    console.log(`✅ Generated ${giftOutput.suggestions.length} suggestions successfully`);
 
-IMPORTANT: 
-- Propose des produits réels disponibles sur Amazon
-- Reste dans le budget
-- Adapte aux intérêts de la personne
-- Pour les liens, utilise des termes de recherche précis
-
-Format JSON UNIQUEMENT:
-{
-  "suggestions": [
-    {
-      "title": "Nom précis du produit",
-      "description": "Description courte du produit et pourquoi il convient",
-      "estimatedPrice": ${Math.min(budget, 50)},
-      "confidence": 0.85,
-      "reasoning": "Pourquoi ce cadeau convient à ${person.name}",
-      "category": "Catégorie",
-      "alternatives": ["Alt1", "Alt2"],
-      "purchaseLinks": ["https://www.amazon.fr/s?k=terme+de+recherche+précis"],
-      "brand": "Marque",
-      "amazonData": {
-        "searchUrl": "https://www.amazon.fr/s?k=terme+de+recherche+précis",
-        "matchType": "search"
-      }
-    }
-  ]
-}`;
-
-    console.log('Calling OpenAI...');
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        max_tokens: 2500,
-        temperature: 0.7,
-        messages: [
-          {
-            role: 'system',
-            content: 'Tu es un expert en cadeaux. Réponds UNIQUEMENT avec du JSON valide, pas de texte avant/après.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI error:', errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let content = data.choices[0].message.content.trim();
-    
-    // Clean up potential markdown formatting
-    content = content.replace(/```json\n?/g, '').replace(/```$/g, '');
-    
-    console.log('OpenAI response preview:', content.substring(0, 200));
-
-    let suggestions;
-    try {
-      const parsed = JSON.parse(content);
-      suggestions = parsed.suggestions || [];
-    } catch (parseError) {
-      console.error('JSON parse failed:', parseError);
-      console.error('Raw content:', content);
-      
-      // Fallback to manual suggestions if OpenAI JSON fails
-      suggestions = [
-        {
-          title: interests.includes('Tech') ? 'Écouteurs Bluetooth' : interests.includes('Sport') ? 'Bouteille d\'eau sport' : 'Livre bestseller',
-          description: `Cadeau parfait pour ${person.name} qui aime ${interests || 'découvrir de nouvelles choses'}`,
-          estimatedPrice: Math.min(budget, 40),
-          confidence: 0.75,
-          reasoning: `Ce cadeau correspond aux intérêts de ${person.name} et reste dans le budget`,
-          category: interests.includes('Tech') ? 'Technologie' : interests.includes('Sport') ? 'Sport' : 'Culture',
-          alternatives: ['Variante premium', 'Version économique'],
-          purchaseLinks: [`https://www.amazon.fr/s?k=${interests.includes('Tech') ? 'ecouteurs+bluetooth' : interests.includes('Sport') ? 'bouteille+sport' : 'livre+bestseller'}`],
-          brand: 'Suggestion',
-          amazonData: {
-            searchUrl: `https://www.amazon.fr/s?k=${interests.includes('Tech') ? 'ecouteurs+bluetooth' : interests.includes('Sport') ? 'bouteille+sport' : 'livre+bestseller'}`,
-            matchType: 'search'
-          }
-        }
-      ];
-    }
-
-    console.log(`Generated ${suggestions.length} suggestions`);
-
-    console.log('Step 7: Return response');
     return new Response(JSON.stringify({
-      suggestions,
+      suggestions: giftOutput.suggestions,
       personName: person.name,
       eventType,
       budget
@@ -188,12 +224,15 @@ Format JSON UNIQUEMENT:
     });
 
   } catch (error) {
-    console.error('ERROR:', error?.message);
-    console.error('ERROR STACK:', error?.stack);
+    console.error('💥 Function error:', error);
     
     return new Response(JSON.stringify({
-      error: error?.message || 'Unknown error',
-      suggestions: []
+      error: error?.message || 'Une erreur est survenue',
+      suggestions: [],
+      debug: {
+        timestamp: new Date().toISOString(),
+        errorType: error?.name || 'UnknownError'
+      }
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
