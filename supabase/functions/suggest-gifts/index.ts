@@ -62,17 +62,33 @@ serve(async (req) => {
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
 
     // Fetch person data from database
-    console.log('🔍 Fetching person data...');
+    console.log('🔍 Fetching person data for ID:', personId);
     const { data: personData, error: personError } = await supabase
       .from('persons')
       .select('*')
       .eq('id', personId)
       .single();
 
-    if (personError || !personData) {
-      console.error('❌ Person not found:', personError);
+    console.log('📊 Database response - Data:', personData);
+    console.log('📊 Database response - Error:', personError);
+
+    if (personError) {
+      console.error('❌ Database error:', personError.message, personError.code);
       return new Response(JSON.stringify({
-        error: 'Personne non trouvée',
+        error: `Erreur base de données: ${personError.message}`,
+        errorCode: personError.code,
+        suggestions: []
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!personData) {
+      console.error('❌ Person not found with ID:', personId);
+      return new Response(JSON.stringify({
+        error: 'Personne non trouvée avec cet ID',
+        personId: personId,
         suggestions: []
       }), {
         status: 404,
