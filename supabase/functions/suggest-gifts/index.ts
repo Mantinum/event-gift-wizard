@@ -174,6 +174,24 @@ serve(async (req) => {
     // ===== ÉTAPE 1: Génération IA avec OpenAI =====
     console.log('🤖 Étape 1: Génération des suggestions IA');
     
+    // Calculer l'âge si date de naissance disponible
+    let ageInfo = '';
+    if (personData?.birthday) {
+      try {
+        const birthDate = new Date(personData.birthday);
+        const today = new Date();
+        const age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+          ageInfo = `Âge calculé: ${age - 1} ans`;
+        } else {
+          ageInfo = `Âge calculé: ${age} ans`;
+        }
+      } catch (error) {
+        console.log('Erreur calcul âge:', error);
+      }
+    }
+
     const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -181,9 +199,8 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.3,
-        max_tokens: 2000,
+        model: 'gpt-5-mini-2025-08-07',
+        max_completion_tokens: 2000,
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -227,7 +244,20 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `Tu es un expert en suggestions de cadeaux. Tu dois suggérer 3 cadeaux concrets et précis.
+            content: `Tu es un expert en suggestions de cadeaux pour le marché français. Tu dois suggérer 3 cadeaux concrets et précis.
+
+CONTRAINTES MÉTIER STRICTES:
+- ÂGE (filtrage obligatoire):
+  • <3 ans: jouets d'éveil certifiés CE, pas d'électronique adulte, pas de petites pièces
+  • 3-6 ans: jouets éducatifs, livres enfants, jeux créatifs
+  • 7-12 ans: jeux, livres, loisirs créatifs, sport enfant
+  • 13-17 ans: tech grand public, mode, loisirs ados
+  • Adultes: toutes catégories appropriées
+- SÉCURITÉ: respecter strictement les notes d'allergies/restrictions médicales
+- DIVERSITÉ: 3 catégories différentes obligatoire
+- BUDGET: jamais dépasser, proposer variantes moins chères si besoin
+- MARCHÉ FR: privilégier références faciles à trouver sur Amazon.fr
+- PAS DE STÉRÉOTYPES: proposer alternatives unisexes si incertitude sur préférences
 
 EXEMPLE de réponse attendue:
 {
@@ -237,31 +267,32 @@ EXEMPLE de réponse attendue:
       "description": "Appareil photo instantané compact et moderne, parfait pour capturer des moments mémorables",
       "estimatedPrice": 79.99,
       "confidence": 0.9,
-      "reasoning": "Produit populaire et adapté au budget, idéal pour les jeunes adultes",
+      "reasoning": "Produit populaire et adapté au budget, idéal pour les jeunes adultes, disponible sur Amazon.fr",
       "category": "Photo",
       "brand": "Fujifilm",
       "canonical_name": "Fujifilm Instax Mini 12",
-      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm", "Fujifilm Instax Mini"]
+      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm", "Fujifilm Instax Mini", "Instax Mini 12 France"]
     }
   ]
 }
 
-CONSIGNES IMPORTANTES:
+CONSIGNES TECHNIQUES:
 - Produits concrets avec marque et modèle précis
 - search_queries: 3-5 requêtes optimisées pour Amazon (marque + modèle + mots-clés)
-- Éviter les adjectifs de couleur dans les search_queries
-- Diversité entre les 3 suggestions (catégories différentes)
-- Prix cohérent avec le budget
-- Confidence entre 0.7 et 1.0`
+- JAMAIS d'adjectifs de couleur dans les search_queries
+- Prix cohérent avec le budget (marge ±10%)
+- Confidence entre 0.7 et 1.0
+- Les liens Amazon seront générés automatiquement par SerpApi (ne pas les inclure)`
           },
           {
             role: 'user',
             content: `Génère 3 suggestions de cadeaux pour:
 - Événement: ${eventType}
-- Budget: ${budget}€
-- Personne: ${personData ? JSON.stringify(personData) : 'Informations limitées'}
+- Budget maximum: ${budget}€
+${ageInfo ? `- ${ageInfo}` : ''}
+- Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitées'}
 
-Fournis des produits concrets avec marque et modèle, et des search_queries précises pour Amazon.`
+IMPORTANT: Respecte strictement les contraintes d'âge et les restrictions mentionnées dans le profil.`
           }
         ]
       })
