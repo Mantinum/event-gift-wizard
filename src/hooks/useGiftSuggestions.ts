@@ -67,8 +67,9 @@ export function useGiftSuggestions() {
         throw new Error(error.message || 'Erreur lors de la génération des suggestions');
       }
 
-      if (data.error) {
-        throw new Error(data.error);
+      // Check for success in response data
+      if (!data.success) {
+        throw new Error(data.error || 'Erreur inconnue');
       }
 
       if (!data.suggestions || !Array.isArray(data.suggestions)) {

@@ -18,47 +18,88 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // 1. Force POST method
+  if (req.method !== 'POST') {
+    console.log('❌ Method not allowed:', req.method);
+    return new Response(JSON.stringify({
+      success: false,
+      error: 'Method not allowed',
+      method: req.method
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
   try {
     console.log('📥 Processing request...');
     
-    // Test environment variables
-    const openAIKey = Deno.env.get('OPENAI_API_KEY');
-    const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
-    
-    console.log('🔑 Environment check:');
-    console.log('- OpenAI Key available:', !!openAIKey);
-    console.log('- SerpApi Key available:', !!serpApiKey);
-    
-    if (!openAIKey) {
-      console.log('❌ Missing OpenAI API key');
+    // 2. Parse body with try/catch
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.log('❌ Invalid JSON body:', parseError);
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: clé OpenAI non configurée',
-        suggestions: []
+        success: false,
+        error: 'Invalid JSON body'
       }), {
-        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    if (!serpApiKey) {
-      console.log('❌ Missing SerpApi API key');
+    const { personId, eventType, budget, additionalContext } = body;
+    
+    // 3. Validate required parameters
+    if (!personId || typeof eventType !== 'string' || typeof budget !== 'number') {
+      console.log('❌ Missing or invalid parameters:', { personId, eventType, budget });
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: clé SerpApi non configurée',
-        suggestions: []
+        success: false,
+        error: 'Missing or invalid parameters',
+        details: { personId, eventType, budget }
       }), {
-        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 4. Check environment variables
+    const openAIKey = Deno.env.get('OPENAI_API_KEY');
+    const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
+    
+    console.log('🔑 Environment check:');
+    console.log('- OpenAI Key available:', !!openAIKey);
+    console.log('- SerpApi Key available:', !!serpApiKey);
+    console.log('- Supabase URL available:', !!supabaseUrl);
+    console.log('- Supabase Key available:', !!supabaseKey);
+    
+    if (!openAIKey) {
+      console.log('❌ Missing OpenAI API key');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Configuration manquante: clé OpenAI non configurée'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // SerpApi not required for this function - just warn if missing
+    if (!serpApiKey) {
+      console.log('⚠️ SERPAPI_API_KEY is missing (not used in this function)');
+    }
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.log('❌ Missing Supabase environment variables');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Configuration manquante: variables Supabase non configurées'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Parse request body
-    const body = await req.json();
-    const { personId, eventType, budget, additionalContext } = body;
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
 
     // Fetch person data from database
@@ -75,11 +116,11 @@ serve(async (req) => {
     if (personError) {
       console.error('❌ Database error:', personError.message, personError.code);
       return new Response(JSON.stringify({
-        error: `Erreur base de données: ${personError.message}`,
-        errorCode: personError.code,
-        suggestions: []
+        success: false,
+        error: 'DB error',
+        details: personError.message,
+        code: personError.code
       }), {
-        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -87,11 +128,10 @@ serve(async (req) => {
     if (!personData) {
       console.error('❌ Person not found with ID:', personId);
       return new Response(JSON.stringify({
-        error: 'Personne non trouvée avec cet ID',
-        personId: personId,
-        suggestions: []
+        success: false,
+        error: 'Person not found',
+        personId: personId
       }), {
-        status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -139,7 +179,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
   ]
 }`;
 
-    // Call OpenAI API
+    // Call OpenAI API with forced JSON response
     console.log('🤖 Calling OpenAI API...');
     const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -149,6 +189,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
@@ -165,42 +206,43 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
     });
 
     if (!openAIResponse.ok) {
-      console.error('❌ OpenAI API error:', await openAIResponse.text());
-      throw new Error(`OpenAI API error: ${openAIResponse.status}`);
+      const errText = await openAIResponse.text();
+      console.error('❌ OpenAI API error:', openAIResponse.status, errText);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'OpenAI error',
+        status: openAIResponse.status,
+        details: errText
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    const openAIData = await openAIResponse.json();
-    console.log('✅ OpenAI response received');
-
-    // Parse the AI response
+    // Parse the AI response with better error handling
     let suggestions = [];
     try {
-      const aiContent = openAIData.choices[0].message.content.trim();
+      const openAIData = await openAIResponse.json();
+      console.log('✅ OpenAI response received');
+      
+      const aiContent = openAIData.choices?.[0]?.message?.content ?? '{}';
       console.log('🧠 AI content:', aiContent);
       
-      // Remove any markdown formatting
-      const cleanContent = aiContent.replace(/```json\n?/, '').replace(/\n?```/, '');
-      const parsedResponse = JSON.parse(cleanContent);
+      const parsedResponse = JSON.parse(aiContent);
       suggestions = parsedResponse.suggestions || [];
     } catch (parseError) {
-      console.error('❌ Error parsing AI response:', parseError);
-      // Fallback suggestions
-      suggestions = [
-        {
-          title: "Cadeau personnalisé",
-          description: `Un cadeau adapté pour ${personData.name} basé sur ses intérêts`,
-          estimatedPrice: Math.min(budget * 0.8, 50),
-          confidence: 0.7,
-          reasoning: "Suggestion générée automatiquement en cas d'erreur d'analyse",
-          category: "général",
-          alternatives: [],
-          purchaseLinks: []
-        }
-      ];
+      console.error('❌ Error parsing OpenAI response:', parseError);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to parse OpenAI JSON',
+        details: (parseError as Error).message
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     console.log('🎁 Generated suggestions:', suggestions.length);
     return new Response(JSON.stringify({
+      success: true,
       suggestions,
       personName: personData.name,
       eventType,
@@ -216,12 +258,11 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
     console.error('Error stack:', error?.stack);
     
     return new Response(JSON.stringify({
+      success: false,
       error: 'Erreur lors du traitement de la requête',
       details: error?.message || 'Unknown error',
-      timestamp: new Date().toISOString(),
-      suggestions: []
+      timestamp: new Date().toISOString()
     }), {
-      status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
