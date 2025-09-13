@@ -174,21 +174,55 @@ serve(async (req) => {
     // ===== ÉTAPE 1: Génération IA avec OpenAI =====
     console.log('🤖 Étape 1: Génération des suggestions IA');
     
-    // Calculer l'âge si date de naissance disponible
+    // Préparer les informations d'âge depuis la BDD (ou fallback)
     let ageInfo = '';
-    if (personData?.birthday) {
-      try {
-        const birthDate = new Date(personData.birthday);
-        const today = new Date();
-        const age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-          ageInfo = `Âge calculé: ${age - 1} ans`;
+    let ageBucket = 'adult';
+    let ageYears = null;
+    let ageMonths = null;
+    let isMinor = false;
+
+    if (personData) {
+      if (personData.age_years !== null && personData.age_bucket) {
+        // Utiliser les données pré-calculées de la BDD
+        ageYears = personData.age_years;
+        ageMonths = personData.age_months;
+        ageBucket = personData.age_bucket;
+        isMinor = personData.is_minor;
+        
+        if (ageYears < 3) {
+          ageInfo = `Âge: ${ageYears} ans (${ageMonths} mois) - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
         } else {
-          ageInfo = `Âge calculé: ${age} ans`;
+          ageInfo = `Âge: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
         }
-      } catch (error) {
-        console.log('Erreur calcul âge:', error);
+        
+        console.log('Données âge BDD:', { ageYears, ageMonths, ageBucket, isMinor });
+      } else if (personData.birthday) {
+        // Fallback: calcul local si les données BDD ne sont pas disponibles
+        try {
+          const birthDate = new Date(personData.birthday);
+          const today = new Date();
+          const age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            ageYears = age - 1;
+          } else {
+            ageYears = age;
+          }
+          
+          // Déterminer le bucket manuellement
+          if (ageYears < 1) ageBucket = 'infant';
+          else if (ageYears <= 2) ageBucket = 'toddler';
+          else if (ageYears <= 12) ageBucket = 'child';
+          else if (ageYears <= 17) ageBucket = 'teen';
+          else ageBucket = 'adult';
+          
+          isMinor = ageYears < 18;
+          ageInfo = `Âge calculé: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
+          
+          console.log('Fallback calcul âge:', { ageYears, ageBucket, isMinor });
+        } catch (error) {
+          console.log('Erreur calcul âge:', error);
+        }
       }
     }
 
@@ -247,12 +281,12 @@ serve(async (req) => {
             content: `Tu es un expert en suggestions de cadeaux pour le marché français. Tu dois suggérer 3 cadeaux concrets et précis.
 
 CONTRAINTES MÉTIER STRICTES:
-- ÂGE (filtrage obligatoire):
-  • <3 ans: jouets d'éveil certifiés CE, pas d'électronique adulte, pas de petites pièces
-  • 3-6 ans: jouets éducatifs, livres enfants, jeux créatifs
-  • 7-12 ans: jeux, livres, loisirs créatifs, sport enfant
-  • 13-17 ans: tech grand public, mode, loisirs ados
-  • Adultes: toutes catégories appropriées
+- ÂGE (filtrage obligatoire selon tranche d'âge BDD):
+  • infant (<1 an): jouets d'éveil 6m+, livres cartonnés, peluches certifiées CE, pas d'électronique
+  • toddler (1-2 ans): jouets éducatifs, livres imagés, jeux sensoriels, pas de petites pièces
+  • child (3-12 ans): jeux, livres, loisirs créatifs, sport enfant, construction
+  • teen (13-17 ans): tech grand public, gaming, mode ados, sport, soins entry-level
+  • adult (18+ ans): toutes catégories appropriées selon profil
 - SÉCURITÉ: respecter strictement les notes d'allergies/restrictions médicales
 - DIVERSITÉ: 3 catégories différentes obligatoire
 - BUDGET: jamais dépasser, proposer variantes moins chères si besoin
@@ -292,7 +326,9 @@ CONSIGNES TECHNIQUES:
 ${ageInfo ? `- ${ageInfo}` : ''}
 - Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitées'}
 
-IMPORTANT: Respecte strictement les contraintes d'âge et les restrictions mentionnées dans le profil.`
+IMPORTANT: Respecte strictement les contraintes d'âge selon la tranche "${ageBucket}" et les restrictions mentionnées dans le profil.
+${ageBucket === 'infant' || ageBucket === 'toddler' ? 'ATTENTION: Personne très jeune - INTERDIRE toute suggestion adulte (thé, café, alcool, électronique non-enfant).' : ''}
+${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           }
         ]
       })
@@ -322,11 +358,60 @@ IMPORTANT: Respecte strictement les contraintes d'âge et les restrictions menti
       throw new Error(`Invalid OpenAI response format: ${error.message}`);
     }
 
+    // ===== VALIDATION CÔTÉ SERVEUR (garde-fou âge) =====
+    console.log('🛡️ Validation des suggestions selon l'âge');
+    
+    const validatedSuggestions = suggestions.filter((suggestion, index) => {
+      const title = suggestion.title?.toLowerCase() || '';
+      const description = suggestion.description?.toLowerCase() || '';
+      const category = suggestion.category?.toLowerCase() || '';
+      
+      // Règles strictes par tranche d'âge
+      if (ageBucket === 'infant' || ageBucket === 'toddler') {
+        // <3 ans: interdire produits adultes
+        const forbiddenForBabies = [
+          'thé', 'café', 'alcool', 'vin', 'bière', 'champagne',
+          'smartphone', 'tablet', 'ordinateur', 'casque audio',
+          'maquillage', 'parfum', 'rasoir', 'bijou fin',
+          'couteau', 'outil', 'produit ménager'
+        ];
+        
+        const hasForbiddenContent = forbiddenForBabies.some(forbidden => 
+          title.includes(forbidden) || description.includes(forbidden) || category.includes(forbidden)
+        );
+        
+        if (hasForbiddenContent) {
+          console.log(`❌ Suggestion ${index + 1} rejetée pour bébé/bambin: "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      // Vérifier les allergies/restrictions dans les notes
+      if (personData?.notes) {
+        const notes = personData.notes.toLowerCase();
+        if (notes.includes('allergi') && (title.includes('parfum') || description.includes('parfum'))) {
+          console.log(`❌ Suggestion ${index + 1} rejetée pour allergie: "${suggestion.title}"`);
+          return false;
+        }
+        if (notes.includes('vegan') && (title.includes('cuir') || description.includes('cuir'))) {
+          console.log(`❌ Suggestion ${index + 1} rejetée pour préférence vegan: "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      console.log(`✅ Suggestion ${index + 1} validée: "${suggestion.title}"`);
+      return true;
+    });
+    
+    // Si trop de suggestions ont été rejetées, garder au moins les premières
+    const finalSuggestions = validatedSuggestions.length >= 2 ? validatedSuggestions : suggestions.slice(0, 3);
+    console.log(`Suggestions finales: ${finalSuggestions.length}/${suggestions.length} retenues`);
+
     // ===== ÉTAPE 2: Résolution produit via SerpApi =====
     console.log('🔍 Étape 2: Résolution des liens Amazon via SerpApi');
     
     const processedSuggestions = await Promise.all(
-      suggestions.map(async (suggestion, index) => {
+      finalSuggestions.map(async (suggestion, index) => {
         console.log(`\n--- Traitement suggestion ${index + 1}: "${suggestion.title}" ---`);
         
         let amazonResult = null;

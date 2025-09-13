@@ -13,6 +13,13 @@ export interface Person {
   phone?: string;
   gender?: string;
   address?: string;
+  // Nouveaux champs d'âge dérivés automatiquement
+  ageYears?: number;
+  ageMonths?: number;
+  ageBucket?: 'infant' | 'toddler' | 'child' | 'teen' | 'adult';
+  isMinor?: boolean;
+  nextBirthday?: string;
+  ageUpdatedAt?: string;
 }
 
 export interface Event {

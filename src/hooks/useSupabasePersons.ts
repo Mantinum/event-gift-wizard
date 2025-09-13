@@ -41,7 +41,14 @@ export function useSupabasePersons() {
         preferredCategories: person.preferred_categories || [],
         notes: person.notes || '',
         email: person.email || '',
-        phone: person.phone || ''
+        phone: person.phone || '',
+        // Nouveaux champs d'âge (avec validation de type)
+        ageYears: person.age_years,
+        ageMonths: person.age_months,
+        ageBucket: person.age_bucket as 'infant' | 'toddler' | 'child' | 'teen' | 'adult',
+        isMinor: person.is_minor,
+        nextBirthday: person.next_birthday,
+        ageUpdatedAt: person.age_updated_at
       }));
 
       setPersons(transformedPersons);
