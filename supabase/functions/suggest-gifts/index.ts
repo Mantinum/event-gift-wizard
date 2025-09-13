@@ -465,38 +465,6 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
       return true;
     };
 
-    const validatedSuggestions = suggestions.filter((suggestion, index) => {
-      // Vérifier age_ok du GPT
-      if (!suggestion.age_ok) {
-        console.log(`❌ [${index + 1}] Rejet: GPT a marqué age_ok=false → "${suggestion.title}"`);
-        return false;
-      }
-      
-      // Vérifier age_bucket_used
-      if (suggestion.age_bucket_used !== ageBucket) {
-        console.log(`❌ [${index + 1}] Rejet: bucket GPT (${suggestion.age_bucket_used}) ≠ attendu (${ageBucket}) → "${suggestion.title}"`);
-        return false;
-      }
-      
-      // Vérifier les allergies/restrictions dans les notes
-      if (personData?.notes) {
-        const notesN = norm(personData.notes);
-        const titleN = norm(suggestion.title);
-        const descN = norm(suggestion.description);
-        
-        if (notesN.includes('allergi') && (titleN.includes('parfum') || descN.includes('parfum'))) {
-          console.log(`❌ [${index + 1}] Rejet pour allergie → "${suggestion.title}"`);
-          return false;
-        }
-        if (notesN.includes('vegan') && (titleN.includes('cuir') || descN.includes('cuir'))) {
-          console.log(`❌ [${index + 1}] Rejet pour préférence vegan → "${suggestion.title}"`);
-          return false;
-        }
-      }
-      
-      return validateSuggestionByAge(suggestion, ageBucket, index);
-    });
-    
     // Fonction pour valider une suggestion spécifique (réutilisable)
     const validateSuggestionByAge = (suggestion: any, ageBucket: string, index: number): boolean => {
       const titleN = norm(suggestion.title);
@@ -568,6 +536,43 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
       console.log(`✅ [${index + 1}] Validée → "${suggestion.title}"`);
       return true;
     };
+
+    const validatedSuggestions = suggestions.filter((suggestion, index) => {
+      // Vérifier age_ok du GPT
+      if (!suggestion.age_ok) {
+        console.log(`❌ [${index + 1}] Rejet: GPT a marqué age_ok=false → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // Vérifier age_bucket_used
+      if (suggestion.age_bucket_used !== ageBucket) {
+        console.log(`❌ [${index + 1}] Rejet: bucket GPT (${suggestion.age_bucket_used}) ≠ attendu (${ageBucket}) → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // Vérifier les allergies/restrictions dans les notes
+      if (personData?.notes) {
+        const notesN = norm(personData.notes);
+        const titleN = norm(suggestion.title);
+        const descN = norm(suggestion.description);
+        
+        if (notesN.includes('allergi') && (titleN.includes('parfum') || descN.includes('parfum'))) {
+          console.log(`❌ [${index + 1}] Rejet pour allergie → "${suggestion.title}"`);
+          return false;
+        }
+        if (notesN.includes('vegan') && (titleN.includes('cuir') || descN.includes('cuir'))) {
+          console.log(`❌ [${index + 1}] Rejet pour préférence vegan → "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      return validateSuggestionByAge(suggestion, ageBucket, index);
+    });
+
+    console.log(`🔍 Validation terminée: ${validatedSuggestions.length}/${suggestions.length} suggestions validées`);
+
+    // Si pas assez de suggestions valides, faire un retry avec prompt durci
+    let finalSuggestions = validatedSuggestions;
 
     // Fonction pour créer un prompt retry durci
     const buildRetryPrompt = (ageBucket: string, personData: any, eventType: string, budget: number): string => {
