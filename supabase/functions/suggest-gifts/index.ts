@@ -212,16 +212,16 @@ serve(async (req) => {
       }
     }
 
-    const giftResponse = await fetch('https://api.openai.com/v1/responses', {
+    const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini',
-        max_completion_tokens: 2000,
-        output: {
+        model: 'gpt-4o-mini',
+        max_tokens: 2000,
+        response_format: {
           type: "json_schema",
           json_schema: {
             name: "gift_suggestions",
@@ -332,8 +332,8 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     
     let suggestions = [];
     try {
-      // Updated parsing for Responses API
-      const content = giftData.output?.[0]?.content?.[0]?.text;
+      // Standard chat/completions response format
+      const content = giftData.choices?.[0]?.message?.content;
       if (!content) {
         throw new Error('No content in OpenAI response');
       }
