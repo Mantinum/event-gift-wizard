@@ -98,8 +98,20 @@ serve(async (req) => {
       });
     }
 
-    // Initialize Supabase client
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Get service role key for database access (bypasses RLS)
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseServiceKey) {
+      console.log('❌ Missing Supabase Service Role key');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Configuration manquante: clé service Supabase non configurée'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Initialize Supabase client with service role key (bypasses RLS)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
 
     // Fetch person data from database
@@ -108,7 +120,7 @@ serve(async (req) => {
       .from('persons')
       .select('*')
       .eq('id', personId)
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single to avoid errors when no data found
 
     console.log('📊 Database response - Data:', personData);
     console.log('📊 Database response - Error:', personError);
