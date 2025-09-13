@@ -134,27 +134,33 @@ async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
 
 serve(async (req) => {
   console.log('=== FUNCTION START ===');
+  console.log('Request method:', req.method);
+  console.log('Request URL:', req.url);
   
   if (req.method === 'OPTIONS') {
+    console.log('Handling CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const body = await req.json();
-    const { personId, eventType, budget } = body;
-    console.log('Request received:', { personId, eventType, budget });
-
-    // Check API keys
+    console.log('Processing request...');
+    
+    // Check environment variables first
     const openAIKey = Deno.env.get('OPENAI_API_KEY');
     const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
-    console.log('OpenAI Key available:', !!openAIKey);
-    console.log('SerpApi Key available:', !!serpApiKey);
+    console.log('Environment check:');
+    console.log('- OpenAI Key available:', !!openAIKey);
+    console.log('- SerpApi Key available:', !!serpApiKey);
+    console.log('- Supabase URL available:', !!supabaseUrl);
+    console.log('- Supabase Key available:', !!supabaseKey);
     
     if (!openAIKey) {
-      console.error('Missing OpenAI API key');
+      console.error('❌ Missing OpenAI API key');
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: cle OpenAI non configuree',
+        error: 'Configuration manquante: clé OpenAI non configurée. Veuillez configurer OPENAI_API_KEY dans les secrets de la fonction.',
         suggestions: []
       }), {
         status: 400,
@@ -163,9 +169,9 @@ serve(async (req) => {
     }
 
     if (!serpApiKey) {
-      console.error('Missing SerpApi API key');
+      console.error('❌ Missing SerpApi API key');
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: cle SerpApi non configuree',
+        error: 'Configuration manquante: clé SerpApi non configurée. Veuillez configurer SERPAPI_API_KEY dans les secrets de la fonction.',
         suggestions: []
       }), {
         status: 400,
@@ -173,9 +179,9 @@ serve(async (req) => {
       });
     }
 
-    // Get person data from Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
+    const body = await req.json();
+    const { personId, eventType, budget } = body;
+    console.log('Request received:', { personId, eventType, budget });
     
     let personData = null;
     if (supabaseUrl && supabaseKey && personId) {
@@ -856,11 +862,14 @@ OBLIGATION: age_ok=true et age_bucket_used="${ageBucket}" pour chaque suggestion
     });
 
   } catch (error) {
-    console.error('Unexpected error:', error);
+    console.error('❌ UNHANDLED ERROR in edge function:', error);
+    console.error('Error name:', error?.name);
+    console.error('Error message:', error?.message);
+    console.error('Error stack:', error?.stack);
     
     // Determine appropriate error status code
     let statusCode = 500;
-    let errorMessage = 'Erreur inattendue lors de la generation des suggestions';
+    let errorMessage = 'Erreur inattendue lors de la génération des suggestions';
     
     if (error?.message?.includes('OpenAI failed')) {
       statusCode = 502; // Bad Gateway for external API failures
@@ -871,11 +880,15 @@ OBLIGATION: age_ok=true et age_bucket_used="${ageBucket}" pour chaque suggestion
     } else if (error?.message?.includes('Invalid')) {
       statusCode = 400; // Bad request for validation errors
       errorMessage = error.message;
+    } else if (error?.message?.includes('JSON')) {
+      statusCode = 400;
+      errorMessage = 'Format de requête invalide';
     }
     
     return new Response(JSON.stringify({
       error: errorMessage,
       details: error?.message || 'Unknown error',
+      timestamp: new Date().toISOString(),
       suggestions: []
     }), {
       status: statusCode,
