@@ -268,12 +268,12 @@ serve(async (req) => {
 
 CONTRAINTES METIER STRICTES:
 - AGE (filtrage obligatoire selon tranche d'age BDD):
-  • infant (<1 an): jouets d'eveil 6m+, livres cartonnes, peluches certifiees CE, pas d'electronique
-  • toddler (1-2 ans): jouets educatifs, livres images, jeux sensoriels, pas de petites pieces
-  • child (3-12 ans): jeux, livres, loisirs creatifs, sport enfant, construction
+  • infant (<1 an): UNIQUEMENT jouets d'eveil certifies CE 6m+, livres cartonne bebe, peluches bebe, hochets, tapis d'eveil. INTERDIT: electronique, tasses, bougies, parfums, bijoux, decorations, vetements complexes
+  • toddler (1-2 ans): UNIQUEMENT jouets educatifs 12m+, livres enfant cartonne, jeux emboitement, jouets a pousser/tirer. INTERDIT: electronique adulte, tasses fragiles, bougies, parfums, bijoux
+  • child (3-12 ans): jeux, livres, loisirs creatifs, sport enfant, construction, vetements enfant
   • teen (13-17 ans): tech grand public, gaming, mode ados, sport, soins entry-level
   • adult (18+ ans): toutes categories appropriees selon profil
-- SECURITE: respecter strictement les notes d'allergies/restrictions medicales
+- SECURITE ENFANT: Pour infant/toddler, OBLIGATOIRE norme CE, pas de petites pieces, pas de produits chimiques/parfumes
 - DIVERSITE: 3 categories differentes obligatoire
 - BUDGET: jamais depasser, proposer variantes moins cheres si besoin
 - MARCHE FR: privilegier references faciles a trouver sur Amazon.fr
@@ -313,7 +313,7 @@ ${ageInfo ? `- ${ageInfo}` : ''}
 - Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitees'}
 
 IMPORTANT: Respecte strictement les contraintes d'age selon la tranche "${ageBucket}" et les restrictions mentionnees dans le profil.
-${ageBucket === 'infant' || ageBucket === 'toddler' ? 'ATTENTION: Personne tres jeune - INTERDIRE toute suggestion adulte (the, cafe, alcool, electronique non-enfant).' : ''}
+${ageBucket === 'infant' || ageBucket === 'toddler' ? `ATTENTION CRITIQUE: Personne de ${ageYears || 0} ans (tranche ${ageBucket}) - INTERDIRE ABSOLUMENT: tasse, mug, bougie, parfum, bijou, decoration, electronique, produits chimiques, petites pieces. UNIQUEMENT jouets bebe certifies CE appropries.` : ''}
 ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           }
         ]
@@ -355,12 +355,16 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
       
       // Regles strictes par tranche d'age
       if (ageBucket === 'infant' || ageBucket === 'toddler') {
-        // <3 ans: interdire produits adultes
+        // <3 ans: interdire produits adultes et dangereux
         const forbiddenForBabies = [
           'the', 'cafe', 'alcool', 'vin', 'biere', 'champagne',
-          'smartphone', 'tablet', 'ordinateur', 'casque audio',
-          'maquillage', 'parfum', 'rasoir', 'bijou fin',
-          'couteau', 'outil', 'produit menager'
+          'smartphone', 'tablet', 'ordinateur', 'casque audio', 'electronique',
+          'maquillage', 'parfum', 'bougie', 'encens', 'diffuseur', 'huile',
+          'rasoir', 'bijou', 'bague', 'collier', 'bracelet', 'montre',
+          'couteau', 'outil', 'produit menager', 'decoration fragile',
+          'tasse', 'mug', 'verre', 'assiette', 'vaisselle',
+          'livre papier fin', 'magazine', 'bd adulte',
+          'vetement adulte', 'chaussure adulte', 'accessoire mode'
         ];
         
         const hasForbiddenContent = forbiddenForBabies.some(forbidden => 
@@ -368,7 +372,23 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
         );
         
         if (hasForbiddenContent) {
-          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin: "${suggestion.title}"`);
+          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin (contient "${forbiddenForBabies.find(f => title.includes(f) || description.includes(f) || category.includes(f))}"): "${suggestion.title}"`);
+          return false;
+        }
+        
+        // Verification positive: doit contenir des mots-cles appropries pour bebe
+        const requiredForBabies = [
+          'bebe', 'baby', 'enfant', 'jouet', 'eveil', 'peluche', 'hochet', 
+          'tapis', 'livre cartonne', 'imagier', 'cube', 'anneau', 'dentition',
+          'mobile', 'portique', 'transat', 'siese auto bebe'
+        ];
+        
+        const hasAppropriatContent = requiredForBabies.some(required => 
+          title.includes(required) || description.includes(required)
+        );
+        
+        if (!hasAppropriatContent) {
+          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin (pas de contenu approprie): "${suggestion.title}"`);
           return false;
         }
       }
