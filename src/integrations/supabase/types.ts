@@ -79,6 +79,10 @@ export type Database = {
       persons: {
         Row: {
           address: string | null
+          age_bucket: string | null
+          age_months: number | null
+          age_updated_at: string | null
+          age_years: number | null
           avatar: string | null
           birthday: string
           budget: number
@@ -87,8 +91,10 @@ export type Database = {
           gender: string | null
           id: string
           interests: string[] | null
+          is_minor: boolean | null
           last_gift: string | null
           name: string
+          next_birthday: string | null
           notes: string | null
           phone: string | null
           preferred_categories: string[] | null
@@ -98,6 +104,10 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          age_bucket?: string | null
+          age_months?: number | null
+          age_updated_at?: string | null
+          age_years?: number | null
           avatar?: string | null
           birthday: string
           budget?: number
@@ -106,8 +116,10 @@ export type Database = {
           gender?: string | null
           id?: string
           interests?: string[] | null
+          is_minor?: boolean | null
           last_gift?: string | null
           name: string
+          next_birthday?: string | null
           notes?: string | null
           phone?: string | null
           preferred_categories?: string[] | null
@@ -117,6 +129,10 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          age_bucket?: string | null
+          age_months?: number | null
+          age_updated_at?: string | null
+          age_years?: number | null
           avatar?: string | null
           birthday?: string
           budget?: number
@@ -125,8 +141,10 @@ export type Database = {
           gender?: string | null
           id?: string
           interests?: string[] | null
+          is_minor?: boolean | null
           last_gift?: string | null
           name?: string
+          next_birthday?: string | null
           notes?: string | null
           phone?: string | null
           preferred_categories?: string[] | null
@@ -210,7 +228,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      compute_age_fields: {
+        Args: { bdate: string; today?: string }
+        Returns: {
+          out_age_bucket: string
+          out_age_months: number
+          out_age_years: number
+          out_is_minor: boolean
+          out_next_birthday: string
+        }[]
+      }
+      refresh_birthdays_for_today: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
