@@ -8,6 +8,41 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+// Fonction de normalisation pour gérer accents et caractères spéciaux
+const norm = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // enlève accents
+    .replace(/[^\p{L}\p{N}\s-]+/gu, '') // enlève ponctuation/bruits
+    .trim();
+
+// Whitelist stricte par tranche d'âge
+const ALLOWED_CATS: Record<string, string[]> = {
+  infant: [
+    'bebe', 'eveil', 'jouet bebe', 'hochet', 'peluche', 'tapis eveil',
+    'imagier', 'livre cartonne', 'anneau dentition', 'portique', 'mobile',
+    'doudou', 'hochet', 'cube souple', 'spirale activite'
+  ],
+  toddler: [
+    'jouet', 'eveil', 'construction enfant', 'livre enfant',
+    'pousser', 'tirer', 'puzzle bebe', 'jeux empilage', 'xylophone enfant',
+    'porteur', 'trotteur', 'cubes', 'animaux jouet', 'voiture enfant'
+  ],
+  child: [
+    'jeu', 'livre', 'loisir creatif', 'lego', 'playmobil',
+    'sport enfant', 'science kit', 'puzzle', 'coloriage', 'pate modeler'
+  ],
+  teen: [
+    'gaming', 'audio', 'mode', 'accessoires', 'sport', 'tech grand public', 
+    'livre ado', 'manette', 'casque', 'vetement ado'
+  ],
+  adult: [
+    'maison', 'cuisine', 'deco', 'photo', 'audio', 'bien etre', 'mode', 
+    'tech', 'sport', 'lecture', 'the', 'cafe', 'parfum', 'bijou'
+  ],
+};
+
 // SerpApi Amazon search function with enhanced ASIN extraction and image support
 async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
   asin?: string;
@@ -221,6 +256,7 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         max_tokens: 2000,
+        temperature: 0.1, // Réduire la créativité pour plus de cohérence
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -238,7 +274,7 @@ serve(async (req) => {
                   items: {
                     type: "object",
                     additionalProperties: false,
-                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "search_queries"],
+                    required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "brand", "canonical_name", "age_ok", "age_bucket_used", "search_queries"],
                     properties: {
                       title: { type: "string" },
                       description: { type: "string" },
@@ -248,6 +284,8 @@ serve(async (req) => {
                       category: { type: "string" },
                       brand: { type: "string" },
                       canonical_name: { type: "string" },
+                      age_ok: { type: "boolean" },
+                      age_bucket_used: { type: "string" },
                       search_queries: { 
                         type: "array", 
                         minItems: 3, 
@@ -268,8 +306,9 @@ serve(async (req) => {
 
 CONTRAINTES METIER STRICTES:
 - AGE (filtrage obligatoire selon tranche d'age BDD):
-  • infant (<1 an): UNIQUEMENT jouets d'eveil certifies CE 6m+, livres cartonne bebe, peluches bebe, hochets, tapis d'eveil. INTERDIT: electronique, tasses, bougies, parfums, bijoux, decorations, vetements complexes
-  • toddler (1-2 ans): UNIQUEMENT jouets educatifs 12m+, livres enfant cartonne, jeux emboitement, jouets a pousser/tirer. INTERDIT: electronique adulte, tasses fragiles, bougies, parfums, bijoux
+  Tranche "${ageBucket}" = UNIQUEMENT categories autorisees: ${ALLOWED_CATS[ageBucket]?.join(', ') || 'toutes'}
+  • infant (<1 an): UNIQUEMENT jouets d'eveil certifies CE 6m+, livres cartonne bebe, peluches bebe, hochets, tapis d'eveil
+  • toddler (1-2 ans): UNIQUEMENT jouets educatifs 12m+, livres enfant cartonne, jeux emboitement, jouets a pousser/tirer
   • child (3-12 ans): jeux, livres, loisirs creatifs, sport enfant, construction, vetements enfant
   • teen (13-17 ans): tech grand public, gaming, mode ados, sport, soins entry-level
   • adult (18+ ans): toutes categories appropriees selon profil
@@ -313,6 +352,12 @@ ${ageInfo ? `- ${ageInfo}` : ''}
 - Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitees'}
 
 IMPORTANT: Respecte strictement les contraintes d'age selon la tranche "${ageBucket}" et les restrictions mentionnees dans le profil.
+
+VALIDATION OBLIGATOIRE:
+- Chaque suggestion doit inclure age_ok: true si et seulement si elle respecte les contraintes d'age
+- Inclure age_bucket_used: "${ageBucket}" pour verification
+- Si tu ne peux pas respecter les contraintes, n'inclus pas la suggestion
+
 ${ageBucket === 'infant' || ageBucket === 'toddler' ? `ATTENTION CRITIQUE: Personne de ${ageYears || 0} ans (tranche ${ageBucket}) - INTERDIRE ABSOLUMENT: tasse, mug, bougie, parfum, bijou, decoration, electronique, produits chimiques, petites pieces. UNIQUEMENT jouets bebe certifies CE appropries.` : ''}
 ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           }
@@ -349,70 +394,114 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     console.log('🛡️ Validation des suggestions selon l\'age');
     
     const validatedSuggestions = suggestions.filter((suggestion, index) => {
-      const title = suggestion.title?.toLowerCase() || '';
-      const description = suggestion.description?.toLowerCase() || '';
-      const category = suggestion.category?.toLowerCase() || '';
+      // Normaliser les textes pour comparaison robuste
+      const titleN = norm(suggestion.title);
+      const descN = norm(suggestion.description);
+      const catN = norm(suggestion.category);
       
-      // Regles strictes par tranche d'age
+      console.log(`🔍 Validation suggestion ${index + 1}: "${suggestion.title}" (bucket: ${ageBucket})`);
+      
+      // Vérifier age_ok du GPT
+      if (!suggestion.age_ok) {
+        console.log(`❌ [${index + 1}] Rejet: GPT a marqué age_ok=false → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // 1) Whitelist par âge (sauf adult)
+      const allowed = ALLOWED_CATS[ageBucket] || [];
+      if (ageBucket !== 'adult') {
+        const inAllowed = allowed.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+        });
+        
+        if (!inAllowed) {
+          console.log(`❌ [${index + 1}] Rejet: catégorie non autorisée pour ${ageBucket} (autorisé: ${allowed.join(', ')}) → "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      // 2) Interdits universels (dangereux/inadaptés)
+      const FORBIDDEN = [
+        'alcool','vin','biere','champagne','whisky','vodka',
+        'couteau','lame','rasoir','e-cig','vapoteuse','tabac',
+      ];
+      const hitForbidden = FORBIDDEN.some(k => {
+        const kN = norm(k);
+        return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+      });
+      if (hitForbidden) {
+        const foundForbidden = FORBIDDEN.find(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+        });
+        console.log(`❌ [${index + 1}] Rejet: interdit universel (${foundForbidden}) → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // 3) Interdits spécifiques bébé/toddler (renforcés)
       if (ageBucket === 'infant' || ageBucket === 'toddler') {
-        // <3 ans: interdire produits adultes et dangereux
-        const forbiddenForBabies = [
-          'the', 'cafe', 'alcool', 'vin', 'biere', 'champagne',
-          'smartphone', 'tablet', 'ordinateur', 'casque audio', 'electronique',
-          'maquillage', 'parfum', 'bougie', 'encens', 'diffuseur', 'huile',
-          'rasoir', 'bijou', 'bague', 'collier', 'bracelet', 'montre',
-          'couteau', 'outil', 'produit menager', 'decoration fragile',
-          'tasse', 'mug', 'verre', 'assiette', 'vaisselle',
-          'livre papier fin', 'magazine', 'bd adulte',
-          'vetement adulte', 'chaussure adulte', 'accessoire mode'
+        const BABY_FORBIDDEN = [
+          'the','cafe','tasse','mug','verre','bougie','parfum','encens','diffuseur',
+          'smartphone','liseuse','kindle','tablet','ordinateur','casque audio','ecouteur',
+          'bijou','bague','collier','bracelet','montre','deco fragile','jeux de societe'
         ];
-        
-        const hasForbiddenContent = forbiddenForBabies.some(forbidden => 
-          title.includes(forbidden) || description.includes(forbidden) || category.includes(forbidden)
-        );
-        
-        if (hasForbiddenContent) {
-          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin (contient "${forbiddenForBabies.find(f => title.includes(f) || description.includes(f) || category.includes(f))}"): "${suggestion.title}"`);
+        const badBaby = BABY_FORBIDDEN.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+        });
+        if (badBaby) {
+          const foundBad = BABY_FORBIDDEN.find(k => {
+            const kN = norm(k);
+            return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+          });
+          console.log(`❌ [${index + 1}] Rejet baby/toddler (${foundBad}) → "${suggestion.title}"`);
           return false;
         }
         
-        // Verification positive: doit contenir des mots-cles appropries pour bebe
-        const requiredForBabies = [
-          'bebe', 'baby', 'enfant', 'jouet', 'eveil', 'peluche', 'hochet', 
-          'tapis', 'livre cartonne', 'imagier', 'cube', 'anneau', 'dentition',
-          'mobile', 'portique', 'transat', 'siese auto bebe'
+        // 4) Vérification positive (doit évoquer l'univers bébé)
+        const BABY_REQUIRED = [
+          'bebe','baby','jouet','eveil','peluche','hochet','tapis eveil',
+          'livre cartonne','imagier','anneau dentition','portique','mobile'
         ];
-        
-        const hasAppropriatContent = requiredForBabies.some(required => 
-          title.includes(required) || description.includes(required)
-        );
-        
-        if (!hasAppropriatContent) {
-          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin (pas de contenu approprie): "${suggestion.title}"`);
+        const okBaby = BABY_REQUIRED.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN);
+        });
+        if (!okBaby) {
+          console.log(`❌ [${index + 1}] Rejet baby/toddler (pas de mots-clés bébé) → "${suggestion.title}"`);
           return false;
         }
       }
       
-      // Verifier les allergies/restrictions dans les notes
+      // 5) Vérifier les allergies/restrictions dans les notes
       if (personData?.notes) {
-        const notes = personData.notes.toLowerCase();
-        if (notes.includes('allergi') && (title.includes('parfum') || description.includes('parfum'))) {
-          console.log(`❌ Suggestion ${index + 1} rejetee pour allergie: "${suggestion.title}"`);
+        const notesN = norm(personData.notes);
+        if (notesN.includes('allergi') && (titleN.includes('parfum') || descN.includes('parfum'))) {
+          console.log(`❌ [${index + 1}] Rejet pour allergie → "${suggestion.title}"`);
           return false;
         }
-        if (notes.includes('vegan') && (title.includes('cuir') || description.includes('cuir'))) {
-          console.log(`❌ Suggestion ${index + 1} rejetee pour preference vegan: "${suggestion.title}"`);
+        if (notesN.includes('vegan') && (titleN.includes('cuir') || descN.includes('cuir'))) {
+          console.log(`❌ [${index + 1}] Rejet pour préférence vegan → "${suggestion.title}"`);
           return false;
         }
       }
       
-      console.log(`✅ Suggestion ${index + 1} validee: "${suggestion.title}"`);
+      console.log(`✅ [${index + 1}] Validée → "${suggestion.title}"`);
       return true;
     });
     
-    // Si trop de suggestions ont ete rejetees, garder au moins les premieres
-    const finalSuggestions = validatedSuggestions.length >= 2 ? validatedSuggestions : suggestions.slice(0, 3);
-    console.log(`Suggestions finales: ${finalSuggestions.length}/${suggestions.length} retenues`);
+    // Gérer le cas où trop de suggestions sont rejetées
+    let finalSuggestions = validatedSuggestions;
+    if (validatedSuggestions.length < 2) {
+      console.log(`⚠️ Seulement ${validatedSuggestions.length} suggestions valides, tentative de retry si nécessaire`);
+      
+      // TODO: Implémenter retry avec prompt renforcé si besoin
+      // Pour l'instant, utiliser les suggestions originales en fallback
+      finalSuggestions = validatedSuggestions.length > 0 ? validatedSuggestions : suggestions.slice(0, Math.min(2, suggestions.length));
+    }
+    
+    console.log(`📊 Résultat validation: ${finalSuggestions.length}/${suggestions.length} suggestions retenues`);
 
     // ===== ETAPE 2: Resolution produit via SerpApi (parallelisee) =====
     console.log('🔍 Etape 2: Resolution des liens Amazon via SerpApi (parallelisee)');
