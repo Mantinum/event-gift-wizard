@@ -393,6 +393,78 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     // ===== VALIDATION COTE SERVEUR (garde-fou age) =====
     console.log('🛡️ Validation des suggestions selon l\'age');
     
+    // Fonction pour valider une suggestion spécifique (réutilisable)
+    const validateSuggestionByAge = (suggestion: any, ageBucket: string, index: number): boolean => {
+      const titleN = norm(suggestion.title);
+      const descN = norm(suggestion.description);
+      const catN = norm(suggestion.category);
+      
+      console.log(`🔍 Validation suggestion ${index + 1}: "${suggestion.title}" (bucket: ${ageBucket})`);
+      
+      // 1) Whitelist par âge (sauf adult)
+      const allowed = ALLOWED_CATS[ageBucket] || [];
+      if (ageBucket !== 'adult') {
+        const inAllowed = allowed.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+        });
+        
+        if (!inAllowed) {
+          console.log(`❌ [${index + 1}] Rejet: catégorie non autorisée pour ${ageBucket} → "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      // 2) Interdits universels
+      const FORBIDDEN = [
+        'alcool','vin','biere','champagne','whisky','vodka',
+        'couteau','lame','rasoir','e-cig','vapoteuse','tabac',
+        'diffuseur huiles', 'huile essentielle', 'theiere', 'bougies parfumees', 'enceinte bluetooth', 'haut parleur', 'ecouteurs'
+      ];
+      const hitForbidden = FORBIDDEN.some(k => {
+        const kN = norm(k);
+        return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+      });
+      if (hitForbidden) {
+        console.log(`❌ [${index + 1}] Rejet: interdit universel → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // 3) Interdits spécifiques bébé/toddler
+      if (ageBucket === 'infant' || ageBucket === 'toddler') {
+        const BABY_FORBIDDEN = [
+          'the','cafe','tasse','mug','verre','bougie','parfum','encens','diffuseur',
+          'smartphone','liseuse','kindle','tablet','ordinateur','casque audio','ecouteur',
+          'bijou','bague','collier','bracelet','montre','deco fragile','jeux de societe'
+        ];
+        const badBaby = BABY_FORBIDDEN.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
+        });
+        if (badBaby) {
+          console.log(`❌ [${index + 1}] Rejet baby/toddler → "${suggestion.title}"`);
+          return false;
+        }
+        
+        // 4) Vérification positive (doit évoquer l'univers bébé)
+        const BABY_REQUIRED = [
+          'bebe','baby','jouet','eveil','peluche','hochet','tapis eveil',
+          'livre cartonne','imagier','anneau dentition','portique','mobile'
+        ];
+        const okBaby = BABY_REQUIRED.some(k => {
+          const kN = norm(k);
+          return titleN.includes(kN) || descN.includes(kN);
+        });
+        if (!okBaby) {
+          console.log(`❌ [${index + 1}] Rejet baby/toddler (pas de mots-clés bébé) → "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      console.log(`✅ [${index + 1}] Validée → "${suggestion.title}"`);
+      return true;
+    };
+
     const validatedSuggestions = suggestions.filter((suggestion, index) => {
       // Vérifier age_ok du GPT
       if (!suggestion.age_ok) {
