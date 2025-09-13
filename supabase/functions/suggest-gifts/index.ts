@@ -83,9 +83,14 @@ serve(async (req) => {
       });
     }
 
-    // SerpApi not required for this function - just warn if missing
     if (!serpApiKey) {
-      console.log('⚠️ SERPAPI_API_KEY is missing (not used in this function)');
+      console.log('❌ Missing SerpApi API key');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Configuration manquante: clé SerpApi non configurée'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     if (!supabaseUrl || !supabaseKey) {
@@ -252,10 +257,77 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       });
     }
 
-    console.log('🎁 Generated suggestions:', suggestions.length);
+    // Enrich suggestions with Amazon data
+    console.log('🛒 Enriching suggestions with Amazon data...');
+    const enrichedSuggestions = await Promise.all(
+      suggestions.map(async (suggestion: any) => {
+        try {
+          const searchQuery = `${suggestion.title} ${suggestion.category}`.toLowerCase();
+          console.log(`🔍 Searching Amazon for: ${searchQuery}`);
+          
+          const serpResponse = await fetch(`https://serpapi.com/search.json?engine=amazon&q=${encodeURIComponent(searchQuery)}&api_key=${serpApiKey}&amazon_domain=amazon.fr&gl=fr&hl=fr&num=3`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!serpResponse.ok) {
+            console.log(`⚠️ SerpApi error for "${searchQuery}":`, serpResponse.status);
+            return suggestion;
+          }
+
+          const serpData = await serpResponse.json();
+          const amazonResults = serpData.shopping_results || [];
+          
+          if (amazonResults.length > 0) {
+            const bestMatch = amazonResults[0];
+            console.log(`✅ Found Amazon product: ${bestMatch.title}`);
+            
+            // Extract ASIN from link if available
+            const asin = bestMatch.link?.match(/\/dp\/([A-Z0-9]{10})/)?.[1] || 
+                        bestMatch.link?.match(/\/gp\/product\/([A-Z0-9]{10})/)?.[1];
+            
+            suggestion.amazonData = {
+              asin: asin,
+              rating: bestMatch.rating || null,
+              reviewCount: bestMatch.reviews_count || 0,
+              availability: bestMatch.delivery || 'Disponible',
+              prime: bestMatch.prime || false,
+              actualPrice: bestMatch.price ? parseFloat(bestMatch.price.toString().replace(/[^\d.,]/g, '').replace(',', '.')) : null,
+              imageUrl: bestMatch.thumbnail,
+              productUrl: bestMatch.link,
+              addToCartUrl: bestMatch.link,
+              searchUrl: `https://amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
+              matchType: 'search'
+            };
+            
+            // Update purchase links
+            suggestion.purchaseLinks = [bestMatch.link];
+            
+            // Update estimated price with actual Amazon price if available
+            if (suggestion.amazonData.actualPrice) {
+              suggestion.estimatedPrice = Math.round(suggestion.amazonData.actualPrice);
+            }
+          } else {
+            console.log(`❌ No Amazon results for: ${searchQuery}`);
+            // Add search URL as fallback
+            suggestion.purchaseLinks = [`https://amazon.fr/s?k=${encodeURIComponent(searchQuery)}`];
+          }
+          
+          return suggestion;
+        } catch (error) {
+          console.error(`❌ Error enriching suggestion "${suggestion.title}":`, error);
+          // Return original suggestion if enrichment fails
+          return suggestion;
+        }
+      })
+    );
+
+    console.log('🎁 Generated and enriched suggestions:', enrichedSuggestions.length);
     return new Response(JSON.stringify({
       success: true,
-      suggestions,
+      suggestions: enrichedSuggestions,
       personName: personData.name,
       eventType,
       budget
