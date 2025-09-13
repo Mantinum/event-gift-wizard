@@ -394,18 +394,44 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     console.log('🛡️ Validation des suggestions selon l\'age');
     
     const validatedSuggestions = suggestions.filter((suggestion, index) => {
-      // Normaliser les textes pour comparaison robuste
-      const titleN = norm(suggestion.title);
-      const descN = norm(suggestion.description);
-      const catN = norm(suggestion.category);
-      
-      console.log(`🔍 Validation suggestion ${index + 1}: "${suggestion.title}" (bucket: ${ageBucket})`);
-      
       // Vérifier age_ok du GPT
       if (!suggestion.age_ok) {
         console.log(`❌ [${index + 1}] Rejet: GPT a marqué age_ok=false → "${suggestion.title}"`);
         return false;
       }
+      
+      // Vérifier age_bucket_used
+      if (suggestion.age_bucket_used !== ageBucket) {
+        console.log(`❌ [${index + 1}] Rejet: bucket GPT (${suggestion.age_bucket_used}) ≠ attendu (${ageBucket}) → "${suggestion.title}"`);
+        return false;
+      }
+      
+      // Vérifier les allergies/restrictions dans les notes
+      if (personData?.notes) {
+        const notesN = norm(personData.notes);
+        const titleN = norm(suggestion.title);
+        const descN = norm(suggestion.description);
+        
+        if (notesN.includes('allergi') && (titleN.includes('parfum') || descN.includes('parfum'))) {
+          console.log(`❌ [${index + 1}] Rejet pour allergie → "${suggestion.title}"`);
+          return false;
+        }
+        if (notesN.includes('vegan') && (titleN.includes('cuir') || descN.includes('cuir'))) {
+          console.log(`❌ [${index + 1}] Rejet pour préférence vegan → "${suggestion.title}"`);
+          return false;
+        }
+      }
+      
+      return validateSuggestionByAge(suggestion, ageBucket, index);
+    });
+    
+    // Fonction pour valider une suggestion spécifique (réutilisable)
+    const validateSuggestionByAge = (suggestion: any, ageBucket: string, index: number): boolean => {
+      const titleN = norm(suggestion.title);
+      const descN = norm(suggestion.description);
+      const catN = norm(suggestion.category);
+      
+      console.log(`🔍 Validation suggestion ${index + 1}: "${suggestion.title}" (bucket: ${ageBucket})`);
       
       // 1) Whitelist par âge (sauf adult)
       const allowed = ALLOWED_CATS[ageBucket] || [];
@@ -416,30 +442,27 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
         });
         
         if (!inAllowed) {
-          console.log(`❌ [${index + 1}] Rejet: catégorie non autorisée pour ${ageBucket} (autorisé: ${allowed.join(', ')}) → "${suggestion.title}"`);
+          console.log(`❌ [${index + 1}] Rejet: catégorie non autorisée pour ${ageBucket} → "${suggestion.title}"`);
           return false;
         }
       }
       
-      // 2) Interdits universels (dangereux/inadaptés)
+      // 2) Interdits universels
       const FORBIDDEN = [
         'alcool','vin','biere','champagne','whisky','vodka',
         'couteau','lame','rasoir','e-cig','vapoteuse','tabac',
+        'diffuseur huiles', 'huile essentielle', 'theiere', 'bougies parfumees', 'enceinte bluetooth', 'haut parleur', 'ecouteurs'
       ];
       const hitForbidden = FORBIDDEN.some(k => {
         const kN = norm(k);
         return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
       });
       if (hitForbidden) {
-        const foundForbidden = FORBIDDEN.find(k => {
-          const kN = norm(k);
-          return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
-        });
-        console.log(`❌ [${index + 1}] Rejet: interdit universel (${foundForbidden}) → "${suggestion.title}"`);
+        console.log(`❌ [${index + 1}] Rejet: interdit universel → "${suggestion.title}"`);
         return false;
       }
       
-      // 3) Interdits spécifiques bébé/toddler (renforcés)
+      // 3) Interdits spécifiques bébé/toddler
       if (ageBucket === 'infant' || ageBucket === 'toddler') {
         const BABY_FORBIDDEN = [
           'the','cafe','tasse','mug','verre','bougie','parfum','encens','diffuseur',
@@ -451,11 +474,7 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
         });
         if (badBaby) {
-          const foundBad = BABY_FORBIDDEN.find(k => {
-            const kN = norm(k);
-            return titleN.includes(kN) || descN.includes(kN) || catN.includes(kN);
-          });
-          console.log(`❌ [${index + 1}] Rejet baby/toddler (${foundBad}) → "${suggestion.title}"`);
+          console.log(`❌ [${index + 1}] Rejet baby/toddler → "${suggestion.title}"`);
           return false;
         }
         
@@ -474,31 +493,177 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
         }
       }
       
-      // 5) Vérifier les allergies/restrictions dans les notes
-      if (personData?.notes) {
-        const notesN = norm(personData.notes);
-        if (notesN.includes('allergi') && (titleN.includes('parfum') || descN.includes('parfum'))) {
-          console.log(`❌ [${index + 1}] Rejet pour allergie → "${suggestion.title}"`);
-          return false;
-        }
-        if (notesN.includes('vegan') && (titleN.includes('cuir') || descN.includes('cuir'))) {
-          console.log(`❌ [${index + 1}] Rejet pour préférence vegan → "${suggestion.title}"`);
-          return false;
-        }
-      }
-      
       console.log(`✅ [${index + 1}] Validée → "${suggestion.title}"`);
       return true;
-    });
-    
-    // Gérer le cas où trop de suggestions sont rejetées
-    let finalSuggestions = validatedSuggestions;
-    if (validatedSuggestions.length < 2) {
-      console.log(`⚠️ Seulement ${validatedSuggestions.length} suggestions valides, tentative de retry si nécessaire`);
+    };
+
+    // Fonction pour créer un prompt retry durci
+    const buildRetryPrompt = (ageBucket: string, personData: any, eventType: string, budget: number): string => {
+      const allowedCats = ALLOWED_CATS[ageBucket] || [];
       
-      // TODO: Implémenter retry avec prompt renforcé si besoin
-      // Pour l'instant, utiliser les suggestions originales en fallback
-      finalSuggestions = validatedSuggestions.length > 0 ? validatedSuggestions : suggestions.slice(0, Math.min(2, suggestions.length));
+      return `RETRY STRICT - Génère 3 suggestions de cadeaux conformes aux contraintes:
+
+RÈGLES BLOQUANTES (retry):
+- Tranche d'âge: ${ageBucket}
+- Tu DOIS choisir 3 produits exclusivement parmi ces catégories autorisées: ${allowedCats.join(', ')}
+- Interdits absolus: "thé", "café", "bougie", "parfum", "enceinte", "Kindle/liseuse", "smartphone", "jeux de société", "mug/tasse/verre", "bijoux", "décoration fragile", "électronique adulte"
+- Budget max: ${budget}€
+- Événement: ${eventType}
+
+${ageBucket === 'infant' || ageBucket === 'toddler' ? `
+CRITICAL: Personne de tranche ${ageBucket} - UNIQUEMENT:
+- Jouets d'éveil certifiés CE 6m+
+- Livres cartonnés bébé
+- Peluches bébé sécurisées
+- Hochets/anneaux de dentition
+- Tapis d'éveil/portiques
+- Spirales d'activités
+` : ''}
+
+Réponds en JSON STRICT avec ce format:
+{
+  "suggestions": [
+    {
+      "title": "Nom précis du produit",
+      "description": "Description claire",
+      "estimatedPrice": 25.99,
+      "confidence": 0.9,
+      "reasoning": "Pourquoi adapté à ${ageBucket}",
+      "category": "catégorie autorisée",
+      "brand": "Marque",
+      "canonical_name": "Nom canonical",
+      "age_ok": true,
+      "age_bucket_used": "${ageBucket}",
+      "search_queries": ["requête 1", "requête 2", "requête 3"]
+    }
+  ]
+}
+
+OBLIGATION: age_ok=true et age_bucket_used="${ageBucket}" pour chaque suggestion, sinon je la rejette.`;
+    };
+
+    // Fonction pour créer un fallback sécurisé par âge
+    const buildSafeFallback = (ageBucket: string, budget: number): any[] => {
+      const maxPrice = Math.min(budget, 50);
+      
+      const fallbacks: Record<string, any[]> = {
+        infant: [
+          {
+            title: "Tapis d'Éveil Multicolore",
+            description: "Tapis d'éveil sécurisé avec arches et jouets suspendus, certifié CE",
+            estimatedPrice: Math.min(maxPrice, 35),
+            confidence: 0.8,
+            reasoning: "Produit sécurisé adapté aux nourrissons",
+            category: "éveil bébé",
+            brand: "Diverses marques",
+            canonical_name: "Tapis éveil bébé",
+            age_ok: true,
+            age_bucket_used: ageBucket,
+            search_queries: ["tapis éveil bébé", "tapis activités nourrisson", "tapis éveil CE"]
+          },
+          {
+            title: "Hochet Souple Bébé",
+            description: "Hochet en silicone souple et sécurisé pour les premières découvertes",
+            estimatedPrice: Math.min(maxPrice, 15),
+            confidence: 0.9,
+            reasoning: "Jouet sécurisé pour développement sensoriel",
+            category: "jouet bébé",
+            brand: "Diverses marques",
+            canonical_name: "Hochet bébé silicone",
+            age_ok: true,
+            age_bucket_used: ageBucket,
+            search_queries: ["hochet bébé silicone", "hochet souple nourrisson", "hochet CE bébé"]
+          }
+        ],
+        toddler: [
+          {
+            title: "Livre Cartonné Imagier",
+            description: "Livre d'images cartonnées robuste pour les premiers apprentissages",
+            estimatedPrice: Math.min(maxPrice, 12),
+            confidence: 0.9,
+            reasoning: "Support éducatif adapté aux tout-petits",
+            category: "livre enfant",
+            brand: "Diverses marques",
+            canonical_name: "Imagier cartonné",
+            age_ok: true,
+            age_bucket_used: ageBucket,
+            search_queries: ["livre cartonné enfant", "imagier tout petit", "livre bébé cartonné"]
+          }
+        ]
+      };
+      
+      return fallbacks[ageBucket] || [];
+    };
+
+    console.log(`📊 Résultat validation: ${validatedSuggestions.length}/${suggestions.length} suggestions retenues`);
+
+    let finalSuggestions = validatedSuggestions;
+
+    // Si pas assez de suggestions valides, retry avec prompt durci
+    if (finalSuggestions.length < 3) {
+      console.log(`⚠️ Seulement ${finalSuggestions.length} suggestion(s) validée(s), tentative de retry avec prompt strict`);
+      
+      try {
+        const retryPrompt = buildRetryPrompt(ageBucket, personData, eventType, budget);
+        const retryResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openAIKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: retryPrompt }],
+            max_tokens: 1000,
+            temperature: 0, // Température à 0 pour le retry
+            response_format: { type: "json_object" }
+          }),
+        });
+
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json();
+          const retryContent = retryData.choices[0].message.content;
+          const retrySuggestions = JSON.parse(retryContent).suggestions || [];
+          
+          console.log(`🔄 Retry: ${retrySuggestions.length} nouvelles suggestions générées`);
+          
+          // Valider les suggestions du retry
+          const retryValidated = retrySuggestions.filter((s: any, i: number) => {
+            if (!s.age_ok || s.age_bucket_used !== ageBucket) {
+              console.log(`❌ Retry [${i+1}] Rejet: age_ok=${s.age_ok}, bucket=${s.age_bucket_used} ≠ ${ageBucket}`);
+              return false;
+            }
+            return validateSuggestionByAge(s, ageBucket, i);
+          });
+          
+          if (retryValidated.length > 0) {
+            finalSuggestions = [...finalSuggestions, ...retryValidated].slice(0, 3);
+            console.log(`✅ Retry réussi: ${retryValidated.length} suggestions supplémentaires validées`);
+          }
+        }
+      } catch (error) {
+        console.log(`❌ Erreur lors du retry: ${error.message}`);
+      }
+    }
+
+    // Fallback sécurisé par tranche d'âge si toujours pas assez
+    if (finalSuggestions.length < 2) {
+      console.log(`🛡️ Activation du fallback sécurisé pour ${ageBucket}`);
+      const safeFallback = buildSafeFallback(ageBucket, budget);
+      finalSuggestions = [...finalSuggestions, ...safeFallback].slice(0, 3);
+    }
+
+    // Si vraiment aucune suggestion valide, erreur 422
+    if (finalSuggestions.length === 0) {
+      console.log(`💥 Aucune suggestion adaptée à la tranche d'âge ${ageBucket}`);
+      return new Response(JSON.stringify({
+        error: 'Aucune idée cadeau adaptée à la tranche d\'âge',
+        code: 'NO_AGE_SAFE_SUGGESTION',
+        ageBucket: ageBucket
+      }), { 
+        status: 422, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
     
     console.log(`📊 Résultat validation: ${finalSuggestions.length}/${suggestions.length} suggestions retenues`);
