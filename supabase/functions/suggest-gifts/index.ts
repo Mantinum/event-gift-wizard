@@ -119,7 +119,7 @@ serve(async (req) => {
     if (!openAIKey) {
       console.error('Missing OpenAI API key');
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: clé OpenAI non configurée',
+        error: 'Configuration manquante: cle OpenAI non configuree',
         suggestions: []
       }), {
         status: 400,
@@ -130,7 +130,7 @@ serve(async (req) => {
     if (!serpApiKey) {
       console.error('Missing SerpApi API key');
       return new Response(JSON.stringify({
-        error: 'Configuration manquante: clé SerpApi non configurée',
+        error: 'Configuration manquante: cle SerpApi non configuree',
         suggestions: []
       }), {
         status: 400,
@@ -157,10 +157,10 @@ serve(async (req) => {
       }
     }
 
-    // ===== ÉTAPE 1: Génération IA avec OpenAI =====
-    console.log('🤖 Étape 1: Génération des suggestions IA');
+    // ===== ETAPE 1: Generation IA avec OpenAI =====
+    console.log('🤖 Etape 1: Generation des suggestions IA');
     
-    // Préparer les informations d'âge depuis la BDD (ou fallback)
+    // Preparer les informations d'age depuis la BDD (ou fallback)
     let ageInfo = '';
     let ageBucket = 'adult';
     let ageYears = null;
@@ -169,21 +169,21 @@ serve(async (req) => {
 
     if (personData) {
       if (personData.age_years !== null && personData.age_bucket) {
-        // Utiliser les données pré-calculées de la BDD
+        // Utiliser les donnees pre-calculees de la BDD
         ageYears = personData.age_years;
         ageMonths = personData.age_months;
         ageBucket = personData.age_bucket;
         isMinor = personData.is_minor;
         
         if (ageYears < 3) {
-          ageInfo = `Âge: ${ageYears} ans (${ageMonths} mois) - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
+          ageInfo = `Age: ${ageYears} ans (${ageMonths} mois) - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
         } else {
-          ageInfo = `Âge: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
+          ageInfo = `Age: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
         }
         
-        console.log('Données âge BDD:', { ageYears, ageMonths, ageBucket, isMinor });
+        console.log('Donnees age BDD:', { ageYears, ageMonths, ageBucket, isMinor });
       } else if (personData.birthday) {
-        // Fallback: calcul local si les données BDD ne sont pas disponibles
+        // Fallback: calcul local si les donnees BDD ne sont pas disponibles
         try {
           const birthDate = new Date(personData.birthday);
           const today = new Date();
@@ -195,7 +195,7 @@ serve(async (req) => {
             ageYears = age;
           }
           
-          // Déterminer le bucket manuellement
+          // Determiner le bucket manuellement
           if (ageYears < 1) ageBucket = 'infant';
           else if (ageYears <= 2) ageBucket = 'toddler';
           else if (ageYears <= 12) ageBucket = 'child';
@@ -203,11 +203,11 @@ serve(async (req) => {
           else ageBucket = 'adult';
           
           isMinor = ageYears < 18;
-          ageInfo = `Âge calculé: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
+          ageInfo = `Age calcule: ${ageYears} ans - Tranche: ${ageBucket} - Mineur: ${isMinor ? 'oui' : 'non'}`;
           
-          console.log('Fallback calcul âge:', { ageYears, ageBucket, isMinor });
+          console.log('Fallback calcul age:', { ageYears, ageBucket, isMinor });
         } catch (error) {
-          console.log('Erreur calcul âge:', error);
+          console.log('Erreur calcul age:', error);
         }
       }
     }
@@ -264,56 +264,56 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: `Tu es un expert en suggestions de cadeaux pour le marché français. Tu dois suggérer 3 cadeaux concrets et précis.
+            content: `Tu es un expert en suggestions de cadeaux pour le marche francais. Tu dois suggerer 3 cadeaux concrets et precis.
 
-CONTRAINTES MÉTIER STRICTES:
-- ÂGE (filtrage obligatoire selon tranche d'âge BDD):
-  • infant (<1 an): jouets d'éveil 6m+, livres cartonnés, peluches certifiées CE, pas d'électronique
-  • toddler (1-2 ans): jouets éducatifs, livres imagés, jeux sensoriels, pas de petites pièces
-  • child (3-12 ans): jeux, livres, loisirs créatifs, sport enfant, construction
+CONTRAINTES METIER STRICTES:
+- AGE (filtrage obligatoire selon tranche d'age BDD):
+  • infant (<1 an): jouets d'eveil 6m+, livres cartonnes, peluches certifiees CE, pas d'electronique
+  • toddler (1-2 ans): jouets educatifs, livres images, jeux sensoriels, pas de petites pieces
+  • child (3-12 ans): jeux, livres, loisirs creatifs, sport enfant, construction
   • teen (13-17 ans): tech grand public, gaming, mode ados, sport, soins entry-level
-  • adult (18+ ans): toutes catégories appropriées selon profil
-- SÉCURITÉ: respecter strictement les notes d'allergies/restrictions médicales
-- DIVERSITÉ: 3 catégories différentes obligatoire
-- BUDGET: jamais dépasser, proposer variantes moins chères si besoin
-- MARCHÉ FR: privilégier références faciles à trouver sur Amazon.fr
-- PAS DE STÉRÉOTYPES: proposer alternatives unisexes si incertitude sur préférences
+  • adult (18+ ans): toutes categories appropriees selon profil
+- SECURITE: respecter strictement les notes d'allergies/restrictions medicales
+- DIVERSITE: 3 categories differentes obligatoire
+- BUDGET: jamais depasser, proposer variantes moins cheres si besoin
+- MARCHE FR: privilegier references faciles a trouver sur Amazon.fr
+- PAS DE STEREOTYPES: proposer alternatives unisexes si incertitude sur preferences
 
-EXEMPLE de réponse attendue:
+EXEMPLE de reponse attendue:
 {
   "suggestions": [
     {
-      "title": "Fujifilm Instax Mini 12 Appareil Photo Instantané",
-      "description": "Appareil photo instantané compact et moderne, parfait pour capturer des moments mémorables",
+      "title": "Fujifilm Instax Mini 12 Appareil Photo Instantane",
+      "description": "Appareil photo instantane compact et moderne, parfait pour capturer des moments memorables",
       "estimatedPrice": 79.99,
       "confidence": 0.9,
-      "reasoning": "Produit populaire et adapté au budget, idéal pour les jeunes adultes, disponible sur Amazon.fr",
+      "reasoning": "Produit populaire et adapte au budget, ideal pour les jeunes adultes, disponible sur Amazon.fr",
       "category": "Photo",
       "brand": "Fujifilm",
       "canonical_name": "Fujifilm Instax Mini 12",
-      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantané Fujifilm", "Fujifilm Instax Mini", "Instax Mini 12 France"]
+      "search_queries": ["Fujifilm Instax Mini 12", "Instax Mini 12 appareil photo", "appareil photo instantane Fujifilm", "Fujifilm Instax Mini", "Instax Mini 12 France"]
     }
   ]
 }
 
 CONSIGNES TECHNIQUES:
-- Produits concrets avec marque et modèle précis
-- search_queries: 3-5 requêtes optimisées pour Amazon (marque + modèle + mots-clés)
+- Produits concrets avec marque et modele precis
+- search_queries: 3-5 requetes optimisees pour Amazon (marque + modele + mots-cles)
 - JAMAIS d'adjectifs de couleur dans les search_queries
-- Prix cohérent avec le budget (marge ±10%)
+- Prix coherent avec le budget (marge ±10%)
 - Confidence entre 0.7 et 1.0
-- Les liens Amazon seront générés automatiquement par SerpApi (ne pas les inclure)`
+- Les liens Amazon seront generes automatiquement par SerpApi (ne pas les inclure)`
           },
           {
             role: 'user',
-            content: `Génère 3 suggestions de cadeaux pour:
-- Événement: ${eventType}
+            content: `Genere 3 suggestions de cadeaux pour:
+- Evenement: ${eventType}
 - Budget maximum: ${budget}€
 ${ageInfo ? `- ${ageInfo}` : ''}
-- Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitées'}
+- Profil: ${personData ? JSON.stringify(personData, null, 2) : 'Informations limitees'}
 
-IMPORTANT: Respecte strictement les contraintes d'âge selon la tranche "${ageBucket}" et les restrictions mentionnées dans le profil.
-${ageBucket === 'infant' || ageBucket === 'toddler' ? 'ATTENTION: Personne très jeune - INTERDIRE toute suggestion adulte (thé, café, alcool, électronique non-enfant).' : ''}
+IMPORTANT: Respecte strictement les contraintes d'age selon la tranche "${ageBucket}" et les restrictions mentionnees dans le profil.
+${ageBucket === 'infant' || ageBucket === 'toddler' ? 'ATTENTION: Personne tres jeune - INTERDIRE toute suggestion adulte (the, cafe, alcool, electronique non-enfant).' : ''}
 ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           }
         ]
@@ -345,22 +345,22 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
       throw new Error(`Invalid OpenAI response format: ${error.message}`);
     }
 
-    // ===== VALIDATION CÔTÉ SERVEUR (garde-fou âge) =====
-    console.log('🛡️ Validation des suggestions selon l'âge');
+    // ===== VALIDATION COTE SERVEUR (garde-fou age) =====
+    console.log('🛡️ Validation des suggestions selon l\'age');
     
     const validatedSuggestions = suggestions.filter((suggestion, index) => {
       const title = suggestion.title?.toLowerCase() || '';
       const description = suggestion.description?.toLowerCase() || '';
       const category = suggestion.category?.toLowerCase() || '';
       
-      // Règles strictes par tranche d'âge
+      // Regles strictes par tranche d'age
       if (ageBucket === 'infant' || ageBucket === 'toddler') {
         // <3 ans: interdire produits adultes
         const forbiddenForBabies = [
-          'thé', 'café', 'alcool', 'vin', 'bière', 'champagne',
+          'the', 'cafe', 'alcool', 'vin', 'biere', 'champagne',
           'smartphone', 'tablet', 'ordinateur', 'casque audio',
           'maquillage', 'parfum', 'rasoir', 'bijou fin',
-          'couteau', 'outil', 'produit ménager'
+          'couteau', 'outil', 'produit menager'
         ];
         
         const hasForbiddenContent = forbiddenForBabies.some(forbidden => 
@@ -368,40 +368,40 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
         );
         
         if (hasForbiddenContent) {
-          console.log(`❌ Suggestion ${index + 1} rejetée pour bébé/bambin: "${suggestion.title}"`);
+          console.log(`❌ Suggestion ${index + 1} rejetee pour bebe/bambin: "${suggestion.title}"`);
           return false;
         }
       }
       
-      // Vérifier les allergies/restrictions dans les notes
+      // Verifier les allergies/restrictions dans les notes
       if (personData?.notes) {
         const notes = personData.notes.toLowerCase();
         if (notes.includes('allergi') && (title.includes('parfum') || description.includes('parfum'))) {
-          console.log(`❌ Suggestion ${index + 1} rejetée pour allergie: "${suggestion.title}"`);
+          console.log(`❌ Suggestion ${index + 1} rejetee pour allergie: "${suggestion.title}"`);
           return false;
         }
         if (notes.includes('vegan') && (title.includes('cuir') || description.includes('cuir'))) {
-          console.log(`❌ Suggestion ${index + 1} rejetée pour préférence vegan: "${suggestion.title}"`);
+          console.log(`❌ Suggestion ${index + 1} rejetee pour preference vegan: "${suggestion.title}"`);
           return false;
         }
       }
       
-      console.log(`✅ Suggestion ${index + 1} validée: "${suggestion.title}"`);
+      console.log(`✅ Suggestion ${index + 1} validee: "${suggestion.title}"`);
       return true;
     });
     
-    // Si trop de suggestions ont été rejetées, garder au moins les premières
+    // Si trop de suggestions ont ete rejetees, garder au moins les premieres
     const finalSuggestions = validatedSuggestions.length >= 2 ? validatedSuggestions : suggestions.slice(0, 3);
     console.log(`Suggestions finales: ${finalSuggestions.length}/${suggestions.length} retenues`);
 
-    // ===== ÉTAPE 2: Résolution produit via SerpApi (parallélisée) =====
-    console.log('🔍 Étape 2: Résolution des liens Amazon via SerpApi (parallélisée)');
+    // ===== ETAPE 2: Resolution produit via SerpApi (parallelisee) =====
+    console.log('🔍 Etape 2: Resolution des liens Amazon via SerpApi (parallelisee)');
     
     const processedSuggestions = await Promise.all(
       finalSuggestions.map(async (suggestion, index) => {
         console.log(`\n--- Traitement suggestion ${index + 1}: "${suggestion.title}" ---`);
         
-        // Validation du budget côté serveur
+        // Validation du budget cote serveur
         if (suggestion.estimatedPrice && suggestion.estimatedPrice > budget * 1.1) {
           console.log(`⚠️ Prix ${suggestion.estimatedPrice}€ dépasse le budget ${budget}€, ajusté`);
           suggestion.estimatedPrice = Math.min(suggestion.estimatedPrice, budget);
@@ -412,7 +412,7 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
         let finalUrl = '';
         let purchaseLinks: string[] = [];
         
-        // Paralléliser les recherches SerpApi pour chaque suggestion
+        // Paralleliser les recherches SerpApi pour chaque suggestion
         if (suggestion.search_queries && suggestion.search_queries.length > 0) {
           const searchPromises = suggestion.search_queries.slice(0, 3).map(query => 
             searchAmazonProduct(query, serpApiKey)
@@ -457,13 +457,13 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           }
         }
         
-        // Dernière option: lien de recherche Amazon
+        // Derniere option: lien de recherche Amazon
         if (!amazonResult) {
           const searchQuery = suggestion.search_queries?.[0] || suggestion.canonical_name || suggestion.title;
           finalUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`;
           purchaseLinks = [finalUrl];
           matchType = 'search';
-          console.log(`❌ Aucun ASIN trouvé, fallback recherche: "${searchQuery}"`);
+          console.log(`❌ Aucun ASIN trouve, fallback recherche: "${searchQuery}"`);
         }
         
         return {
@@ -471,8 +471,8 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
           description: suggestion.description,
           estimatedPrice: suggestion.estimatedPrice || budget || 30,
           confidence: suggestion.confidence || 0.7,
-          reasoning: suggestion.reasoning || 'Suggestion générée par IA',
-          category: suggestion.category || 'Général',
+          reasoning: suggestion.reasoning || 'Suggestion generee par IA',
+          category: suggestion.category || 'General',
           alternatives: suggestion.search_queries || [],
           purchaseLinks: purchaseLinks,
           brand: suggestion.brand || 'Diverses marques',
@@ -492,7 +492,7 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
       })
     );
 
-    console.log(`\n🎁 Résultat final: ${processedSuggestions.length} suggestions traitées`);
+    console.log(`\n🎁 Resultat final: ${processedSuggestions.length} suggestions traitees`);
     processedSuggestions.forEach((suggestion, i) => {
       console.log(`${i + 1}. ${suggestion.title} - ${suggestion.amazonData?.matchType === 'direct' ? '✅ Lien direct' : '🔍 Recherche'}`);
     });
@@ -509,7 +509,7 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     
     // Determine appropriate error status code
     let statusCode = 500;
-    let errorMessage = 'Erreur inattendue lors de la génération des suggestions';
+    let errorMessage = 'Erreur inattendue lors de la generation des suggestions';
     
     if (error?.message?.includes('OpenAI failed')) {
       statusCode = 502; // Bad Gateway for external API failures
