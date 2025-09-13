@@ -5,15 +5,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
-// SerpApi Amazon search function
+// SerpApi Amazon search function with enhanced ASIN extraction and image support
 async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
   asin?: string;
   productUrl?: string;
   addToCartUrl?: string;
   title?: string;
   price?: string;
+  imageUrl?: string;
+  rating?: number;
+  reviewCount?: number;
 } | null> {
   try {
     console.log(`🔍 SerpApi search for: "${query}"`);
@@ -35,70 +39,52 @@ async function searchAmazonProduct(query: string, serpApiKey: string): Promise<{
 
     const data = await response.json();
     
-    // Helper function to extract ASIN from link
+    // Enhanced ASIN extraction function
     const extractAsinFromLink = (link: string): string | null => {
-      const match = link.match(/\/dp\/([A-Z0-9]{10})/i);
-      return match ? match[1] : null;
+      // Match various Amazon URL patterns
+      const patterns = [
+        /\/dp\/([A-Z0-9]{10})/i,
+        /\/gp\/product\/([A-Z0-9]{10})/i,
+        /[?&]asin=([A-Z0-9]{10})/i
+      ];
+      
+      for (const pattern of patterns) {
+        const match = link.match(pattern);
+        if (match) return match[1];
+      }
+      return null;
     };
     
-    // Check sponsored results first (often best-sellers)
-    const sponsoredResults = data.sponsored_results || [];
-    for (const result of sponsoredResults.slice(0, 10)) {
-      if (result.asin) {
-        const asin = result.asin;
-        console.log(`✅ Found ASIN in sponsored: ${asin} for query: "${query}"`);
-        return {
-          asin,
-          productUrl: `https://www.amazon.fr/dp/${asin}`,
-          addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
-          title: result.title,
-          price: result.price_string
-        };
-      }
-      
-      // Try to extract ASIN from link if no direct asin
-      if (result.link) {
-        const asin = extractAsinFromLink(result.link);
-        if (asin) {
-          console.log(`✅ Extracted ASIN from sponsored link: ${asin} for query: "${query}"`);
-          return {
-            asin,
-            productUrl: `https://www.amazon.fr/dp/${asin}`,
-            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
-            title: result.title,
-            price: result.price_string
-          };
-        }
-      }
-    }
+    const createResult = (item: any, asin: string) => ({
+      asin,
+      productUrl: `https://www.amazon.fr/dp/${asin}`,
+      addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
+      title: item.title,
+      price: item.price_string || item.price,
+      imageUrl: item.thumbnail || item.image,
+      rating: item.rating,
+      reviewCount: item.reviews_count
+    });
     
-    // Check organic results
-    const organicResults = data.organic_results || [];
-    for (const result of organicResults.slice(0, 10)) {
+    // Check all result types (sponsored, organic, and search_results)
+    const allResults = [
+      ...(data.sponsored_results || []),
+      ...(data.organic_results || []),
+      ...(data.search_results || [])
+    ];
+    
+    for (const result of allResults.slice(0, 15)) {
       if (result.asin) {
-        const asin = result.asin;
-        console.log(`✅ Found ASIN in organic: ${asin} for query: "${query}"`);
-        return {
-          asin,
-          productUrl: `https://www.amazon.fr/dp/${asin}`,
-          addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
-          title: result.title,
-          price: result.price_string
-        };
+        console.log(`✅ Found direct ASIN: ${result.asin} for query: "${query}"`);
+        return createResult(result, result.asin);
       }
       
-      // Try to extract ASIN from link if no direct asin
+      // Try to extract ASIN from link
       if (result.link) {
         const asin = extractAsinFromLink(result.link);
         if (asin) {
-          console.log(`✅ Extracted ASIN from organic link: ${asin} for query: "${query}"`);
-          return {
-            asin,
-            productUrl: `https://www.amazon.fr/dp/${asin}`,
-            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`,
-            title: result.title,
-            price: result.price_string
-          };
+          console.log(`✅ Extracted ASIN from link: ${asin} for query: "${query}"`);
+          return createResult(result, asin);
         }
       }
     }
@@ -136,7 +122,7 @@ serve(async (req) => {
         error: 'Configuration manquante: clé OpenAI non configurée',
         suggestions: []
       }), {
-        status: 200,
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -147,7 +133,7 @@ serve(async (req) => {
         error: 'Configuration manquante: clé SerpApi non configurée',
         suggestions: []
       }), {
-        status: 200,
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -226,16 +212,16 @@ serve(async (req) => {
       }
     }
 
-    const giftResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const giftResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini-2025-08-07',
+        model: 'gpt-5-mini',
         max_completion_tokens: 2000,
-        response_format: {
+        output: {
           type: "json_schema",
           json_schema: {
             name: "gift_suggestions",
@@ -346,7 +332,8 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     
     let suggestions = [];
     try {
-      const content = giftData.choices?.[0]?.message?.content;
+      // Updated parsing for Responses API
+      const content = giftData.output?.[0]?.content?.[0]?.text;
       if (!content) {
         throw new Error('No content in OpenAI response');
       }
@@ -407,32 +394,51 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
     const finalSuggestions = validatedSuggestions.length >= 2 ? validatedSuggestions : suggestions.slice(0, 3);
     console.log(`Suggestions finales: ${finalSuggestions.length}/${suggestions.length} retenues`);
 
-    // ===== ÉTAPE 2: Résolution produit via SerpApi =====
-    console.log('🔍 Étape 2: Résolution des liens Amazon via SerpApi');
+    // ===== ÉTAPE 2: Résolution produit via SerpApi (parallélisée) =====
+    console.log('🔍 Étape 2: Résolution des liens Amazon via SerpApi (parallélisée)');
     
     const processedSuggestions = await Promise.all(
       finalSuggestions.map(async (suggestion, index) => {
         console.log(`\n--- Traitement suggestion ${index + 1}: "${suggestion.title}" ---`);
+        
+        // Validation du budget côté serveur
+        if (suggestion.estimatedPrice && suggestion.estimatedPrice > budget * 1.1) {
+          console.log(`⚠️ Prix ${suggestion.estimatedPrice}€ dépasse le budget ${budget}€, ajusté`);
+          suggestion.estimatedPrice = Math.min(suggestion.estimatedPrice, budget);
+        }
         
         let amazonResult = null;
         let matchType: 'direct' | 'search' = 'search';
         let finalUrl = '';
         let purchaseLinks: string[] = [];
         
-        // Essayer chaque search_query avec SerpApi (jusqu'à 5)
+        // Paralléliser les recherches SerpApi pour chaque suggestion
         if (suggestion.search_queries && suggestion.search_queries.length > 0) {
-          for (const query of suggestion.search_queries.slice(0, 5)) { // Max 5 tentatives par suggestion
-            amazonResult = await searchAmazonProduct(query, serpApiKey);
-            if (amazonResult && amazonResult.asin) {
-              console.log(`✅ Produit trouvé via SerpApi pour "${query}"`);
-              matchType = 'direct';
-              finalUrl = amazonResult.productUrl!;
-              purchaseLinks = [
-                amazonResult.productUrl!,
-                amazonResult.addToCartUrl!
-              ];
-              break;
-            }
+          const searchPromises = suggestion.search_queries.slice(0, 3).map(query => 
+            searchAmazonProduct(query, serpApiKey)
+          );
+          
+          const results = await Promise.all(searchPromises);
+          
+          // Trouver le meilleur résultat (scoring par brand match et prix proche)
+          amazonResult = results.find(result => {
+            if (!result || !result.asin) return false;
+            
+            // Scoring: préférer si brand matche ou prix proche
+            const brandMatch = suggestion.brand && result.title?.toLowerCase().includes(suggestion.brand.toLowerCase());
+            const priceMatch = result.price && Math.abs(parseFloat(result.price.replace(/[^\d,]/g, '').replace(',', '.')) - suggestion.estimatedPrice) < suggestion.estimatedPrice * 0.3;
+            
+            return brandMatch || priceMatch || true; // Accepter le premier trouvé sinon
+          }) || results.find(result => result && result.asin) || null;
+          
+          if (amazonResult) {
+            console.log(`✅ Produit trouvé via recherche parallèle`);
+            matchType = 'direct';
+            finalUrl = amazonResult.productUrl!;
+            purchaseLinks = [
+              amazonResult.productUrl!,
+              amazonResult.addToCartUrl!
+            ];
           }
         }
         
@@ -474,6 +480,9 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
             asin: amazonResult?.asin,
             productUrl: amazonResult?.productUrl,
             addToCartUrl: amazonResult?.addToCartUrl,
+            imageUrl: amazonResult?.imageUrl,
+            rating: amazonResult?.rating,
+            reviewCount: amazonResult?.reviewCount,
             searchUrl: matchType === 'search' ? finalUrl : undefined,
             matchType,
             serpApiTitle: amazonResult?.title,
@@ -498,12 +507,27 @@ ${personData?.notes ? `RESTRICTIONS IMPORTANTES: ${personData.notes}` : ''}`
   } catch (error) {
     console.error('Unexpected error:', error);
     
+    // Determine appropriate error status code
+    let statusCode = 500;
+    let errorMessage = 'Erreur inattendue lors de la génération des suggestions';
+    
+    if (error?.message?.includes('OpenAI failed')) {
+      statusCode = 502; // Bad Gateway for external API failures
+      errorMessage = 'Erreur de l\'API OpenAI';
+    } else if (error?.message?.includes('SerpApi')) {
+      statusCode = 502;
+      errorMessage = 'Erreur de l\'API SerpApi';
+    } else if (error?.message?.includes('Invalid')) {
+      statusCode = 400; // Bad request for validation errors
+      errorMessage = error.message;
+    }
+    
     return new Response(JSON.stringify({
-      error: 'Erreur inattendue lors de la génération des suggestions',
+      error: errorMessage,
       details: error?.message || 'Unknown error',
       suggestions: []
     }), {
-      status: 200, // Return 200 but with error in payload
+      status: statusCode,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
