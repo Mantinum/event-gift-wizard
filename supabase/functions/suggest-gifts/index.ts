@@ -257,69 +257,101 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       });
     }
 
-    // Enrich suggestions with Amazon data
+    // 1) Utilitaire robuste : extraction ASIN depuis n'importe quel lien Amazon
+    const extractAsin = (link: string): string | null => {
+      if (!link) return null;
+      const pats = [
+        /\/dp\/([A-Z0-9]{10})/i,
+        /\/gp\/product\/([A-Z0-9]{10})/i,
+        /[?&]asin=([A-Z0-9]{10})/i,
+      ];
+      for (const re of pats) {
+        const m = link.match(re);
+        if (m) return m[1].toUpperCase();
+      }
+      return null;
+    };
+
+    // 2) Recherche Amazon SerpApi → renvoie le premier produit avec ASIN + infos utiles
+    async function searchAmazonProductSerpApi(query: string, serpApiKey: string) {
+      const params = new URLSearchParams({
+        engine: 'amazon',
+        amazon_domain: 'amazon.fr',
+        language: 'fr_FR',
+        k: query,
+        api_key: serpApiKey,
+      });
+      const r = await fetch(`https://serpapi.com/search.json?${params}`);
+      if (!r.ok) return null;
+      const data = await r.json();
+
+      const buckets = [
+        ...(data.sponsored_results || []),
+        ...(data.organic_results || []),
+        ...(data.search_results || []),
+      ];
+
+      for (const item of buckets.slice(0, 15)) {
+        const asin = item.asin || extractAsin(item.link);
+        if (!asin) continue;
+        const productUrl = `https://www.amazon.fr/dp/${asin}`;
+        return {
+          asin,
+          productUrl,
+          title: item.title,
+          price: item.price_string || item.price,
+          imageUrl: item.thumbnail || item.image,
+          rating: item.rating,
+          reviewCount: item.reviews_count,
+          matchType: 'direct' as const,
+        };
+      }
+      return null;
+    }
+
+    // 🛒 Enrich suggestions with Amazon data (fix: use amazon engine properly)
     console.log('🛒 Enriching suggestions with Amazon data...');
     const enrichedSuggestions = await Promise.all(
       suggestions.map(async (suggestion: any) => {
         try {
-          const searchQuery = `${suggestion.title} ${suggestion.category}`.toLowerCase();
-          console.log(`🔍 Searching Amazon for: ${searchQuery}`);
-          
-          const serpResponse = await fetch(`https://serpapi.com/search.json?engine=amazon&q=${encodeURIComponent(searchQuery)}&api_key=${serpApiKey}&amazon_domain=amazon.fr&gl=fr&hl=fr&num=3`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
+          // Requête plus précise : marque + modèle si dispo
+          const baseQuery = [suggestion.brand, suggestion.canonical_name || suggestion.title]
+            .filter(Boolean)
+            .join(' ');
+          const query = baseQuery || `${suggestion.title} ${suggestion.category}`;
+          console.log(`🔍 Searching Amazon for: ${query}`);      
 
-          if (!serpResponse.ok) {
-            console.log(`⚠️ SerpApi error for "${searchQuery}":`, serpResponse.status);
-            return suggestion;
-          }
+          const result = await searchAmazonProductSerpApi(query, serpApiKey);
 
-          const serpData = await serpResponse.json();
-          const amazonResults = serpData.shopping_results || [];
-          
-          if (amazonResults.length > 0) {
-            const bestMatch = amazonResults[0];
-            console.log(`✅ Found Amazon product: ${bestMatch.title}`);
-            
-            // Extract ASIN from link if available
-            const asin = bestMatch.link?.match(/\/dp\/([A-Z0-9]{10})/)?.[1] || 
-                        bestMatch.link?.match(/\/gp\/product\/([A-Z0-9]{10})/)?.[1];
-            
+          if (result) {
+            console.log(`✅ Found Amazon product with ASIN: ${result.asin}`);
             suggestion.amazonData = {
-              asin: asin,
-              rating: bestMatch.rating || null,
-              reviewCount: bestMatch.reviews_count || 0,
-              availability: bestMatch.delivery || 'Disponible',
-              prime: bestMatch.prime || false,
-              actualPrice: bestMatch.price ? parseFloat(bestMatch.price.toString().replace(/[^\d.,]/g, '').replace(',', '.')) : null,
-              imageUrl: bestMatch.thumbnail,
-              productUrl: bestMatch.link,
-              addToCartUrl: bestMatch.link,
-              searchUrl: `https://amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
-              matchType: 'search'
+              asin: result.asin,
+              productUrl: result.productUrl,
+              imageUrl: result.imageUrl || null,
+              rating: result.rating || null,
+              reviewCount: result.reviewCount || 0,
+              matchType: result.matchType,
+              // on garde un searchUrl de secours
+              searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
             };
-            
-            // Update purchase links
-            suggestion.purchaseLinks = [bestMatch.link];
-            
-            // Update estimated price with actual Amazon price if available
-            if (suggestion.amazonData.actualPrice) {
-              suggestion.estimatedPrice = Math.round(suggestion.amazonData.actualPrice);
+            suggestion.purchaseLinks = [result.productUrl]; // 🔒 lien direct produit
+            // Mise à jour de prix si dispo
+            if (result.price) {
+              const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
+              if (!isNaN(p)) suggestion.estimatedPrice = Math.round(p);
             }
           } else {
-            console.log(`❌ No Amazon results for: ${searchQuery}`);
-            // Add search URL as fallback
-            suggestion.purchaseLinks = [`https://amazon.fr/s?k=${encodeURIComponent(searchQuery)}`];
+            console.log(`❌ No Amazon results for: ${query}`);
+            // fallback propre
+            const searchUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`;
+            suggestion.amazonData = { matchType: 'search', searchUrl };
+            suggestion.purchaseLinks = [searchUrl];
           }
-          
           return suggestion;
-        } catch (error) {
-          console.error(`❌ Error enriching suggestion "${suggestion.title}":`, error);
-          // Return original suggestion if enrichment fails
-          return suggestion;
+        } catch (e) {
+          console.error(`SerpApi enrich error for "${suggestion.title}":`, e);
+          return suggestion; // pas de crash
         }
       })
     );
