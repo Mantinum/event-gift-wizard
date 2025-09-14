@@ -202,14 +202,6 @@ const Landing = () => {
                 Commencer gratuitement
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
-              
-              <Button 
-                size="lg" 
-                variant="outline"
-                className="px-8 py-4 text-lg hover:bg-primary/5"
-              >
-                Voir la démo
-              </Button>
             </div>
 
             {/* Trust Indicators */}
