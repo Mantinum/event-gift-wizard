@@ -81,7 +81,7 @@ const DashboardPage = () => {
         saveMultipleEvents(missingAutoEvents);
       }
     }
-  }, [persons, events, personsLoading, eventsLoading, saveMultipleEvents]);
+  }, [persons, personsLoading, eventsLoading]); // Retirer saveMultipleEvents des dépendances pour éviter la boucle
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
