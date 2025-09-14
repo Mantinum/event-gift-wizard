@@ -12,10 +12,12 @@ import EventModal from '@/components/EventModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { NotificationBell } from '@/components/NotificationBell';
 import AIUsageBadge from '@/components/AIUsageBadge';
-import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings, Shield } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings, Shield, X } from 'lucide-react';
 import { Person, Event } from '@/types';
 import { useSupabasePersons } from '@/hooks/useSupabasePersons';
 import { useSupabaseEvents } from '@/hooks/useSupabaseEvents';
+import { usePersonFilters } from '@/hooks/usePersonFilters';
+import PersonFilters from '@/components/PersonFilters';
 import { generateAutoEventsForPerson, updateAllAutoEvents } from '@/utils/autoEvents';
 import { supabase } from '@/integrations/supabase/client';
 import { useProfile } from '@/hooks/useProfile';
@@ -32,6 +34,9 @@ const DashboardPage = () => {
   // Use Supabase hooks instead of localStorage
   const { persons, loading: personsLoading, savePerson, deletePerson } = useSupabasePersons();
   const { events, loading: eventsLoading, saveEvent, saveMultipleEvents, deleteEvent } = useSupabaseEvents();
+  
+  // Person filters
+  const { filters, filteredPersons, updateFilter, clearFilters, activeFiltersCount } = usePersonFilters(persons);
   
   // Modal states
   const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
@@ -308,8 +313,15 @@ const DashboardPage = () => {
               </Button>
             </div>
             
+            <PersonFilters
+              filters={filters}
+              updateFilter={updateFilter}
+              clearFilters={clearFilters}
+              activeFiltersCount={activeFiltersCount}
+            />
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {persons.map((person, index) => (
+              {filteredPersons.map((person, index) => (
                 <div key={person.id} className="animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
                     <PersonProfile 
                       person={person}
@@ -319,6 +331,23 @@ const DashboardPage = () => {
                     />
                 </div>
               ))}
+              
+              {filteredPersons.length === 0 && persons.length > 0 && (
+                <div className="col-span-full text-center py-12">
+                  <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">Aucun profil trouvé</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Aucun profil ne correspond aux critères de recherche actuels
+                  </p>
+                  <Button 
+                    onClick={clearFilters}
+                    variant="outline"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Effacer les filtres
+                  </Button>
+                </div>
+              )}
               
               {persons.length === 0 && !personsLoading && (
                 <div className="col-span-full text-center py-12">
