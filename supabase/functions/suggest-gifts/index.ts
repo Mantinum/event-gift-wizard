@@ -343,14 +343,26 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
     try {
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
+      console.log('📊 Full OpenAI response:', JSON.stringify(openAIData, null, 2));
       
       const aiContent = openAIData.choices?.[0]?.message?.content ?? '{}';
-      console.log('🧠 AI content:', aiContent);
+      console.log('🧠 AI content type:', typeof aiContent);
+      console.log('🧠 AI content length:', aiContent.length);
+      console.log('🧠 AI content (first 500 chars):', aiContent.substring(0, 500));
       
-      const parsedResponse = JSON.parse(aiContent);
+      // Nettoyer le contenu AI au cas où il y aurait des caractères indésirables
+      const cleanContent = aiContent.trim();
+      if (!cleanContent.startsWith('{') && !cleanContent.startsWith('[')) {
+        console.error('❌ AI content does not start with JSON bracket:', cleanContent.substring(0, 100));
+        throw new Error('AI response is not valid JSON format');
+      }
+      
+      const parsedResponse = JSON.parse(cleanContent);
       suggestions = parsedResponse.suggestions || [];
+      console.log('🎁 Parsed suggestions count:', suggestions.length);
     } catch (parseError) {
       console.error('❌ Error parsing OpenAI response:', parseError);
+      console.error('❌ Parse error details:', (parseError as Error).message);
       return new Response(JSON.stringify({
         success: false,
         error: 'Failed to parse OpenAI JSON',
