@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Heart, ShoppingBag, Edit, Calendar } from 'lucide-react';
+import { User, Heart, ShoppingBag, Edit, Calendar, Trash2 } from 'lucide-react';
 
 interface Person {
   id: string;
@@ -20,9 +20,10 @@ interface PersonProfileProps {
   person: Person;
   onEdit?: () => void;
   onViewProfile?: () => void;
+  onDelete?: () => void;
 }
 
-const PersonProfile = ({ person, onEdit, onViewProfile }: PersonProfileProps) => {
+const PersonProfile = ({ person, onEdit, onViewProfile, onDelete }: PersonProfileProps) => {
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
@@ -112,6 +113,16 @@ const PersonProfile = ({ person, onEdit, onViewProfile }: PersonProfileProps) =>
             <User className="w-3 h-3 mr-1" />
             Voir profil
           </Button>
+          {onDelete && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-destructive hover:bg-destructive hover:text-white transition-colors"
+              onClick={onDelete}
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

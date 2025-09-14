@@ -73,7 +73,7 @@ export const generateAutoEventsForPerson = (person: Person, existingEvents: Even
       console.log(`Prochain anniversaire calculé:`, nextBirthday);
       
       const birthdayEvent: Event = {
-        id: `auto-birthday-${person.id}-${targetYear}`,
+        id: '', // Laisser vide pour laisser Supabase générer l'UUID
         title: `Anniversaire de ${person.name}`,
         person: person.name,
         personId: person.id,
@@ -139,7 +139,7 @@ export const regenerateYearlyEvents = (persons: Person[], existingEvents: Event[
         const nextYearBirthday = new Date(currentYear + 1, new Date(person.birthday).getMonth(), new Date(person.birthday).getDate());
         
         const birthdayEvent: Event = {
-          id: nextYearEventId,
+          id: '', // Laisser vide pour laisser Supabase générer l'UUID
           title: `Anniversaire de ${person.name}`,
           person: person.name,
           personId: person.id,

@@ -30,7 +30,7 @@ const DashboardPage = () => {
   const { profile } = useProfile();
   
   // Use Supabase hooks instead of localStorage
-  const { persons, loading: personsLoading, savePerson } = useSupabasePersons();
+  const { persons, loading: personsLoading, savePerson, deletePerson } = useSupabasePersons();
   const { events, loading: eventsLoading, saveEvent, saveMultipleEvents, deleteEvent } = useSupabaseEvents();
   
   // Modal states
@@ -307,11 +307,12 @@ const DashboardPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {persons.map((person, index) => (
                 <div key={person.id} className="animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
-                  <PersonProfile 
-                    person={person}
-                    onEdit={() => handleEditPerson(person)}
-                    onViewProfile={() => handleViewPerson(person)}
-                  />
+                    <PersonProfile 
+                      person={person}
+                      onEdit={() => handleEditPerson(person)}
+                      onViewProfile={() => handleViewPerson(person)}
+                      onDelete={() => deletePerson(person.id)}
+                    />
                 </div>
               ))}
               
