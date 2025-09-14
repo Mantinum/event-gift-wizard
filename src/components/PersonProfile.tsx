@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Heart, ShoppingBag, Edit, Calendar, Trash2 } from 'lucide-react';
+import { getRelationshipColor } from '@/types';
 
 interface Person {
   id: string;
@@ -49,7 +50,7 @@ const PersonProfile = ({ person, onEdit, onViewProfile, onDelete }: PersonProfil
         <CardTitle className="text-xl font-bold text-foreground">
           {person.name}
         </CardTitle>
-        <Badge variant="secondary" className="w-fit mx-auto">
+        <Badge variant="secondary" className={`w-fit mx-auto ${getRelationshipColor(person.relationship)}`}>
           <Heart className="w-3 h-3 mr-1" />
           {person.relationship}
         </Badge>

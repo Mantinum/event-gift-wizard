@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3, Eye, Edit, Trash2, MapPin, Euro, Heart } from 'lucide-react';
-import { Event, Person, EVENT_TYPES } from '@/types';
+import { Event, Person, EVENT_TYPES, getRelationshipColor } from '@/types';
 import { useEventFilters } from '@/hooks/useEventFilters';
 import SearchFilters from '@/components/SearchFilters';
 import EventsList from '@/components/EventsList';
@@ -90,10 +90,10 @@ const EventPopoverContent = ({ event, person, onViewProfile, onEditEvent, onDele
               </Avatar>
               <div className="flex-1">
                 <p className="font-medium">{person.name}</p>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Heart className="w-3 h-3" />
-                  <span>{person.relationship}</span>
-                </div>
+                <Badge variant="outline" className={`text-xs ${getRelationshipColor(person.relationship)}`}>
+                  <Heart className="w-3 h-3 mr-1" />
+                  {person.relationship}
+                </Badge>
               </div>
             </div>
             

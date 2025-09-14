@@ -14,7 +14,7 @@ import {
   MapPin,
   Users
 } from 'lucide-react';
-import { Person } from '@/types';
+import { Person, getRelationshipColor } from '@/types';
 
 interface PersonProfileViewModalProps {
   person: Person | null;
@@ -76,7 +76,7 @@ const PersonProfileViewModal = ({
                 </Avatar>
                 <div className="flex-1">
                   <h2 className="text-3xl font-bold text-foreground mb-2">{person.name}</h2>
-                  <Badge variant="secondary" className="mb-3">
+                  <Badge variant="secondary" className={`mb-3 ${getRelationshipColor(person.relationship)}`}>
                     <Heart className="w-4 h-4 mr-2" />
                     {person.relationship}
                   </Badge>

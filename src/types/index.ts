@@ -79,6 +79,25 @@ export const RELATIONSHIP_TYPES = [
   'Autre'
 ];
 
+// Fonction pour obtenir la couleur d'un type de relation
+export const getRelationshipColor = (relationship: string): string => {
+  const colors: { [key: string]: string } = {
+    'Famille': 'bg-blue-500 text-white',
+    'Ami(e) proche': 'bg-green-500 text-white',
+    'Collègue': 'bg-orange-500 text-white', 
+    'Voisin(e)': 'bg-yellow-500 text-white',
+    'Connaissance': 'bg-gray-500 text-white',
+    'Partenaire': 'bg-pink-500 text-white',
+    'Enfant': 'bg-purple-400 text-white',
+    'Parent': 'bg-indigo-500 text-white',
+    'Frère/Sœur': 'bg-cyan-500 text-white',
+    'Cousin(e)': 'bg-teal-500 text-white',
+    'Autre': 'bg-slate-500 text-white'
+  };
+  
+  return colors[relationship] || 'bg-muted text-muted-foreground';
+};
+
 export const GENDER_OPTIONS = [
   'Homme',
   'Femme',
