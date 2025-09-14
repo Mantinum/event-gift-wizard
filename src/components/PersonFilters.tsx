@@ -1,24 +1,52 @@
+import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, X } from 'lucide-react';
 import { PersonFilters as PersonFiltersType } from '@/hooks/usePersonFilters';
-import { getRelationshipColor } from '@/types';
+import { getRelationshipColor, Person } from '@/types';
 
 interface PersonFiltersProps {
   filters: PersonFiltersType;
   updateFilter: (key: keyof PersonFiltersType, value: any) => void;
   clearFilters: () => void;
   activeFiltersCount: number;
+  persons: Person[];
 }
 
 const mainRelationships = ['Famille', 'Ami(e) proche', 'Partenaire', 'Collègue', 'Voisin(e)', 'Connaissance', 'Autre'];
 
-const PersonFilters = ({ filters, updateFilter, clearFilters, activeFiltersCount }: PersonFiltersProps) => {
+const PersonFilters = ({ filters, updateFilter, clearFilters, activeFiltersCount, persons }: PersonFiltersProps) => {
   const handleRelationshipToggle = (relationship: string) => {
     updateFilter('selectedRelationship', filters.selectedRelationship === relationship ? '' : relationship);
   };
+
+  // Calculer les relations présentes dans les données
+  const availableRelationships = useMemo(() => {
+    const relationshipsInData = new Set<string>();
+    
+    // Parcourir toutes les personnes et collecter leurs relations
+    const allPersons = filters.searchQuery 
+      ? persons.filter(person => {
+          const query = filters.searchQuery.toLowerCase();
+          return person.name.toLowerCase().includes(query) || 
+                 person.email?.toLowerCase().includes(query);
+        })
+      : persons;
+
+    allPersons.forEach(person => {
+      // Si c'est une relation familiale, l'ajouter à "Famille"
+      if (['Famille', 'Enfant', 'Parent', 'Frère/Sœur', 'Cousin(e)'].includes(person.relationship)) {
+        relationshipsInData.add('Famille');
+      } else {
+        relationshipsInData.add(person.relationship);
+      }
+    });
+
+    // Filtrer les boutons principaux pour ne garder que ceux qui ont des données
+    return mainRelationships.filter(rel => relationshipsInData.has(rel));
+  }, [persons, filters.searchQuery]);
 
   return (
     <Card className="mb-6 shadow-card">
@@ -53,7 +81,7 @@ const PersonFilters = ({ filters, updateFilter, clearFilters, activeFiltersCount
           </div>
           
           <div className="flex flex-wrap gap-2">
-            {mainRelationships.map(relationship => (
+            {availableRelationships.map(relationship => (
               <Button
                 key={relationship}
                 variant={filters.selectedRelationship === relationship ? "default" : "outline"}
