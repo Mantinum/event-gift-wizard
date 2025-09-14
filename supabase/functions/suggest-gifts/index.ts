@@ -170,15 +170,16 @@ PROFIL DE LA PERSONNE:
 
 CONTEXTE DE L'ÉVÉNEMENT:
 - Type d'événement: ${eventType}
-- Budget: ${budget}€
+- Budget MAXIMUM: ${budget}€ (TRÈS IMPORTANT: ne pas dépasser)
 - Contexte supplémentaire: ${additionalContext || 'Aucun'}
 
-INSTRUCTIONS:
-1. Prends en compte l'âge, les intérêts et la personnalité
-2. Respecte le budget indiqué
+INSTRUCTIONS CRITIQUES:
+1. RESPECTE ABSOLUMENT le budget de ${budget}€ - tous les prix doivent être inférieurs ou égaux à ce montant
+2. Prends en compte l'âge, les intérêts et la personnalité
 3. Évite de répéter le dernier cadeau s'il est mentionné
 4. Sois créatif et personnel dans tes suggestions
 5. Explique pourquoi chaque cadeau convient à cette personne
+6. Les prix estimés doivent être réalistes et respecter le budget
 
 Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au format :
 {
@@ -335,12 +336,19 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
               // on garde un searchUrl de secours
               searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
             };
-            suggestion.purchaseLinks = [result.productUrl]; // 🔒 lien direct produit
-            // Mise à jour de prix si dispo
-            if (result.price) {
-              const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
-              if (!isNaN(p)) suggestion.estimatedPrice = Math.round(p);
+        suggestion.purchaseLinks = [result.productUrl]; // 🔒 lien direct produit
+        // Mise à jour de prix si dispo et si dans le budget
+        if (result.price) {
+          const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
+          if (!isNaN(p)) {
+            // Si le prix Amazon dépasse le budget, on garde l'estimation OpenAI
+            if (p <= budget) {
+              suggestion.estimatedPrice = Math.round(p);
+            } else {
+              console.log(`Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}"`);
             }
+          }
+        }
           } else {
             console.log(`❌ No Amazon results for: ${query}`);
             // fallback propre
