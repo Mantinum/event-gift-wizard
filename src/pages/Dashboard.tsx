@@ -11,12 +11,13 @@ import PersonProfileViewModal from '@/components/PersonProfileViewModal';
 import EventModal from '@/components/EventModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import AIUsageBadge from '@/components/AIUsageBadge';
-import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings, Shield } from 'lucide-react';
 import { Person, Event } from '@/types';
 import { useSupabasePersons } from '@/hooks/useSupabasePersons';
 import { useSupabaseEvents } from '@/hooks/useSupabaseEvents';
 import { generateAutoEventsForPerson, updateAllAutoEvents } from '@/utils/autoEvents';
 import { supabase } from '@/integrations/supabase/client';
+import { useProfile } from '@/hooks/useProfile';
 import { toast } from '@/hooks/use-toast';
 import heroImage from '@/assets/hero-calendar.jpg';
 
@@ -25,6 +26,7 @@ const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const { profile } = useProfile();
   
   // Use Supabase hooks instead of localStorage
   const { persons, loading: personsLoading, savePerson } = useSupabasePersons();
@@ -174,6 +176,16 @@ const DashboardPage = () => {
             <div className="flex items-center justify-end gap-3 mb-4">
               <AIUsageBadge />
               <ThemeToggle />
+              {profile?.role === 'admin' && (
+                <Button
+                  onClick={() => navigate('/admin')}
+                  variant="outline" 
+                  className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  Administration
+                </Button>
+              )}
               <Button
                 onClick={() => navigate('/account')}
                 variant="outline" 
