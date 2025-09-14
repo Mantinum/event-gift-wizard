@@ -302,6 +302,10 @@ export type Database = {
           out_next_birthday: string
         }[]
       }
+      get_user_email: {
+        Args: { user_uuid: string }
+        Returns: string
+      }
       is_admin: {
         Args: Record<PropertyKey, never>
         Returns: boolean

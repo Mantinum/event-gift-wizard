@@ -41,13 +41,6 @@ export const useAdminUsers = () => {
         throw profilesError;
       }
 
-      // Get auth users data - Note: This requires service role key
-      // For now, we'll use email from user metadata or profile data
-      const authUsersMap = new Map();
-
-      // Get additional user data if needed
-      // Note: We'll need to get email from auth.users table or store it in profiles
-
       // Get usage data for all users
       const today = new Date().toISOString().split('T')[0];
       const { data: usageData, error: usageError } = await supabase
@@ -59,37 +52,43 @@ export const useAdminUsers = () => {
         console.error('Error fetching usage data:', usageError);
       }
 
-      // Combine the data
-      const combinedUsers: AdminUserData[] = profiles.map(profile => {
-        const usage = usageData?.find(u => u.user_id === profile.user_id);
-        
-        let usageInfo;
-        if (['admin', 'premium_1', 'premium_2'].includes(profile.role)) {
-          usageInfo = {
-            dailyLimit: -1,
-            remaining: -1,
-            used: 0,
-            isUnlimited: true
-          };
-        } else {
-          const dailyLimit = 5;
-          const used = usage?.generation_count || 0;
-          usageInfo = {
-            dailyLimit,
-            remaining: Math.max(0, dailyLimit - used),
-            used,
-            isUnlimited: false
-          };
-        }
+      // Get emails for each user using our new function
+      const usersWithEmails = await Promise.all(
+        profiles.map(async (profile) => {
+          const { data: email, error } = await supabase.rpc('get_user_email', { 
+            user_uuid: profile.user_id 
+          });
 
-        return {
-          email: profile.user_id, // We'll show user_id for now, could be enhanced with email lookup
-          profile,
-          usage: usageInfo
-        };
-      });
+          const usage = usageData?.find(u => u.user_id === profile.user_id);
+          
+          let usageInfo;
+          if (['admin', 'premium_1', 'premium_2'].includes(profile.role)) {
+            usageInfo = {
+              dailyLimit: -1,
+              remaining: -1,
+              used: 0,
+              isUnlimited: true
+            };
+          } else {
+            const dailyLimit = 5;
+            const used = usage?.generation_count || 0;
+            usageInfo = {
+              dailyLimit,
+              remaining: Math.max(0, dailyLimit - used),
+              used,
+              isUnlimited: false
+            };
+          }
 
-      setUsers(combinedUsers);
+          return {
+            email: email || 'Email introuvable',
+            profile,
+            usage: usageInfo
+          };
+        })
+      );
+
+      setUsers(usersWithEmails);
     } catch (err) {
       console.error('Error fetching users:', err);
       const errorMessage = err instanceof Error ? err.message : 'Une erreur est survenue';
@@ -146,8 +145,11 @@ export const useAdminUsers = () => {
 
   const deleteUser = async (userId: string) => {
     try {
-      // Delete from auth.users (this will cascade delete profile due to foreign key)
-      const { error } = await supabase.auth.admin.deleteUser(userId);
+      // Delete the user's profile (this will also cascade delete related data)
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('user_id', userId);
 
       if (error) {
         throw error;
