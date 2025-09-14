@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +53,38 @@ const EventModal = ({
   const [date, setDate] = useState<Date | undefined>(
     event?.date ? new Date(event.date) : undefined
   );
+
+  // Update form data when event prop changes
+  useEffect(() => {
+    if (event) {
+      setFormData({
+        title: event.title || '',
+        type: event.type || 'birthday',
+        personId: event.personId || '',
+        person: event.person || '',
+        budget: event.budget || 50,
+        description: event.description || '',
+        location: event.location || '',
+        reminderDays: event.reminderDays || 3,
+        status: event.status || 'upcoming'
+      });
+      setDate(event.date ? new Date(event.date) : undefined);
+    } else {
+      // Reset form for new event
+      setFormData({
+        title: '',
+        type: 'birthday',
+        personId: '',
+        person: '',
+        budget: 50,
+        description: '',
+        location: '',
+        reminderDays: 3,
+        status: 'upcoming'
+      });
+      setDate(undefined);
+    }
+  }, [event]);
 
   const handleSave = () => {
     if (!formData.title || !formData.personId || !date || !formData.type) {
