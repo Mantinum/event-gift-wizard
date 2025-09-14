@@ -309,7 +309,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5',
+        model: 'gpt-4.1-2025-04-14',
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -321,7 +321,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
             content: prompt
           }
         ],
-        max_completion_tokens: 1500
+        max_completion_tokens: 2000
       }),
     });
 
@@ -345,10 +345,34 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       console.log('✅ OpenAI response received');
       console.log('📊 Full OpenAI response:', JSON.stringify(openAIData, null, 2));
       
-      const aiContent = openAIData.choices?.[0]?.message?.content ?? '{}';
+      // Check if response was truncated due to token limit
+      const finishReason = openAIData.choices?.[0]?.finish_reason;
+      if (finishReason === 'length') {
+        console.error('❌ OpenAI response truncated due to token limit');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Réponse AI tronquée - limite de tokens atteinte',
+          details: 'La réponse a été coupée, essayez avec un budget plus simple'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
       console.log('🧠 AI content type:', typeof aiContent);
       console.log('🧠 AI content length:', aiContent.length);
       console.log('🧠 AI content (first 500 chars):', aiContent.substring(0, 500));
+      
+      if (!aiContent || aiContent.trim().length === 0) {
+        console.error('❌ Empty AI response content');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Réponse AI vide',
+          details: 'Aucun contenu généré par l\'IA'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
       
       // Nettoyer le contenu AI au cas où il y aurait des caractères indésirables
       const cleanContent = aiContent.trim();
