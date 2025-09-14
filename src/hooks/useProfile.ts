@@ -22,27 +22,36 @@ export const useProfile = () => {
 
   const fetchProfile = async () => {
     try {
+      console.log('🔍 Fetching profile...');
       setLoading(true);
       setError(null);
 
       const { data: { user } } = await supabase.auth.getUser();
+      console.log('👤 Current user:', user?.id);
       if (!user) {
+        console.log('❌ No user found');
         setProfile(null);
         return;
       }
 
+      console.log('📡 Making request to profiles table...');
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
+      console.log('📊 Profile data received:', data);
+      console.log('❌ Profile error:', error);
+
       if (error) {
         throw error;
       }
 
       setProfile(data);
+      console.log('✅ Profile set:', data);
     } catch (err) {
+      console.error('❌ Profile fetch error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Une erreur est survenue';
       setError(errorMessage);
       toast({
