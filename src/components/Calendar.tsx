@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3, Eye, Trash2, MapPin, Euro, Heart } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Gift, User, Calendar as CalendarIcon, List, Grid3x3, Eye, Edit, Trash2, MapPin, Euro, Heart } from 'lucide-react';
 import { Event, Person, EVENT_TYPES } from '@/types';
 import { useEventFilters } from '@/hooks/useEventFilters';
 import SearchFilters from '@/components/SearchFilters';
@@ -18,10 +18,11 @@ interface EventPopoverContentProps {
   event: Event;
   person?: Person;
   onViewProfile: (person: Person) => void;
+  onEditEvent?: (event: Event) => void;
   onDeleteEvent?: (eventId: string) => void;
 }
 
-const EventPopoverContent = ({ event, person, onViewProfile, onDeleteEvent }: EventPopoverContentProps) => {
+const EventPopoverContent = ({ event, person, onViewProfile, onEditEvent, onDeleteEvent }: EventPopoverContentProps) => {
   const getEventTypeLabel = (type: string) => {
     const eventType = EVENT_TYPES.find(et => et.value === type);
     return eventType ? eventType.label : type;
@@ -131,6 +132,17 @@ const EventPopoverContent = ({ event, person, onViewProfile, onDeleteEvent }: Ev
             Voir le profil
           </Button>
         )}
+        {onEditEvent && (
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={() => onEditEvent(event)}
+            className="flex-1"
+          >
+            <Edit className="w-4 h-4 mr-2" />
+            Modifier
+          </Button>
+        )}
         {onDeleteEvent && (
           <Button 
             size="sm" 
@@ -230,6 +242,7 @@ const Calendar = ({ events, persons, onEditEvent, onDeleteEvent }: CalendarProps
                       setSelectedPerson(person);
                       setShowProfileModal(true);
                     }}
+                    onEditEvent={onEditEvent}
                     onDeleteEvent={onDeleteEvent}
                   />
                 </PopoverContent>
