@@ -13,7 +13,7 @@ interface PersonFiltersProps {
   activeFiltersCount: number;
 }
 
-const mainRelationships = ['Famille', 'Ami(e) proche', 'Partenaire', 'Collègue'];
+const mainRelationships = ['Famille', 'Ami(e) proche', 'Partenaire', 'Collègue', 'Voisin(e)', 'Connaissance', 'Autre'];
 
 const PersonFilters = ({ filters, updateFilter, clearFilters, activeFiltersCount }: PersonFiltersProps) => {
   const handleRelationshipToggle = (relationship: string) => {

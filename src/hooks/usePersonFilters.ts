@@ -28,7 +28,13 @@ export function usePersonFilters(persons: Person[]) {
 
       // Relationship filter
       if (filters.selectedRelationship) {
-        if (person.relationship !== filters.selectedRelationship) return false;
+        // Si "Famille" est sélectionné, inclure toutes les relations familiales
+        if (filters.selectedRelationship === 'Famille') {
+          const familyRelationships = ['Famille', 'Enfant', 'Parent', 'Frère/Sœur', 'Cousin(e)'];
+          if (!familyRelationships.includes(person.relationship)) return false;
+        } else {
+          if (person.relationship !== filters.selectedRelationship) return false;
+        }
       }
 
       return true;
