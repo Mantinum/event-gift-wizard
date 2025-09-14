@@ -9,7 +9,8 @@ import {
   Calendar,
   Loader2,
   Gift,
-  ShoppingCart
+  ShoppingCart,
+  Edit
 } from 'lucide-react';
 import { Event, Person, EVENT_TYPES } from '@/types';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
@@ -18,9 +19,10 @@ import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns';
 interface AutoGiftSuggestionsProps {
   events: Event[];
   persons: Person[];
+  onEditEvent?: (event: Event) => void;
 }
 
-const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
+const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestionsProps) => {
   const { suggestions, loading, generateSuggestions } = useGiftSuggestions();
   const [generatedForEvent, setGeneratedForEvent] = useState<string | null>(null);
 
@@ -95,7 +97,7 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
             }`}
           >
             <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
                       <h4 className="font-semibold text-foreground">{event.title}</h4>
@@ -108,6 +110,16 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
                         <Badge variant="outline" className="text-xs">
                           {person.name}
                         </Badge>
+                      )}
+                      {onEditEvent && (
+                        <Button
+                          onClick={() => onEditEvent(event)}
+                          size="sm"
+                          variant="ghost"
+                          className="ml-2 h-6 w-6 p-0 hover:bg-muted"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
                       )}
                     </div>
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
