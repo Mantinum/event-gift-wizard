@@ -271,6 +271,10 @@ export type Database = {
           out_next_birthday: string
         }[]
       }
+      is_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       refresh_birthdays_for_today: {
         Args: Record<PropertyKey, never>
         Returns: undefined
