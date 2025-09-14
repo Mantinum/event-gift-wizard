@@ -10,7 +10,7 @@ import PersonProfileModal from '@/components/PersonProfileModal';
 import PersonProfileViewModal from '@/components/PersonProfileViewModal';
 import EventModal from '@/components/EventModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings } from 'lucide-react';
 import { Person, Event } from '@/types';
 import { useSupabasePersons } from '@/hooks/useSupabasePersons';
 import { useSupabaseEvents } from '@/hooks/useSupabaseEvents';
@@ -172,6 +172,14 @@ const DashboardPage = () => {
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-end gap-3 mb-4">
               <ThemeToggle />
+              <Button
+                onClick={() => navigate('/account')}
+                variant="outline" 
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Mon compte
+              </Button>
               <Button
                 onClick={handleSignOut}
                 variant="outline" 
