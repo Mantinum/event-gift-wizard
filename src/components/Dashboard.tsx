@@ -12,18 +12,23 @@ import {
   Gift,
   Euro,
   Sparkles,
-  Wand2
+  Wand2,
+  Edit3,
+  User
 } from 'lucide-react';
 import { Event, Person } from '@/types';
 import AutoGiftSuggestions from './AutoGiftSuggestions';
 import { ThemeToggle } from './ThemeToggle';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
 interface DashboardProps {
   events: Event[];
   persons: Person[];
+  onEditEvent?: (event: Event) => void;
 }
 
-const Dashboard = ({ events, persons }: DashboardProps) => {
+const Dashboard = ({ events, persons, onEditEvent }: DashboardProps) => {
   // Calculs pour les statistiques
   const upcomingEvents = events.filter(event => {
     const eventDate = new Date(event.date);
@@ -63,6 +68,11 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
       style: 'currency',
       currency: 'EUR'
     }).format(amount);
+  };
+
+  const getPersonName = (personId: string) => {
+    const person = persons.find(p => p.id === personId);
+    return person ? person.name : 'Personne inconnue';
   };
 
   return (
@@ -122,6 +132,82 @@ const Dashboard = ({ events, persons }: DashboardProps) => {
         </Card>
       </div>
 
+      {/* Upcoming Events List */}
+      {upcomingEvents.length > 0 && (
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Calendar className="h-5 w-5 text-primary" />
+              <span>Événements à venir</span>
+              <Badge variant="outline" className="text-xs">{upcomingEvents.length}</Badge>
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Cliquez sur un événement pour le modifier
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {upcomingEvents.slice(0, 5).map((event) => {
+              const eventDate = new Date(event.date);
+              const today = new Date();
+              const daysUntil = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              const isUrgent = daysUntil <= 3;
+              
+              return (
+                <div
+                  key={event.id}
+                  onClick={() => onEditEvent?.(event)}
+                  className="flex items-center justify-between p-3 bg-card border rounded-lg hover:bg-accent/50 cursor-pointer transition-colors group"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className={`p-2 rounded-full ${isUrgent ? 'bg-warning/10' : 'bg-primary/10'}`}>
+                      <Gift className={`h-4 w-4 ${isUrgent ? 'text-warning' : 'text-primary'}`} />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-medium text-sm">{event.title}</h4>
+                        {isUrgent && (
+                          <Badge variant="destructive" className="text-xs">
+                            Urgent
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                        <User className="h-3 w-3" />
+                        <span>{getPersonName(event.personId)}</span>
+                        <span>•</span>
+                        <span>{format(eventDate, 'dd/MM/yyyy', { locale: fr })}</span>
+                        <span>•</span>
+                        <span>{formatCurrency(event.budget)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="text-right">
+                      <div className="text-sm font-medium">
+                        {daysUntil === 1 ? 'Demain' : `${daysUntil} jours`}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {event.type}
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditEvent?.(event);
+                      }}
+                    >
+                      <Edit3 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Gift suggestions with OpenAI */}
       <Card className="shadow-card">

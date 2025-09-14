@@ -39,7 +39,7 @@ const DashboardPage = () => {
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | undefined>(undefined);
   const [viewingPerson, setViewingPerson] = useState<Person | null>(null);
-  const [editingEvent, setEditingEvent] = useState<Event | undefined>(undefined);
+  const [selectedEvent, setSelectedEvent] = useState<Event | undefined>(undefined);
 
   // Check authentication
   useEffect(() => {
@@ -130,11 +130,11 @@ const DashboardPage = () => {
   };
 
   const handleSaveEvent = async (event: Event) => {
-    const isUpdate = !!editingEvent;
+    const isUpdate = !!selectedEvent;
     const success = await saveEvent(event, isUpdate);
     
     if (success) {
-      setEditingEvent(undefined);
+      setSelectedEvent(undefined);
     }
   };
 
@@ -154,7 +154,7 @@ const DashboardPage = () => {
   };
 
   const openNewEventModal = () => {
-    setEditingEvent(undefined);
+    setSelectedEvent(undefined);
     setIsEventModalOpen(true);
   };
 
@@ -250,7 +250,14 @@ const DashboardPage = () => {
                 Suivez vos prochains achats automatiques et vos événements à venir
               </p>
             </div>
-            <Dashboard events={events} persons={persons} />
+            <Dashboard 
+              events={events} 
+              persons={persons} 
+              onEditEvent={(event) => {
+                setSelectedEvent(event);
+                setIsEventModalOpen(true);
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="calendar" className="mt-6">
@@ -275,7 +282,7 @@ const DashboardPage = () => {
               events={events} 
               persons={persons} 
               onEditEvent={(event) => {
-                setEditingEvent(event);
+                setSelectedEvent(event);
                 setIsEventModalOpen(true);
               }}
               onDeleteEvent={deleteEvent} 
@@ -393,10 +400,15 @@ const DashboardPage = () => {
         />
 
         <EventModal
-          event={editingEvent}
+          event={selectedEvent}
           persons={persons}
           isOpen={isEventModalOpen}
-          onOpenChange={setIsEventModalOpen}
+          onOpenChange={(open) => {
+            setIsEventModalOpen(open);
+            if (!open) {
+              setSelectedEvent(undefined);
+            }
+          }}
           onSave={handleSaveEvent}
           onDelete={deleteEvent}
         />
