@@ -119,6 +119,84 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
 
+    // 5. Check authentication and AI usage limits
+    console.log('🔒 Checking authentication and usage limits...');
+    
+    // Get the authorization header for user authentication
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader) {
+      console.log('❌ No authorization header');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Authentication requise'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401
+      });
+    }
+
+    // Create regular supabase client to get authenticated user
+    const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          authorization: authHeader
+        }
+      }
+    });
+
+    // Get the authenticated user
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    console.log('👤 User:', user?.id);
+    console.log('❌ Auth error:', authError);
+
+    if (authError || !user) {
+      console.log('❌ Authentication failed');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Authentication échouée'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401
+      });
+    }
+
+    // Check AI usage limits using the database function
+    console.log('🎯 Checking AI usage limits for user:', user.id);
+    const { data: usageResult, error: usageError } = await supabase
+      .rpc('check_and_increment_ai_usage', { p_user_id: user.id });
+
+    console.log('📊 Usage check result:', usageResult);
+    console.log('❌ Usage check error:', usageError);
+
+    if (usageError) {
+      console.error('❌ Error checking usage limits:', usageError);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Erreur lors de la vérification des limites d\'utilisation'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!usageResult.allowed) {
+      console.log('❌ Usage limit exceeded for user:', user.id);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Limite quotidienne dépassée',
+        details: {
+          limit: usageResult.limit,
+          remaining: usageResult.remaining,
+          role: usageResult.role,
+          resetTime: usageResult.reset_time
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 429
+      });
+    }
+
+    console.log('✅ Usage allowed. Remaining:', usageResult.remaining);
+
     // Fetch person data from database
     console.log('🔍 Fetching person data for ID:', personId);
     const { data: personData, error: personError } = await supabase

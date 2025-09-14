@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_usage_limits: {
+        Row: {
+          created_at: string
+          generation_count: number
+          id: string
+          updated_at: string
+          usage_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          generation_count?: number
+          id?: string
+          updated_at?: string
+          usage_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          generation_count?: number
+          id?: string
+          updated_at?: string
+          usage_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       events: {
         Row: {
           budget: number
@@ -261,6 +288,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_and_increment_ai_usage: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       compute_age_fields: {
         Args: { bdate: string; today?: string }
         Returns: {

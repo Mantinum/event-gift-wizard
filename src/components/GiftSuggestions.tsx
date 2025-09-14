@@ -5,8 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Lightbulb, Euro, Star, ShoppingCart, Wand2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Sparkles, Lightbulb, Euro, Star, ShoppingCart, Wand2, Clock } from 'lucide-react';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
+import { useAIUsageLimit } from '@/hooks/useAIUsageLimit';
+import AIUsageBadge from '@/components/AIUsageBadge';
 import { Person } from '@/types';
 import { EVENT_TYPES } from '@/types';
 
@@ -16,6 +19,7 @@ interface GiftSuggestionsProps {
 
 const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
   const { suggestions, loading, error, generateSuggestions, clearSuggestions } = useGiftSuggestions();
+  const { usageInfo, refreshUsage } = useAIUsageLimit();
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [selectedEventType, setSelectedEventType] = useState('');
   const [budget, setBudget] = useState(100);
@@ -28,12 +32,17 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
       return;
     }
 
-    await generateSuggestions({
+    const result = await generateSuggestions({
       personId: selectedPersonId,
       eventType: selectedEventType,
       budget,
       additionalContext
     });
+
+    // Refresh usage info after generation
+    if (result && result.length > 0) {
+      refreshUsage();
+    }
   };
 
   const getConfidenceColor = (confidence: number) => {
@@ -52,13 +61,18 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
     <div className="space-y-6">
       <Card className="shadow-card">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Wand2 className="w-5 h-5 text-primary" />
-            Générateur IA de suggestions de cadeaux
-          </CardTitle>
-          <CardDescription>
-            Laissez notre IA analyser les profils et générer des suggestions de cadeaux personnalisées
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-primary" />
+                Générateur IA de suggestions de cadeaux
+              </CardTitle>
+              <CardDescription>
+                Laissez notre IA analyser les profils et générer des suggestions de cadeaux personnalisées
+              </CardDescription>
+            </div>
+            <AIUsageBadge />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -140,7 +154,7 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
           <div className="flex gap-2">
             <Button
               onClick={handleGenerateSuggestions}
-              disabled={!selectedPersonId || !selectedEventType || loading}
+              disabled={!selectedPersonId || !selectedEventType || loading || (usageInfo && !usageInfo.isUnlimited && usageInfo.remaining === 0)}
               className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow"
             >
               {loading ? (
@@ -163,7 +177,7 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                 </Button>
                 <Button
                   onClick={handleGenerateSuggestions}
-                  disabled={loading}
+                  disabled={loading || (usageInfo && !usageInfo.isUnlimited && usageInfo.remaining === 0)}
                   variant="outline"
                   className="hover:bg-primary hover:text-white transition-colors"
                 >
@@ -182,6 +196,31 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
               </div>
             )}
           </div>
+
+          {/* Usage limit warning */}
+          {usageInfo && !usageInfo.isUnlimited && usageInfo.remaining === 0 && (
+            <Alert className="border-destructive">
+              <Clock className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Limite quotidienne atteinte</strong>
+                <br />
+                Vous avez utilisé vos {usageInfo.dailyLimit} générations IA gratuites aujourd'hui. 
+                La limite se remet à zéro à minuit ou passez Premium pour un accès illimité.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Low usage warning */}
+          {usageInfo && !usageInfo.isUnlimited && usageInfo.remaining === 1 && (
+            <Alert>
+              <Sparkles className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Dernière génération gratuite !</strong>
+                <br />
+                Il vous reste {usageInfo.remaining} génération IA aujourd'hui. Passez Premium pour un accès illimité.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -190,6 +229,11 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
           <CardContent className="pt-6">
             <div className="text-destructive">
               <strong>Erreur :</strong> {error}
+              {error.includes('Limite quotidienne dépassée') && (
+                <div className="mt-2 text-sm">
+                  <p>💡 Conseil : Passez à un compte Premium pour des générations IA illimitées !</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

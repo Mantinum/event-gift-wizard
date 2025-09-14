@@ -10,6 +10,7 @@ import PersonProfileModal from '@/components/PersonProfileModal';
 import PersonProfileViewModal from '@/components/PersonProfileViewModal';
 import EventModal from '@/components/EventModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import AIUsageBadge from '@/components/AIUsageBadge';
 import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings } from 'lucide-react';
 import { Person, Event } from '@/types';
 import { useSupabasePersons } from '@/hooks/useSupabasePersons';
@@ -171,6 +172,7 @@ const DashboardPage = () => {
         <div className="relative z-10 container mx-auto px-4 py-12 text-center">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center justify-end gap-3 mb-4">
+              <AIUsageBadge />
               <ThemeToggle />
               <Button
                 onClick={() => navigate('/account')}

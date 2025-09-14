@@ -88,11 +88,19 @@ export function useGiftSuggestions() {
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Une erreur inattendue est survenue';
-      setError(errorMessage);
+      
+      // Handle usage limit error specifically
+      if (errorMessage.includes('Limite quotidienne dépassée') || errorMessage.includes('Usage limit exceeded')) {
+        setError('Limite quotidienne de générations IA atteinte. Revenez demain ou passez Premium pour un accès illimité.');
+      } else {
+        setError(errorMessage);
+      }
       
       toast({
         title: "Erreur",
-        description: errorMessage,
+        description: errorMessage.includes('Limite quotidienne') 
+          ? "Limite quotidienne atteinte - Revenez demain !" 
+          : errorMessage,
         variant: "destructive"
       });
 
