@@ -107,7 +107,7 @@ const PersonProfileModal = ({
     }
 
     const personData: Person = {
-      id: person?.id || Date.now().toString(),
+      id: person?.id || '', // Laisser vide pour les nouveaux profils afin que Supabase génère l'UUID
       name: formData.name,
       relationship: formData.relationship,
       birthday: formData.birthday,
