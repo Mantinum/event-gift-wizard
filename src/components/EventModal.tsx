@@ -107,7 +107,7 @@ const EventModal = ({
     }
 
     const eventData: Event = {
-      id: event?.id || Date.now().toString(),
+      id: event?.id || '', // Laisser vide pour les nouveaux événements, Supabase génèrera l'UUID
       title: formData.title,
       type: formData.type,
       personId: formData.personId,
