@@ -58,26 +58,8 @@ export function useGiftSuggestions() {
     try {
       console.log('Generating gift suggestions for:', request);
 
-      // Vérifier que l'utilisateur est connecté
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        throw new Error('Utilisateur non connecté - veuillez vous reconnecter');
-      }
-
-      // Obtenir la session actuelle avec le token JWT
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session?.access_token) {
-        throw new Error('Session expirée - veuillez vous reconnecter');
-      }
-
       const { data, error } = await supabase.functions.invoke('suggest-gifts', {
-        body: request,
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
+        body: request
       });
 
       if (error) {

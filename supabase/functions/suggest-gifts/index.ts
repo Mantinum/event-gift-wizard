@@ -122,7 +122,8 @@ serve(async (req) => {
     // 5. Check authentication and AI usage limits
     console.log('🔒 Checking authentication and usage limits...');
     
-    // Get the authorization header for user authentication
+    // With verify_jwt = true, Supabase automatically verifies the JWT
+    // and provides the user in the request context
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       console.log('❌ No authorization header');
@@ -135,31 +136,21 @@ serve(async (req) => {
       });
     }
 
-    // Create regular supabase client to get authenticated user
-    const supabaseAuth = createClient(supabaseUrl, supabaseKey);
+    // Create supabase client for user operations
+    const supabaseAuth = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          Authorization: authHeader
+        }
+      }
+    });
 
-    // Get the authorization header and extract the JWT token
-    const authHeader = req.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('❌ No valid authorization header');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Token d\'authentification manquant'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401
-      });
-    }
-
-    const jwt = authHeader.replace('Bearer ', '');
-
-    // Verify JWT token and get user
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(jwt);
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
     console.log('👤 User:', user?.id);
-    console.log('❌ Auth error:', authError);
-
+    
     if (authError || !user) {
-      console.log('❌ Authentication failed');
+      console.log('❌ Authentication failed:', authError);
       return new Response(JSON.stringify({
         success: false,
         error: 'Authentication échouée'
