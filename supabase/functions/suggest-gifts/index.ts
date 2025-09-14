@@ -292,6 +292,76 @@ Format JSON requis:
   ]
 }`;
 
+    // Define strict JSON schema for structured outputs
+    const responseSchema = {
+      type: "json_schema",
+      json_schema: {
+        name: "gift_suggestions",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            suggestions: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  title: {
+                    type: "string",
+                    description: "Nom du cadeau"
+                  },
+                  description: {
+                    type: "string",
+                    description: "Description détaillée du cadeau"
+                  },
+                  estimatedPrice: {
+                    type: "integer",
+                    minimum: minBudget,
+                    maximum: maxBudget,
+                    description: "Prix estimé en euros"
+                  },
+                  confidence: {
+                    type: "number",
+                    minimum: 0,
+                    maximum: 1,
+                    description: "Niveau de confiance (0-1)"
+                  },
+                  reasoning: {
+                    type: "string",
+                    description: "Justification du choix"
+                  },
+                  category: {
+                    type: "string",
+                    description: "Catégorie du cadeau"
+                  },
+                  alternatives: {
+                    type: "array",
+                    items: {
+                      type: "string"
+                    },
+                    description: "Alternatives possibles"
+                  },
+                  purchaseLinks: {
+                    type: "array",
+                    items: {
+                      type: "string"
+                    },
+                    description: "Liens d'achat (sera rempli plus tard)"
+                  }
+                },
+                required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "alternatives", "purchaseLinks"],
+                additionalProperties: false
+              },
+              minItems: 3,
+              maxItems: 3
+            }
+          },
+          required: ["suggestions"],
+          additionalProperties: false
+        }
+      }
+    };
+
     // Call OpenAI API with forced JSON response
     console.log('🤖 Calling OpenAI API...');
     const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -302,11 +372,11 @@ Format JSON requis:
       },
       body: JSON.stringify({
         model: 'gpt-5-2025-08-07',
-        response_format: { type: 'json_object' },
+        response_format: responseSchema,
         messages: [
           {
             role: 'system',
-            content: 'Tu es un expert en cadeaux personnalisés. Réponds UNIQUEMENT avec du JSON valide au format demandé. Ne fais PAS de raisonnement détaillé, va directement aux suggestions.'
+            content: 'Tu es un expert en cadeaux personnalisés. Utilise le schéma JSON fourni pour structurer tes réponses de manière précise et conforme.'
           },
           {
             role: 'user',
@@ -330,12 +400,12 @@ Format JSON requis:
       });
     }
 
-    // Parse the AI response with better error handling
+    // Parse the AI response - with Structured Outputs, JSON is guaranteed
     let suggestions = [];
     try {
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
-      console.log('📊 Full OpenAI response:', JSON.stringify(openAIData, null, 2));
+      console.log('📊 Usage:', openAIData.usage);
       
       // Check if response was truncated due to token limit
       const finishReason = openAIData.choices?.[0]?.finish_reason;
@@ -351,9 +421,7 @@ Format JSON requis:
       }
       
       const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
-      console.log('🧠 AI content type:', typeof aiContent);
       console.log('🧠 AI content length:', aiContent.length);
-      console.log('🧠 AI content (first 500 chars):', aiContent.substring(0, 500));
       
       if (!aiContent || aiContent.trim().length === 0) {
         console.error('❌ Empty AI response content');
@@ -366,22 +434,29 @@ Format JSON requis:
         });
       }
       
-      // Nettoyer le contenu AI au cas où il y aurait des caractères indésirables
-      const cleanContent = aiContent.trim();
-      if (!cleanContent.startsWith('{') && !cleanContent.startsWith('[')) {
-        console.error('❌ AI content does not start with JSON bracket:', cleanContent.substring(0, 100));
-        throw new Error('AI response is not valid JSON format');
-      }
-      
-      const parsedResponse = JSON.parse(cleanContent);
+      // With Structured Outputs, parsing should always succeed
+      const parsedResponse = JSON.parse(aiContent);
       suggestions = parsedResponse.suggestions || [];
       console.log('🎁 Parsed suggestions count:', suggestions.length);
+      
+      // Validate that we have exactly 3 suggestions as per schema
+      if (suggestions.length !== 3) {
+        console.error('❌ Invalid number of suggestions:', suggestions.length);
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Nombre de suggestions incorrect',
+          details: `Attendu: 3, reçu: ${suggestions.length}`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
     } catch (parseError) {
       console.error('❌ Error parsing OpenAI response:', parseError);
       console.error('❌ Parse error details:', (parseError as Error).message);
       return new Response(JSON.stringify({
         success: false,
-        error: 'Failed to parse OpenAI JSON',
+        error: 'Erreur de parsing JSON (ne devrait pas arriver avec Structured Outputs)',
         details: (parseError as Error).message
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
