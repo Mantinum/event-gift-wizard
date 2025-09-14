@@ -377,7 +377,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
     };
 
     // 2) Recherche Amazon SerpApi → renvoie le premier produit avec ASIN + infos utiles
-    async function searchAmazonProductSerpApi(query: string, serpApiKey: string) {
+    async function searchAmazonProductSerpApi(query: string, serpApiKey: string, targetPrice?: number) {
       const params = new URLSearchParams({
         engine: 'amazon',
         amazon_domain: 'amazon.fr',
@@ -385,6 +385,15 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
         k: query,
         api_key: serpApiKey,
       });
+      
+      // Ajouter des filtres de prix si un prix cible est fourni
+      if (targetPrice && targetPrice > 30) {
+        const minPrice = Math.max(10, Math.round(targetPrice * 0.6));
+        const maxPrice = Math.round(targetPrice * 1.3);
+        params.append('low_price', minPrice.toString());
+        params.append('high_price', maxPrice.toString());
+        console.log(`🎯 Recherche avec fourchette de prix: ${minPrice}€ - ${maxPrice}€`);
+      }
       const r = await fetch(`https://serpapi.com/search.json?${params}`);
       if (!r.ok) return null;
       const data = await r.json();
@@ -431,13 +440,19 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       budgetFilteredSuggestions.map(async (suggestion: any) => {
         try {
           // Requête plus précise : marque + modèle si dispo
-          const baseQuery = [suggestion.brand, suggestion.canonical_name || suggestion.title]
+          let baseQuery = [suggestion.brand, suggestion.canonical_name || suggestion.title]
             .filter(Boolean)
             .join(' ');
+          
+          // Améliorer la recherche pour les budgets élevés
+          if (suggestion.estimatedPrice > 50) {
+            baseQuery += ' qualité premium';
+          }
+          
           const query = baseQuery || `${suggestion.title} ${suggestion.category}`;
-          console.log(`🔍 Searching Amazon for: ${query}`);      
+          console.log(`🔍 Searching Amazon for: ${query} (prix cible: ${suggestion.estimatedPrice}€)`);      
 
-          const result = await searchAmazonProductSerpApi(query, serpApiKey);
+          const result = await searchAmazonProductSerpApi(query, serpApiKey, suggestion.estimatedPrice);
 
           if (result) {
             console.log(`✅ Found Amazon product with ASIN: ${result.asin}`);
@@ -456,16 +471,25 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
         if (result.imageUrl) {
           suggestion.imageUrl = result.imageUrl;
         }
-        // Mise à jour de prix si dispo et validation budget
+        // Mise à jour de prix avec logique intelligente
         let finalPrice = suggestion.estimatedPrice;
         if (result.price) {
           const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
           if (!isNaN(p)) {
-            if (p <= budget) {
+            const estimatedPrice = suggestion.estimatedPrice;
+            const priceGap = Math.abs(p - estimatedPrice) / estimatedPrice;
+            
+            // Accepter le prix Amazon seulement si :
+            // 1. Il respecte le budget ET
+            // 2. Il n'est pas trop éloigné du prix estimé IA (écart < 40%) OU il est plus élevé
+            if (p <= budget && (priceGap <= 0.4 || p >= estimatedPrice * 0.8)) {
               finalPrice = Math.round(p);
-              console.log(`✅ Prix Amazon (${finalPrice}€) respecte le budget pour "${suggestion.title}"`);
+              console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (écart: ${Math.round(priceGap * 100)}%)`);
+            } else if (p <= budget && p < estimatedPrice * 0.6) {
+              // Prix trop bas par rapport à l'estimation - garder l'estimation IA
+              console.log(`⚠️ Prix Amazon (${p}€) trop bas vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
             } else {
-              console.log(`⚠️ Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}" - Conservation prix estimé ${finalPrice}€`);
+              console.log(`⚠️ Prix Amazon (${p}€) inadéquat pour "${suggestion.title}" - Conservation prix estimé ${finalPrice}€`);
             }
           }
         }
