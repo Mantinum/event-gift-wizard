@@ -11,7 +11,7 @@ import {
   Gift,
   ShoppingCart
 } from 'lucide-react';
-import { Event, Person } from '@/types';
+import { Event, Person, EVENT_TYPES } from '@/types';
 import { useGiftSuggestions, GiftSuggestion } from '@/hooks/useGiftSuggestions';
 import { differenceInCalendarDays, parseISO, startOfDay } from 'date-fns';
 
@@ -23,6 +23,10 @@ interface AutoGiftSuggestionsProps {
 const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
   const { suggestions, loading, generateSuggestions } = useGiftSuggestions();
   const [generatedForEvent, setGeneratedForEvent] = useState<string | null>(null);
+
+  const getEventTypeInfo = (type: string) => {
+    return EVENT_TYPES.find(et => et.value === type) || EVENT_TYPES[0];
+  };
 
   // Filtrer les événements à venir dans les 30 prochains jours
   const upcomingEvents = events
@@ -79,6 +83,7 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
         const person = persons.find(p => p.id === event.personId);
         const daysUntil = differenceInCalendarDays(startOfDay(parseISO(event.date)), startOfDay(new Date()));
         const hasGeneratedSuggestions = generatedForEvent === event.id && suggestions.length > 0;
+        const eventTypeInfo = getEventTypeInfo(event.type);
         
         return (
           <Card 
@@ -91,15 +96,20 @@ const AutoGiftSuggestions = ({ events, persons }: AutoGiftSuggestionsProps) => {
           >
             <CardContent className="p-4">
               <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <h4 className="font-semibold text-foreground">{event.title}</h4>
-                    {person && (
-                      <Badge variant="outline" className="text-xs">
-                        {person.name}
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <h4 className="font-semibold text-foreground">{event.title}</h4>
+                      <Badge 
+                        className={`${eventTypeInfo.color} text-white text-xs`}
+                      >
+                        {eventTypeInfo.label}
                       </Badge>
-                    )}
-                  </div>
+                      {person && (
+                        <Badge variant="outline" className="text-xs">
+                          {person.name}
+                        </Badge>
+                      )}
+                    </div>
                   <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                     <div className="flex items-center space-x-1">
                       <Clock className="h-3 w-3" />
