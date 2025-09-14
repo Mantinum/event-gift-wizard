@@ -124,11 +124,8 @@ const DashboardPage = () => {
     if (success) {
       setEditingPerson(undefined);
       
-      // Générer automatiquement les événements anniversaire manquants pour cette personne
-      const autoEvents = generateAutoEventsForPerson(person, events);
-      if (autoEvents.length > 0) {
-        await saveMultipleEvents(autoEvents);
-      }
+      // Ne pas générer d'événements automatiques ici car le useEffect s'en charge déjà
+      // Éviter la double génération qui cause les doublons
     }
   };
 
