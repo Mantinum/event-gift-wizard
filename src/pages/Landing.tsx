@@ -139,12 +139,6 @@ const Landing = () => {
               <a href="#features" className="text-foreground hover:text-primary transition-colors">
                 Fonctionnalités
               </a>
-              <a href="#testimonials" className="text-foreground hover:text-primary transition-colors">
-                Témoignages
-              </a>
-              <a href="#pricing" className="text-foreground hover:text-primary transition-colors">
-                Prix
-              </a>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -179,9 +173,14 @@ const Landing = () => {
         
         <div className="relative z-10 container mx-auto px-4 py-20 text-center">
           <div className="max-w-4xl mx-auto animate-fade-in">
-            <Badge className="mb-6 bg-primary/10 text-primary border-primary/20">
-              ✨ L'assistant qui révolutionne vos cadeaux
-            </Badge>
+            <div className="flex gap-4 justify-center mb-6">
+              <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20">
+                🚀 BETA
+              </Badge>
+              <Badge className="bg-primary/10 text-primary border-primary/20">
+                ✨ L'assistant qui révolutionne vos cadeaux
+              </Badge>
+            </div>
             
             <h1 className="text-5xl md:text-7xl font-bold text-foreground mb-8 leading-tight">
               Ne ratez plus jamais
@@ -318,116 +317,7 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section id="testimonials" className="py-20 bg-muted/30">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
-              Témoignages
-            </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-6">
-              Ils nous font confiance
-            </h2>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {testimonials.map((testimonial, index) => (
-              <Card key={index} className="shadow-card hover:shadow-elegant transition-all duration-300 animate-fade-in" style={{ animationDelay: `${index * 100}ms` }}>
-                <CardContent className="p-8">
-                  <div className="flex mb-4">
-                    {[...Array(testimonial.rating)].map((_, i) => (
-                      <Star key={i} className="w-5 h-5 text-yellow-400 fill-current" />
-                    ))}
-                  </div>
-                  <p className="text-muted-foreground mb-6 italic leading-relaxed">
-                    "{testimonial.content}"
-                  </p>
-                  <div>
-                    <div className="font-semibold text-foreground">{testimonial.name}</div>
-                    <div className="text-sm text-muted-foreground">{testimonial.role}</div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <Badge className="mb-4 bg-primary/10 text-primary border-primary/20">
-              Prix
-            </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-6">
-              Choisissez votre plan
-            </h2>
-            <p className="text-xl text-muted-foreground">
-              Commencez gratuitement, évoluez à votre rythme
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {pricing.map((plan, index) => (
-              <Card 
-                key={index}
-                className={`shadow-card hover:shadow-elegant transition-all duration-300 animate-fade-in relative ${
-                  plan.popular ? 'border-primary shadow-elegant scale-105' : ''
-                }`}
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                    <Badge className="bg-gradient-primary text-white px-4 py-1">
-                      <Crown className="w-4 h-4 mr-1" />
-                      Populaire
-                    </Badge>
-                  </div>
-                )}
-                
-                <CardHeader className="text-center pb-4">
-                  <CardTitle className="text-2xl mb-2">{plan.name}</CardTitle>
-                  <div className="mb-4">
-                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                    <span className="text-muted-foreground">{plan.period}</span>
-                  </div>
-                  <CardDescription>{plan.description}</CardDescription>
-                </CardHeader>
-                
-                <CardContent className="pt-0">
-                  <ul className="space-y-3 mb-8">
-                    {plan.features.map((feature, featureIndex) => (
-                      <li key={featureIndex} className="flex items-center">
-                        <CheckCircle className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" />
-                        <span className="text-muted-foreground">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  
-                  <Button 
-                    variant={plan.buttonVariant}
-                    className={`w-full ${
-                      plan.buttonVariant === 'default' 
-                        ? 'bg-gradient-primary text-white shadow-elegant hover:shadow-glow' 
-                        : ''
-                    }`}
-                    onClick={() => navigate('/auth')}
-                  >
-                    {plan.buttonText}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          <div className="text-center mt-12">
-            <p className="text-muted-foreground">
-              Toutes les formules incluent une garantie satisfait ou remboursé de 30 jours
-            </p>
-          </div>
-        </div>
-      </section>
 
       {/* CTA Section */}
       <section className="py-20 bg-gradient-hero text-white">
