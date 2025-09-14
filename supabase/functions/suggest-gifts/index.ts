@@ -175,11 +175,12 @@ CONTEXTE DE L'ÉVÉNEMENT:
 
 INSTRUCTIONS CRITIQUES:
 1. RESPECTE ABSOLUMENT le budget de ${budget}€ - tous les prix doivent être inférieurs ou égaux à ce montant
-2. Prends en compte l'âge, les intérêts et la personnalité
-3. Évite de répéter le dernier cadeau s'il est mentionné
-4. Sois créatif et personnel dans tes suggestions
-5. Explique pourquoi chaque cadeau convient à cette personne
-6. Les prix estimés doivent être réalistes et respecter le budget
+2. VISE des prix entre ${Math.round(budget * 0.85)}€ et ${budget}€ pour optimiser le rapport qualité/prix
+3. Prends en compte l'âge, les intérêts et la personnalité
+4. Évite de répéter le dernier cadeau s'il est mentionné
+5. Sois créatif et personnel dans tes suggestions
+6. Explique pourquoi chaque cadeau convient à cette personne
+7. Les prix estimés doivent être réalistes et dans la fourchette haute du budget
 
 Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au format :
 {
@@ -326,17 +327,21 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
 
           if (result) {
             console.log(`✅ Found Amazon product with ASIN: ${result.asin}`);
-            suggestion.amazonData = {
-              asin: result.asin,
-              productUrl: result.productUrl,
-              imageUrl: result.imageUrl || null,
-              rating: result.rating || null,
-              reviewCount: result.reviewCount || 0,
-              matchType: result.matchType,
-              // on garde un searchUrl de secours
-              searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
-            };
+        suggestion.amazonData = {
+          asin: result.asin,
+          productUrl: result.productUrl,
+          imageUrl: result.imageUrl || null,
+          rating: result.rating || null,
+          reviewCount: result.reviewCount || 0,
+          matchType: result.matchType,
+          // on garde un searchUrl de secours
+          searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
+        };
         suggestion.purchaseLinks = [result.productUrl]; // 🔒 lien direct produit
+        // Ajouter l'image du produit à la suggestion
+        if (result.imageUrl) {
+          suggestion.imageUrl = result.imageUrl;
+        }
         // Mise à jour de prix si dispo et si dans le budget
         if (result.price) {
           const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
