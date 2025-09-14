@@ -76,7 +76,20 @@ export function useGiftSuggestions() {
         throw new Error('Format de réponse invalide');
       }
 
-      setSuggestions(data.suggestions);
+      // Client-side budget validation as additional safety
+      const budgetValidatedSuggestions = data.suggestions.filter((suggestion: GiftSuggestion) => {
+        if (suggestion.estimatedPrice > request.budget) {
+          console.warn(`⚠️ Client filter: Suggestion "${suggestion.title}" exceeds budget (${suggestion.estimatedPrice}€ > ${request.budget}€)`);
+          return false;
+        }
+        return true;
+      });
+
+      if (budgetValidatedSuggestions.length !== data.suggestions.length) {
+        console.warn(`🔧 Client budget filter applied: ${data.suggestions.length} -> ${budgetValidatedSuggestions.length} suggestions`);
+      }
+
+      setSuggestions(budgetValidatedSuggestions);
       console.log('🔎 Suggestions received (debug):', data.suggestions.map((s: any) => ({ title: s.title, asin: s.amazonData?.asin, purchaseLinks: s.purchaseLinks })));
       
       toast({

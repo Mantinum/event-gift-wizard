@@ -249,7 +249,11 @@ serve(async (req) => {
 
     console.log('👤 Person data:', personData);
 
-    // Create intelligent prompt for OpenAI
+    // Create intelligent prompt for OpenAI with strict budget enforcement
+    const maxBudget = budget;
+    const minBudget = Math.max(10, Math.round(budget * 0.6)); // Au moins 60% du budget
+    const targetBudget = Math.round(budget * 0.85); // Cible 85% du budget
+    
     const prompt = `Tu es un expert en suggestions de cadeaux personnalisés. Génère 3 suggestions de cadeaux pour cette personne :
 
 PROFIL DE LA PERSONNE:
@@ -264,17 +268,21 @@ PROFIL DE LA PERSONNE:
 
 CONTEXTE DE L'ÉVÉNEMENT:
 - Type d'événement: ${eventType}
-- Budget MAXIMUM: ${budget}€ (TRÈS IMPORTANT: ne pas dépasser)
+- Budget MAXIMUM ABSOLU: ${maxBudget}€ (JAMAIS DÉPASSER)
+- Fourchette recommandée: ${minBudget}€ - ${maxBudget}€
 - Contexte supplémentaire: ${additionalContext || 'Aucun'}
 
-INSTRUCTIONS CRITIQUES:
-1. RESPECTE ABSOLUMENT le budget de ${budget}€ - tous les prix doivent être inférieurs ou égaux à ce montant
-2. VISE des prix entre ${Math.round(budget * 0.85)}€ et ${budget}€ pour optimiser le rapport qualité/prix
-3. Prends en compte l'âge, les intérêts et la personnalité
-4. Évite de répéter le dernier cadeau s'il est mentionné
-5. Sois créatif et personnel dans tes suggestions
-6. Explique pourquoi chaque cadeau convient à cette personne
-7. Les prix estimés doivent être réalistes et dans la fourchette haute du budget
+CONTRAINTES DE BUDGET STRICTES:
+1. JAMAIS dépasser ${maxBudget}€ - c'est une limite ABSOLUE
+2. Privilégier des prix entre ${minBudget}€ et ${targetBudget}€
+3. Si un cadeau coûte plus que ${maxBudget}€, propose une alternative moins chère
+4. Tous les prix (estimatedPrice) doivent être des entiers entre ${minBudget} et ${maxBudget}
+
+INSTRUCTIONS COMPLÉMENTAIRES:
+5. Prends en compte l'âge, les intérêts et la personnalité
+6. Évite de répéter le dernier cadeau s'il est mentionné
+7. Sois créatif et personnel dans tes suggestions
+8. Explique pourquoi chaque cadeau convient à cette personne et respecte le budget
 
 Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au format :
 {
@@ -405,10 +413,22 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       return null;
     }
 
-    // 🛒 Enrich suggestions with Amazon data (fix: use amazon engine properly)
+    // 🛒 First, filter suggestions to respect budget (server-side validation)
+    console.log('💰 Filtering suggestions by budget...');
+    const budgetFilteredSuggestions = suggestions.filter((suggestion: any) => {
+      if (suggestion.estimatedPrice > budget) {
+        console.log(`❌ Filtering out "${suggestion.title}" - Price ${suggestion.estimatedPrice}€ exceeds budget ${budget}€`);
+        return false;
+      }
+      return true;
+    });
+    
+    console.log(`📊 Budget filter: ${suggestions.length} -> ${budgetFilteredSuggestions.length} suggestions`);
+    
+    // 🛒 Enrich filtered suggestions with Amazon data
     console.log('🛒 Enriching suggestions with Amazon data...');
     const enrichedSuggestions = await Promise.all(
-      suggestions.map(async (suggestion: any) => {
+      budgetFilteredSuggestions.map(async (suggestion: any) => {
         try {
           // Requête plus précise : marque + modèle si dispo
           const baseQuery = [suggestion.brand, suggestion.canonical_name || suggestion.title]
@@ -436,18 +456,27 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
         if (result.imageUrl) {
           suggestion.imageUrl = result.imageUrl;
         }
-        // Mise à jour de prix si dispo et si dans le budget
+        // Mise à jour de prix si dispo et validation budget
+        let finalPrice = suggestion.estimatedPrice;
         if (result.price) {
           const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
           if (!isNaN(p)) {
-            // Si le prix Amazon dépasse le budget, on garde l'estimation OpenAI
             if (p <= budget) {
-              suggestion.estimatedPrice = Math.round(p);
+              finalPrice = Math.round(p);
+              console.log(`✅ Prix Amazon (${finalPrice}€) respecte le budget pour "${suggestion.title}"`);
             } else {
-              console.log(`Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}"`);
+              console.log(`⚠️ Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}" - Conservation prix estimé ${finalPrice}€`);
             }
           }
         }
+        
+        // Double vérification: si même le prix final dépasse le budget, l'ajuster
+        if (finalPrice > budget) {
+          finalPrice = Math.min(budget, Math.round(budget * 0.9));
+          console.log(`🔧 Ajustement final du prix pour "${suggestion.title}": ${finalPrice}€`);
+        }
+        
+        suggestion.estimatedPrice = finalPrice;
           } else {
             console.log(`❌ No Amazon results for: ${query}`);
             // fallback propre
@@ -463,13 +492,35 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
       })
     );
 
-    console.log('🎁 Generated and enriched suggestions:', enrichedSuggestions.length);
+    // Final budget validation - remove any suggestion that still exceeds budget
+    const finalValidatedSuggestions = enrichedSuggestions.filter((suggestion: any) => {
+      if (suggestion.estimatedPrice > budget) {
+        console.log(`❌ Final filter: removing "${suggestion.title}" - Price ${suggestion.estimatedPrice}€ exceeds budget ${budget}€`);
+        return false;
+      }
+      return true;
+    });
+    
+    console.log(`🎁 Final suggestions after budget validation: ${finalValidatedSuggestions.length}`);
+    
+    // If no suggestions remain after budget filtering, return an error
+    if (finalValidatedSuggestions.length === 0) {
+      console.log('❌ No suggestions remain after budget filtering');
+      return new Response(JSON.stringify({
+        success: false,
+        error: `Aucune suggestion trouvée dans le budget de ${budget}€. Essayez d'augmenter le budget ou de modifier les critères.`
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
     return new Response(JSON.stringify({
       success: true,
-      suggestions: enrichedSuggestions,
+      suggestions: finalValidatedSuggestions,
       personName: personData.name,
       eventType,
-      budget
+      budget,
+      budgetRespected: true
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
