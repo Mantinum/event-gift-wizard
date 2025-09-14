@@ -32,16 +32,32 @@ serve(async (req) => {
 
   try {
     console.log('📥 Processing request...');
+    console.log('🔑 Headers:', Object.fromEntries(req.headers.entries()));
     
     // 2. Parse body with try/catch
     let body: any = {};
     try {
-      body = await req.json();
+      const requestText = await req.text();
+      console.log('📥 Raw request body:', requestText);
+      console.log('📥 Content-Type:', req.headers.get('content-type'));
+      
+      if (!requestText) {
+        console.log('❌ Empty request body');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Empty request body'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      body = JSON.parse(requestText);
+      console.log('✅ Parsed body:', body);
     } catch (parseError) {
       console.log('❌ Invalid JSON body:', parseError);
       return new Response(JSON.stringify({
         success: false,
-        error: 'Invalid JSON body'
+        error: 'Invalid JSON body - ' + (parseError as Error).message
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
