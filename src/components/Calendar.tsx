@@ -143,16 +143,6 @@ const EventPopoverContent = ({ event, person, onViewProfile, onEditEvent, onDele
             Modifier
           </Button>
         )}
-        {onDeleteEvent && (
-          <Button 
-            size="sm" 
-            variant="outline"
-            onClick={() => onDeleteEvent(event.id)}
-            className="text-destructive hover:bg-destructive hover:text-white"
-          >
-            <Trash2 className="w-4 h-4" />
-          </Button>
-        )}
       </div>
     </div>
   );

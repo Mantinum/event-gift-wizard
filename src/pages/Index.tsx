@@ -381,6 +381,7 @@ const Index = () => {
           isOpen={isEventModalOpen}
           onOpenChange={setIsEventModalOpen}
           onSave={handleSaveEvent}
+          onDelete={deleteEvent}
         />
       </div>
     </div>

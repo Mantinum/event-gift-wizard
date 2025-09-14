@@ -16,7 +16,8 @@ import {
   Gift,
   MapPin,
   Bell,
-  Euro
+  Euro,
+  Trash2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -29,6 +30,7 @@ interface EventModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (event: Event) => void;
+  onDelete?: (eventId: string) => void;
 }
 
 const EventModal = ({ 
@@ -36,7 +38,8 @@ const EventModal = ({
   persons,
   isOpen, 
   onOpenChange, 
-  onSave
+  onSave,
+  onDelete
 }: EventModalProps) => {
   const [formData, setFormData] = useState<Partial<Event>>({
     title: event?.title || '',
@@ -379,17 +382,34 @@ const EventModal = ({
           )}
         </div>
 
-        <div className="flex justify-end space-x-2 pt-4 border-t">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Annuler
-          </Button>
-          <Button 
-            onClick={handleSave}
-            className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-all duration-300"
-          >
-            <Save className="mr-2 h-4 w-4" />
-            {event ? 'Modifier' : 'Créer l\'événement'}
-          </Button>
+        <div className="flex justify-between pt-4 border-t">
+          <div>
+            {event && onDelete && (
+              <Button 
+                variant="outline"
+                onClick={() => {
+                  onDelete(event.id);
+                  onOpenChange(false);
+                }}
+                className="text-destructive hover:bg-destructive hover:text-white"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Supprimer
+              </Button>
+            )}
+          </div>
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Annuler
+            </Button>
+            <Button 
+              onClick={handleSave}
+              className="bg-gradient-primary text-white shadow-elegant hover:shadow-glow transition-all duration-300"
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {event ? 'Modifier' : 'Créer l\'événement'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
