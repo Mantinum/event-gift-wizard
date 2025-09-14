@@ -10,6 +10,7 @@ import PersonProfileModal from '@/components/PersonProfileModal';
 import PersonProfileViewModal from '@/components/PersonProfileViewModal';
 import EventModal from '@/components/EventModal';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { NotificationBell } from '@/components/NotificationBell';
 import AIUsageBadge from '@/components/AIUsageBadge';
 import { Plus, Calendar as CalendarIcon, Users, BarChart3, Sparkles, LogOut, Settings, Shield } from 'lucide-react';
 import { Person, Event } from '@/types';
@@ -176,6 +177,7 @@ const DashboardPage = () => {
             <div className="flex items-center justify-end gap-3 mb-4">
               <AIUsageBadge />
               <ThemeToggle />
+              <NotificationBell />
               {profile?.role === 'admin' && (
                 <Button
                   onClick={() => navigate('/admin')}
