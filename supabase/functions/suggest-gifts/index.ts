@@ -321,8 +321,7 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
             content: prompt
           }
         ],
-        max_tokens: 1500,
-        temperature: 0.7
+        max_completion_tokens: 1500
       }),
     });
 
