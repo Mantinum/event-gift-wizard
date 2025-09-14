@@ -222,10 +222,6 @@ const Landing = () => {
                 <Shield className="w-5 h-5 text-blue-500" />
                 <span>Données sécurisées</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <Heart className="w-5 h-5 text-red-500" />
-                <span>+10,000 familles heureuses</span>
-              </div>
             </div>
           </div>
         </div>
