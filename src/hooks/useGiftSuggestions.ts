@@ -58,8 +58,18 @@ export function useGiftSuggestions() {
     try {
       console.log('Generating gift suggestions for:', request);
 
+      // Obtenir le token JWT pour l'authentification
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session?.access_token) {
+        throw new Error('Session non valide - reconnexion requise');
+      }
+
       const { data, error } = await supabase.functions.invoke('suggest-gifts', {
-        body: request
+        body: request,
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
       });
 
       if (error) {
