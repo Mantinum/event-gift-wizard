@@ -254,47 +254,39 @@ serve(async (req) => {
     const minBudget = Math.max(10, Math.round(budget * 0.6)); // Au moins 60% du budget
     const targetBudget = Math.round(budget * 0.85); // Cible 85% du budget
     
-    const prompt = `Tu es un expert en suggestions de cadeaux personnalisés. Génère 3 suggestions de cadeaux pour cette personne :
+    const prompt = `Génère 3 suggestions de cadeaux pour cette personne.
 
-PROFIL DE LA PERSONNE:
+PROFIL:
 - Nom: ${personData.name}
 - Âge: ${personData.age_years ? `${personData.age_years} ans` : 'Non spécifié'}
 - Genre: ${personData.gender || 'Non spécifié'}
 - Relation: ${personData.relationship || 'Non spécifié'}
 - Centres d'intérêt: ${personData.interests?.join(', ') || 'Aucun spécifié'}
 - Catégories préférées: ${personData.preferred_categories?.join(', ') || 'Aucune spécifiée'}
-- Notes personnelles: ${personData.notes || 'Aucune'}
-- Dernier cadeau offert: ${personData.last_gift || 'Aucun'}
+- Notes: ${personData.notes || 'Aucune'}
+- Dernier cadeau: ${personData.last_gift || 'Aucun'}
 
-CONTEXTE DE L'ÉVÉNEMENT:
-- Type d'événement: ${eventType}
-- Budget MAXIMUM ABSOLU: ${maxBudget}€ (JAMAIS DÉPASSER)
-- Fourchette recommandée: ${minBudget}€ - ${maxBudget}€
-- Contexte supplémentaire: ${additionalContext || 'Aucun'}
+CONTEXTE:
+- Événement: ${eventType}
+- Budget MAXIMUM: ${maxBudget}€
+- Contexte: ${additionalContext || 'Aucun'}
 
-CONTRAINTES DE BUDGET STRICTES:
-1. JAMAIS dépasser ${maxBudget}€ - c'est une limite ABSOLUE
-2. Privilégier des prix entre ${minBudget}€ et ${targetBudget}€
-3. Si un cadeau coûte plus que ${maxBudget}€, propose une alternative moins chère
-4. Tous les prix (estimatedPrice) doivent être des entiers entre ${minBudget} et ${maxBudget}
+CONTRAINTES:
+- Tous les prix doivent être entre ${minBudget}€ et ${maxBudget}€
+- Pas de répétition du dernier cadeau
+- Être personnel et créatif
 
-INSTRUCTIONS COMPLÉMENTAIRES:
-5. Prends en compte l'âge, les intérêts et la personnalité
-6. Évite de répéter le dernier cadeau s'il est mentionné
-7. Sois créatif et personnel dans tes suggestions
-8. Explique pourquoi chaque cadeau convient à cette personne et respecte le budget
-
-Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au format :
+Format JSON requis:
 {
   "suggestions": [
     {
       "title": "Titre du cadeau",
-      "description": "Description détaillée du cadeau et pourquoi il convient",
+      "description": "Description du cadeau et pourquoi il convient",
       "estimatedPrice": 50,
       "confidence": 0.9,
-      "reasoning": "Explication détaillée du choix basée sur le profil",
-      "category": "catégorie du cadeau",
-      "alternatives": ["alternative 1", "alternative 2"],
+      "reasoning": "Pourquoi ce choix",
+      "category": "catégorie",
+      "alternatives": ["alt1", "alt2"],
       "purchaseLinks": []
     }
   ]
@@ -309,19 +301,19 @@ Réponds uniquement avec un JSON valide contenant un tableau de 3 suggestions au
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4.1-2025-04-14',
+        model: 'gpt-5-2025-08-07',
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content: 'Tu es un expert en cadeaux personnalisés. Tu réponds UNIQUEMENT avec du JSON valide, sans texte supplémentaire.'
+            content: 'Tu es un expert en cadeaux personnalisés. Réponds UNIQUEMENT avec du JSON valide au format demandé. Ne fais PAS de raisonnement détaillé, va directement aux suggestions.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_completion_tokens: 2000
+        max_completion_tokens: 3000
       }),
     });
 
