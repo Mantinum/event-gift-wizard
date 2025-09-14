@@ -366,20 +366,6 @@ const DashboardPage = () => {
                 </CardContent>
               </Card>
 
-              <Card 
-                className="shadow-card hover:shadow-elegant transition-all duration-300 cursor-pointer group animate-fade-in"
-                style={{ animationDelay: '200ms' }}
-              >
-                <CardContent className="p-8 text-center">
-                  <div className="w-16 h-16 bg-success rounded-full flex items-center justify-center mx-auto mb-4 group-hover:shadow-glow group-hover:scale-110 transition-all duration-300">
-                    <Sparkles className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-semibold mb-2">Configuration</h3>
-                  <p className="text-muted-foreground text-sm">
-                    Paramétrez vos budgets et préférences d'achat
-                  </p>
-                </CardContent>
-              </Card>
             </div>
           </TabsContent>
         </Tabs>
