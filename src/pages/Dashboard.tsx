@@ -274,7 +274,15 @@ const DashboardPage = () => {
                 Nouvel événement
               </Button>
             </div>
-            <Calendar events={events} persons={persons} onDeleteEvent={deleteEvent} />
+            <Calendar 
+              events={events} 
+              persons={persons} 
+              onEditEvent={(event) => {
+                setEditingEvent(event);
+                setIsEventModalOpen(true);
+              }}
+              onDeleteEvent={deleteEvent} 
+            />
           </TabsContent>
 
           <TabsContent value="profiles" className="mt-6">
