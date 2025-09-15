@@ -221,7 +221,20 @@ const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestio
                         </div>
                       )}
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-success">~{suggestion.estimatedPrice}€</span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-success">
+                            ~{suggestion.priceInfo?.displayPrice || suggestion.estimatedPrice}€
+                            {suggestion.priceInfo?.source === 'amazon_price' && (
+                              <span className="text-green-600 ml-1 text-xs">Prix Amazon</span>
+                            )}
+                          </span>
+                          {suggestion.priceInfo?.source === 'ai_estimate' && suggestion.priceInfo?.amazonPrice && 
+                           suggestion.priceInfo.amazonPrice !== suggestion.priceInfo.originalEstimate && (
+                            <span className="text-xs text-orange-600">
+                              Sur Amazon: {suggestion.priceInfo.amazonPrice}€
+                            </span>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           {/* Badge de type de match */}
                           {suggestion.amazonData?.matchType === 'exact' && (

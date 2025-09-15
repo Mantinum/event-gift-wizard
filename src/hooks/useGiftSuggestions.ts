@@ -16,6 +16,12 @@ export interface GiftSuggestion {
   search_queries?: string[];
   min_price?: number;
   max_price?: number;
+  priceInfo?: {
+    displayPrice: number;
+    source: 'ai_estimate' | 'amazon_price' | 'adjusted_low';
+    originalEstimate: number;
+    amazonPrice?: number | null;
+  };
   amazonData?: {
     asin?: string;
     rating?: number;

@@ -573,28 +573,56 @@ Format JSON requis:
         if (result.imageUrl) {
           suggestion.imageUrl = result.imageUrl;
         }
-        // Mise à jour de prix avec logique intelligente
+        // Mise à jour de prix avec logique intelligente améliorée
         let finalPrice = suggestion.estimatedPrice;
+        let priceSource = 'ai_estimate';
+        
         if (result.price) {
           const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
-          if (!isNaN(p)) {
+          if (!isNaN(p) && p > 0 && p <= budget) {
             const estimatedPrice = suggestion.estimatedPrice;
-            const priceGap = Math.abs(p - estimatedPrice) / estimatedPrice;
+            const priceRatio = p / estimatedPrice;
             
-            // Accepter le prix Amazon seulement si :
-            // 1. Il respecte le budget ET
-            // 2. Il n'est pas trop éloigné du prix estimé IA (écart < 40%) OU il est plus élevé
-            if (p <= budget && (priceGap <= 0.4 || p >= estimatedPrice * 0.8)) {
+            // Logique améliorée pour accepter plus de prix Amazon réels
+            if (priceRatio >= 0.3 && priceRatio <= 2.0) {
+              // Prix Amazon dans une fourchette raisonnable (30% - 200% de l'estimation)
               finalPrice = Math.round(p);
-              console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (écart: ${Math.round(priceGap * 100)}%)`);
-            } else if (p <= budget && p < estimatedPrice * 0.6) {
-              // Prix trop bas par rapport à l'estimation - garder l'estimation IA
-              console.log(`⚠️ Prix Amazon (${p}€) trop bas vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
+              priceSource = 'amazon_price';
+              
+              // Ajuster la confiance en fonction de l'écart
+              if (priceRatio < 0.6) {
+                // Prix très bas - réduire légèrement la confiance mais accepter
+                suggestion.confidence = Math.max(0.6, (suggestion.confidence || 0.8) * 0.85);
+                console.log(`✅ Prix Amazon bas (${finalPrice}€) accepté vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Confiance ajustée`);
+              } else if (priceRatio > 1.3) {
+                // Prix plus élevé que prévu
+                console.log(`✅ Prix Amazon élevé (${finalPrice}€) accepté vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}"`);
+              } else {
+                // Prix dans une fourchette normale
+                console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (ratio: ${Math.round(priceRatio * 100)}%)`);
+              }
+            } else if (priceRatio < 0.3) {
+              // Prix extrêmement bas - possible produit différent
+              finalPrice = Math.max(p, Math.round(estimatedPrice * 0.4));
+              priceSource = 'adjusted_low';
+              suggestion.confidence = Math.max(0.5, (suggestion.confidence || 0.8) * 0.7);
+              console.log(`⚠️ Prix Amazon très bas (${p}€) - Prix ajusté à ${finalPrice}€ pour "${suggestion.title}"`);
             } else {
-              console.log(`⚠️ Prix Amazon (${p}€) inadéquat pour "${suggestion.title}" - Conservation prix estimé ${finalPrice}€`);
+              // Prix trop élevé pour le budget
+              console.log(`⚠️ Prix Amazon (${p}€) trop élevé vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
             }
+          } else if (p > budget) {
+            console.log(`❌ Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}"`);
           }
         }
+        
+        // Ajouter des métadonnées sur le prix pour l'interface utilisateur
+        suggestion.priceInfo = {
+          displayPrice: finalPrice,
+          source: priceSource,
+          originalEstimate: suggestion.estimatedPrice,
+          amazonPrice: result.price ? parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.')) : null
+        };
         
         // Double vérification: si même le prix final dépasse le budget, l'ajuster
         if (finalPrice > budget) {
