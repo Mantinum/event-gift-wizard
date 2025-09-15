@@ -488,13 +488,14 @@ Format JSON requis:
         api_key: serpApiKey,
       });
       
-      // Ajouter des filtres de prix si un prix cible est fourni
-      if (targetPrice && targetPrice > 30) {
-        const minPrice = Math.max(10, Math.round(targetPrice * 0.6));
-        const maxPrice = Math.round(targetPrice * 1.3);
+      // Ajouter des filtres de prix intelligents basés sur le budget
+      if (targetPrice && targetPrice > 20) {
+        // Pour utiliser au mieux le budget, chercher des produits dans une fourchette plus élevée
+        const minPrice = Math.max(15, Math.round(targetPrice * 0.7)); // Minimum 70% du prix cible
+        const maxPrice = Math.round(targetPrice * 1.2); // Maximum 120% du prix cible
         params.append('low_price', minPrice.toString());
         params.append('high_price', maxPrice.toString());
-        console.log(`🎯 Recherche avec fourchette de prix: ${minPrice}€ - ${maxPrice}€`);
+        console.log(`🎯 Recherche avec fourchette de prix optimisée: ${minPrice}€ - ${maxPrice}€`);
       }
       const r = await fetch(`https://serpapi.com/search.json?${params}`);
       if (!r.ok) return null;
@@ -546,9 +547,11 @@ Format JSON requis:
             .filter(Boolean)
             .join(' ');
           
-          // Améliorer la recherche pour les budgets élevés
-          if (suggestion.estimatedPrice > 50) {
-            baseQuery += ' qualité premium';
+          // Améliorer la recherche selon le budget pour éviter les produits trop bas de gamme
+          if (suggestion.estimatedPrice > 40) {
+            baseQuery += ' qualité premium haut de gamme';
+          } else if (suggestion.estimatedPrice > 25) {
+            baseQuery += ' qualité supérieure';
           }
           
           const query = baseQuery || `${suggestion.title} ${suggestion.category}`;
@@ -573,7 +576,7 @@ Format JSON requis:
         if (result.imageUrl) {
           suggestion.imageUrl = result.imageUrl;
         }
-        // Mise à jour de prix avec logique intelligente améliorée
+        // Mise à jour de prix avec logique optimisée pour utiliser le budget
         let finalPrice = suggestion.estimatedPrice;
         let priceSource = 'ai_estimate';
         
@@ -582,34 +585,36 @@ Format JSON requis:
           if (!isNaN(p) && p > 0 && p <= budget) {
             const estimatedPrice = suggestion.estimatedPrice;
             const priceRatio = p / estimatedPrice;
+            const budgetRatio = p / budget;
             
-            // Logique améliorée pour accepter plus de prix Amazon réels
-            if (priceRatio >= 0.3 && priceRatio <= 2.0) {
-              // Prix Amazon dans une fourchette raisonnable (30% - 200% de l'estimation)
+            // Logique améliorée: privilégier les produits qui utilisent bien le budget
+            if (priceRatio >= 0.5 && priceRatio <= 1.8 && budgetRatio >= 0.4) {
+              // Prix Amazon acceptable ET utilise au moins 40% du budget
               finalPrice = Math.round(p);
               priceSource = 'amazon_price';
               
-              // Ajuster la confiance en fonction de l'écart
-              if (priceRatio < 0.6) {
-                // Prix très bas - réduire légèrement la confiance mais accepter
-                suggestion.confidence = Math.max(0.6, (suggestion.confidence || 0.8) * 0.85);
-                console.log(`✅ Prix Amazon bas (${finalPrice}€) accepté vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Confiance ajustée`);
-              } else if (priceRatio > 1.3) {
-                // Prix plus élevé que prévu
-                console.log(`✅ Prix Amazon élevé (${finalPrice}€) accepté vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}"`);
+              if (budgetRatio >= 0.7) {
+                // Utilise bien le budget (>70%) - bonus de confiance
+                suggestion.confidence = Math.min(0.95, (suggestion.confidence || 0.8) * 1.1);
+                console.log(`✅ Prix Amazon optimal (${finalPrice}€) utilise bien le budget (${Math.round(budgetRatio * 100)}%) pour "${suggestion.title}"`);
+              } else if (priceRatio < 0.7) {
+                // Prix plus bas que prévu mais acceptable
+                suggestion.confidence = Math.max(0.65, (suggestion.confidence || 0.8) * 0.9);
+                console.log(`✅ Prix Amazon (${finalPrice}€) accepté mais en dessous de l'estimation pour "${suggestion.title}"`);
               } else {
-                // Prix dans une fourchette normale
-                console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (ratio: ${Math.round(priceRatio * 100)}%)`);
+                console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (ratio budget: ${Math.round(budgetRatio * 100)}%)`);
               }
-            } else if (priceRatio < 0.3) {
-              // Prix extrêmement bas - possible produit différent
-              finalPrice = Math.max(p, Math.round(estimatedPrice * 0.4));
-              priceSource = 'adjusted_low';
-              suggestion.confidence = Math.max(0.5, (suggestion.confidence || 0.8) * 0.7);
-              console.log(`⚠️ Prix Amazon très bas (${p}€) - Prix ajusté à ${finalPrice}€ pour "${suggestion.title}"`);
+            } else if (budgetRatio < 0.4) {
+              // Prix trop bas par rapport au budget - ajuster vers le haut
+              finalPrice = Math.min(budget, Math.max(p, Math.round(budget * 0.5)));
+              priceSource = 'adjusted_up';
+              suggestion.confidence = Math.max(0.6, (suggestion.confidence || 0.8) * 0.8);
+              console.log(`⚠️ Prix Amazon trop bas (${p}€) pour le budget ${budget}€ - Ajusté à ${finalPrice}€ pour "${suggestion.title}"`);
+            } else if (priceRatio < 0.5) {
+              // Prix beaucoup trop bas par rapport à l'estimation - probablement pas le bon produit
+              console.log(`❌ Prix Amazon (${p}€) trop bas vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
             } else {
-              // Prix trop élevé pour le budget
-              console.log(`⚠️ Prix Amazon (${p}€) trop élevé vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
+              console.log(`⚠️ Prix Amazon (${p}€) inadéquat pour "${suggestion.title}" - Conservation prix estimé`);
             }
           } else if (p > budget) {
             console.log(`❌ Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}"`);
