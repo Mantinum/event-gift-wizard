@@ -348,9 +348,9 @@ const Landing = () => {
             </div>
             
             <div className="flex space-x-6 text-muted-foreground">
-              <a href="#" className="hover:text-primary transition-colors">Confidentialité</a>
-              <a href="#" className="hover:text-primary transition-colors">Conditions</a>
-              <a href="#" className="hover:text-primary transition-colors">Support</a>
+              <a href="/privacy-policy" className="hover:text-primary transition-colors">Confidentialité</a>
+              <a href="/terms-of-service" className="hover:text-primary transition-colors">Conditions</a>
+              <a href="mailto:support@cadofy.com" className="hover:text-primary transition-colors">Support</a>
             </div>
           </div>
           
