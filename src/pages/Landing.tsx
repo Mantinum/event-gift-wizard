@@ -57,7 +57,7 @@ const Landing = () => {
     {
       name: "Marie Dubois",
       role: "Mère de famille",
-      content: "Fini les cadeaux ratés ! GiftCalendar connaît mes enfants mieux que moi parfois.",
+      content: "Fini les cadeaux ratés ! Cadofy.com connaît mes enfants mieux que moi parfois.",
       rating: 5
     },
     {
@@ -79,7 +79,7 @@ const Landing = () => {
       name: "Gratuit",
       price: "0€",
       period: "/mois",
-      description: "Pour découvrir GiftCalendar",
+      description: "Pour découvrir Cadofy.com",
       features: [
         "Jusqu'à 5 profils",
         "10 événements/mois",
@@ -132,7 +132,7 @@ const Landing = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Sparkles className="w-8 h-8 text-primary" />
-              <span className="text-2xl font-bold text-foreground">GiftCalendar</span>
+              <span className="text-2xl font-bold text-foreground">Cadofy.com</span>
             </div>
             
             <div className="hidden md:flex items-center space-x-8">
@@ -166,7 +166,7 @@ const Landing = () => {
         <div className="absolute inset-0 bg-gradient-hero opacity-10">
           <img 
             src={heroImage} 
-            alt="GiftCalendar Hero" 
+            alt="Cadofy.com Hero" 
             className="w-full h-full object-cover"
           />
         </div>
@@ -188,7 +188,7 @@ const Landing = () => {
             </h1>
             
             <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto leading-relaxed">
-              GiftCalendar utilise l'intelligence artificielle pour vous aider à offrir 
+              Cadofy.com utilise l'intelligence artificielle pour vous aider à offrir 
               les cadeaux parfaits au bon moment, automatiquement.
             </p>
             
@@ -344,7 +344,7 @@ const Landing = () => {
           <div className="flex flex-col md:flex-row items-center justify-between">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
               <Sparkles className="w-6 h-6 text-primary" />
-              <span className="text-xl font-bold text-foreground">GiftCalendar</span>
+              <span className="text-xl font-bold text-foreground">Cadofy.com</span>
             </div>
             
             <div className="flex space-x-6 text-muted-foreground">
@@ -355,7 +355,7 @@ const Landing = () => {
           </div>
           
           <div className="border-t border-border mt-8 pt-8 text-center text-muted-foreground">
-            <p>&copy; 2024 GiftCalendar. Tous droits réservés.</p>
+            <p>&copy; 2024 Cadofy.com. Tous droits réservés.</p>
           </div>
         </div>
       </footer>

@@ -182,7 +182,7 @@ const Index = () => {
             </div>
             <h1 className="text-4xl md:text-6xl font-bold text-white mb-6 drop-shadow-lg">
               <Sparkles className="inline-block w-8 h-8 md:w-12 md:h-12 mr-3 text-primary-glow" />
-              GiftCalendar
+              Cadofy.com
             </h1>
             <p className="text-xl md:text-2xl text-white/90 mb-8 drop-shadow-md">
               L'assistant intelligent qui n'oublie jamais vos proches

@@ -62,7 +62,7 @@ const Auth = () => {
       } else {
         toast({
           title: "Connexion réussie",
-          description: "Bienvenue dans GiftCalendar !",
+          description: "Bienvenue dans Cadofy.com !",
         });
       }
     } catch (err) {
@@ -138,7 +138,7 @@ const Auth = () => {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
             <Sparkles className="w-8 h-8 text-primary-glow mr-2" />
-            <h1 className="text-3xl font-bold text-white">GiftCalendar</h1>
+            <h1 className="text-3xl font-bold text-white">Cadofy.com</h1>
           </div>
           <p className="text-white/80">
             Connectez-vous pour accéder à votre calendrier de cadeaux intelligent
