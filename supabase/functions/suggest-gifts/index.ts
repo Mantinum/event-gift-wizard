@@ -413,20 +413,17 @@ serve(async (req) => {
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
-    // Limiter et diversifier les produits (réduire pour éviter limite tokens)
-    const selectedProducts = diversifyProducts(availableProducts, 8); // Réduit de 12 à 8
+    // Limiter drastiquement les produits pour éviter limite tokens
+    const selectedProducts = diversifyProducts(availableProducts, 4); // Réduit à 4 produits max
     
-    const prompt = `Expert cadeaux: sélectionne 3 produits Amazon pour ${personData.name}.
+    const prompt = `Sélectionne 3 produits pour ${personData.name} (${personData.age_years || '?'}ans, intérêts: ${personData.interests?.slice(0,2).join(',') || 'N/A'}).
 
-PROFIL:
-Âge: ${personData.age_years || 'N/A'} | Intérêts: ${personData.interests?.join(', ') || 'Aucun'} | Notes: ${personData.notes || 'Aucune'}
+PRODUITS (${minBudget}-${maxBudget}€):
+${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 40)} - ${p.price}€ (${p.asin})`).join('\n')}
 
-PRODUITS DISPONIBLES (${minBudget}-${maxBudget}€):
-${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 60)}... - ${p.price}€ (${p.asin})`).join('\n')}
+JSON obligatoire:`;
 
-Sélectionne 3 produits avec titres/prix/ASIN exacts. Format JSON obligatoire:`;
-
-    // Define strict JSON schema for structured outputs - Adapté pour sélection depuis vrais produits
+    // JSON schema simplifié pour éviter limite tokens
     const responseSchema = {
       type: "json_schema",
       json_schema: {
@@ -441,33 +438,21 @@ Sélectionne 3 produits avec titres/prix/ASIN exacts. Format JSON obligatoire:`;
                 type: "object",
                 properties: {
                   selectedTitle: {
-                    type: "string",
-                    description: "Titre EXACT du produit sélectionné"
+                    type: "string"
                   },
                   selectedPrice: {
-                    type: "integer",
-                    description: "Prix EXACT du produit sélectionné"
+                    type: "integer"
                   },
                   selectedAsin: {
-                    type: "string",
-                    description: "ASIN du produit sélectionné"
+                    type: "string"
                   },
                   confidence: {
                     type: "number",
                     minimum: 0,
-                    maximum: 1,
-                    description: "Niveau de confiance (0-1)"
-                  },
-                  reasoning: {
-                    type: "string",
-                    description: "Pourquoi ce produit correspond à la personne"
-                  },
-                  category: {
-                    type: "string",
-                    description: "Catégorie du cadeau"
+                    maximum: 1
                   }
                 },
-                required: ["selectedTitle", "selectedPrice", "selectedAsin", "confidence", "reasoning", "category"],
+                required: ["selectedTitle", "selectedPrice", "selectedAsin", "confidence"],
                 additionalProperties: false
               },
               minItems: 3,
@@ -489,19 +474,19 @@ Sélectionne 3 produits avec titres/prix/ASIN exacts. Format JSON obligatoire:`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-2025-08-07', // Utiliser le bon nom du modèle GPT-5
+        model: 'gpt-5-mini-2025-08-07', // Modèle plus efficace pour éviter limite tokens
         response_format: responseSchema,
         messages: [
           {
             role: 'system',
-            content: 'Expert cadeaux. Utilise le JSON schema fourni. Sois concis et précis.'
+            content: 'Sélectionne 3 produits parmi la liste. Sois concis.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_completion_tokens: 1500 // Réduit de 3000 à 1500 pour éviter limite tokens
+        max_completion_tokens: 800 // Réduit drastiquement pour éviter limite tokens
       }),
     });
 
@@ -576,11 +561,11 @@ Sélectionne 3 produits avec titres/prix/ASIN exacts. Format JSON obligatoire:`;
         
         return {
           title: selection.selectedTitle,
-          description: `${selection.reasoning} Ce produit a été sélectionné parmi les vrais produits Amazon disponibles.`,
+          description: `Produit sélectionné par l'IA parmi les vrais produits Amazon disponibles.`,
           estimatedPrice: selection.selectedPrice,
           confidence: selection.confidence,
-          reasoning: selection.reasoning,
-          category: selection.category,
+          reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
+          category: 'Cadeau personnalisé',
           alternatives: [`Recherche Amazon: ${selection.selectedTitle}`],
           purchaseLinks: selectedProduct ? [selectedProduct.link] : [],
           priceInfo: {
