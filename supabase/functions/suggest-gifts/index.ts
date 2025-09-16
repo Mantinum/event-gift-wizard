@@ -492,16 +492,6 @@ RÉPONSE OBLIGATOIRE au format JSON:`;
         }
       }
     };
-              },
-              minItems: 3,
-              maxItems: 3
-            }
-          },
-          required: ["suggestions"],
-          additionalProperties: false
-        }
-      }
-    };
 
     // Call OpenAI API with forced JSON response
     console.log('🤖 Calling OpenAI API...');
