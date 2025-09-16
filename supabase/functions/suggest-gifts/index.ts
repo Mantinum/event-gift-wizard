@@ -8,6 +8,139 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+// Nouvelles fonctions utilitaires pour l'approche basée sur les vrais produits Amazon
+
+function generateTargetedSearchQueries(personData: any, eventType: string, budget: number): string[] {
+  const queries = [];
+  const interests = personData.interests || [];
+  const notes = personData.notes || '';
+  const age = personData.age_years || 0;
+  
+  // Queries basées sur les centres d'intérêt
+  if (interests.includes('Tech')) {
+    if (budget > 80) queries.push('gadget technologique intelligent', 'accessoire high tech');
+    else queries.push('accessoire tech pratique', 'gadget connecté');
+  }
+  
+  if (interests.includes('Sport')) {
+    queries.push('équipement sport', 'accessoire fitness');
+  }
+  
+  if (interests.includes('Lecture')) {
+    queries.push('livre bestseller 2025', 'accessoire lecture');
+  }
+  
+  if (interests.includes('Cuisine')) {
+    queries.push('ustensile cuisine créatif', 'accessoire gourmand');
+  }
+  
+  if (interests.includes('Jardinage')) {
+    queries.push('kit jardinage', 'plante cadeau', 'outil jardin');
+  }
+  
+  if (interests.includes('Artisanat')) {
+    queries.push('kit créatif DIY', 'matériel artisanat');
+  }
+  
+  if (interests.includes('Mode')) {
+    queries.push('accessoire mode', 'bijou tendance');
+  }
+  
+  if (interests.includes('Enfance') || interests.includes('Bébé')) {
+    queries.push('jouet éveil bébé', 'livre enfant', 'vêtement bébé mignon');
+  }
+  
+  // Queries basées sur les notes
+  if (notes.toLowerCase().includes('nature')) {
+    queries.push('produit écologique', 'accessoire nature');
+  }
+  
+  if (notes.toLowerCase().includes('musique')) {
+    queries.push('accessoire musique', 'instrument débutant');
+  }
+  
+  // Queries basées sur l'âge
+  if (age > 60) {
+    queries.push('cadeau senior confort', 'accessoire bien-être');
+  } else if (age > 30) {
+    queries.push('cadeau adulte original', 'accessoire maison');
+  } else if (age > 15) {
+    queries.push('cadeau jeune adulte', 'accessoire tendance');
+  }
+  
+  // Queries basées sur l'événement
+  if (eventType === 'birthday') {
+    queries.push('cadeau anniversaire original', 'idée cadeau personnalisé');
+  }
+  
+  if (eventType === 'wedding') {
+    queries.push('cadeau mariage couple', 'décoration maison');
+  }
+  
+  // Queries génériques de fallback
+  if (queries.length < 3) {
+    queries.push('cadeau original', 'idée cadeau créative', 'accessoire utile');
+  }
+  
+  return queries.slice(0, 8); // Max 8 requêtes
+}
+
+async function searchAmazonProducts(query: string, serpApiKey: string, minPrice: number, maxPrice: number) {
+  const params = new URLSearchParams({
+    engine: 'amazon',
+    amazon_domain: 'amazon.fr',
+    language: 'fr_FR',
+    k: query,
+    low_price: minPrice.toString(),
+    high_price: maxPrice.toString(),
+    api_key: serpApiKey,
+  });
+  
+  try {
+    const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    const results = data.organic_results || [];
+    
+    return results
+      .filter((item: any) => {
+        const price = parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.'));
+        return price >= minPrice && price <= maxPrice && item.asin;
+      })
+      .map((item: any) => ({
+        title: item.title,
+        price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
+        asin: item.asin,
+        rating: item.rating,
+        reviewCount: item.reviews_count,
+        imageUrl: item.thumbnail,
+        link: item.link
+      }))
+      .slice(0, 5); // Max 5 produits par requête
+      
+  } catch (error) {
+    console.error('Erreur recherche SerpApi:', error);
+    return [];
+  }
+}
+
+function diversifyProducts(products: any[], maxProducts: number) {
+  // Supprimer les doublons par ASIN
+  const uniqueProducts = products.filter((product, index, self) => 
+    index === self.findIndex(p => p.asin === product.asin)
+  );
+  
+  // Trier par pertinence (prix médian et note élevée)
+  uniqueProducts.sort((a, b) => {
+    const scoreA = (a.rating || 3) * (a.reviewCount || 1);
+    const scoreB = (b.rating || 3) * (b.reviewCount || 1);
+    return scoreB - scoreA;
+  });
+  
+  return uniqueProducts.slice(0, maxProducts);
+}
+
 serve(async (req) => {
   console.log('🚀 Function started successfully');
   console.log('Request method:', req.method);
@@ -249,76 +382,88 @@ serve(async (req) => {
 
     console.log('👤 Person data:', personData);
 
-    // Create intelligent prompt for OpenAI with strict budget enforcement
-    const maxBudget = budget;
-    const minBudget = Math.max(10, Math.round(budget * 0.6)); // Au moins 60% du budget
-    const targetBudget = Math.round(budget * 0.85); // Cible 85% du budget
+    // 🔄 NOUVELLE APPROCHE: D'abord chercher les vrais produits Amazon, puis l'IA choisit parmi eux
+    console.log('🔍 Étape 1: Recherche préliminaire de produits Amazon dans le budget');
     
-    const prompt = `Génère 3 suggestions de cadeaux pour cette personne.
+    const maxBudget = budget;
+    const minBudget = Math.max(15, Math.round(budget * 0.7)); // Minimum 70% du budget pour éviter les produits trop bas
+    
+    // Générer des requêtes de recherche ciblées basées sur le profil
+    const searchQueries = generateTargetedSearchQueries(personData, eventType, budget);
+    console.log('📝 Requêtes de recherche générées:', searchQueries);
+    
+    // Chercher des produits réels sur Amazon pour chaque requête
+    const availableProducts = [];
+    const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+    
+    if (serpApiKey) {
+      for (const query of searchQueries.slice(0, 6)) { // Limiter à 6 requêtes max
+        try {
+          console.log(`🔍 Recherche Amazon: "${query}" (${minBudget}€-${maxBudget}€)`);
+          const results = await searchAmazonProducts(query, serpApiKey, minBudget, maxBudget);
+          
+          if (results && results.length > 0) {
+            availableProducts.push(...results.slice(0, 3)); // Max 3 produits par requête
+            console.log(`✅ ${results.length} produits trouvés pour "${query}"`);
+          }
+        } catch (error) {
+          console.error(`❌ Erreur recherche "${query}":`, error);
+        }
+      }
+    }
+    
+    console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
+    
+    // Limiter et diversifier les produits
+    const selectedProducts = diversifyProducts(availableProducts, 12);
+    
+    const prompt = `Tu es un expert en cadeaux. Voici ${selectedProducts.length} VRAIS PRODUITS AMAZON disponibles dans le budget ${minBudget}€-${maxBudget}€.
 
-PROFIL:
+PROFIL DE LA PERSONNE:
 - Nom: ${personData.name}
 - Âge: ${personData.age_years ? `${personData.age_years} ans` : 'Non spécifié'}
-- Genre: ${personData.gender || 'Non spécifié'}
 - Relation: ${personData.relationship || 'Non spécifié'}
-- Centres d'intérêt: ${personData.interests?.join(', ') || 'Aucun spécifié'}
-- Catégories préférées: ${personData.preferred_categories?.join(', ') || 'Aucune spécifiée'}
+- Intérêts: ${personData.interests?.join(', ') || 'Aucun'}
 - Notes: ${personData.notes || 'Aucune'}
-- Dernier cadeau: ${personData.last_gift || 'Aucun'}
-
-CONTEXTE:
 - Événement: ${eventType}
-- Budget MAXIMUM: ${maxBudget}€
 - Contexte: ${additionalContext || 'Aucun'}
 
-CONTRAINTES:
-- Tous les prix doivent être entre ${minBudget}€ et ${maxBudget}€
-- Pas de répétition du dernier cadeau
-- Être personnel et créatif
+PRODUITS DISPONIBLES:
+${selectedProducts.map((p, i) => `${i+1}. "${p.title}" - ${p.price}€ (ASIN: ${p.asin}) - ${p.rating ? `${p.rating}/5⭐` : 'Pas de note'}`).join('\n')}
 
-Format JSON requis:
-{
-  "suggestions": [
-    {
-      "title": "Titre du cadeau",
-      "description": "Description du cadeau et pourquoi il convient",
-      "estimatedPrice": 50,
-      "confidence": 0.9,
-      "reasoning": "Pourquoi ce choix",
-      "category": "catégorie",
-      "alternatives": ["alt1", "alt2"],
-      "purchaseLinks": []
-    }
-  ]
-}`;
+MISSION: Sélectionne exactement 3 produits parmi cette liste qui correspondent le mieux à la personne.
+- Utilise les TITRES EXACTS des produits
+- Utilise les PRIX EXACTS indiqués
+- Justifie chaque choix selon le profil
+- Ordre par pertinence décroissante
 
-    // Define strict JSON schema for structured outputs
+RÉPONSE OBLIGATOIRE au format JSON:`;
+
+    // Define strict JSON schema for structured outputs - Adapté pour sélection depuis vrais produits
     const responseSchema = {
       type: "json_schema",
       json_schema: {
-        name: "gift_suggestions",
+        name: "gift_selection",
         strict: true,
         schema: {
           type: "object",
           properties: {
-            suggestions: {
+            selections: {
               type: "array",
               items: {
                 type: "object",
                 properties: {
-                  title: {
+                  selectedTitle: {
                     type: "string",
-                    description: "Nom du cadeau"
+                    description: "Titre EXACT du produit sélectionné"
                   },
-                  description: {
-                    type: "string",
-                    description: "Description détaillée du cadeau"
-                  },
-                  estimatedPrice: {
+                  selectedPrice: {
                     type: "integer",
-                    minimum: minBudget,
-                    maximum: maxBudget,
-                    description: "Prix estimé en euros"
+                    description: "Prix EXACT du produit sélectionné"
+                  },
+                  selectedAsin: {
+                    type: "string",
+                    description: "ASIN du produit sélectionné"
                   },
                   confidence: {
                     type: "number",
@@ -328,29 +473,25 @@ Format JSON requis:
                   },
                   reasoning: {
                     type: "string",
-                    description: "Justification du choix"
+                    description: "Pourquoi ce produit correspond à la personne"
                   },
                   category: {
                     type: "string",
                     description: "Catégorie du cadeau"
-                  },
-                  alternatives: {
-                    type: "array",
-                    items: {
-                      type: "string"
-                    },
-                    description: "Alternatives possibles"
-                  },
-                  purchaseLinks: {
-                    type: "array",
-                    items: {
-                      type: "string"
-                    },
-                    description: "Liens d'achat (sera rempli plus tard)"
                   }
                 },
-                required: ["title", "description", "estimatedPrice", "confidence", "reasoning", "category", "alternatives", "purchaseLinks"],
+                required: ["selectedTitle", "selectedPrice", "selectedAsin", "confidence", "reasoning", "category"],
                 additionalProperties: false
+              },
+              minItems: 3,
+              maxItems: 3
+            }
+          },
+          required: ["selections"],
+          additionalProperties: false
+        }
+      }
+    };
               },
               minItems: 3,
               maxItems: 3
@@ -436,20 +577,55 @@ Format JSON requis:
       
       // With Structured Outputs, parsing should always succeed
       const parsedResponse = JSON.parse(aiContent);
-      suggestions = parsedResponse.suggestions || [];
-      console.log('🎁 Parsed suggestions count:', suggestions.length);
+      const selections = parsedResponse.selections || [];
+      console.log('🎯 Parsed selections count:', selections.length);
       
-      // Validate that we have exactly 3 suggestions as per schema
-      if (suggestions.length !== 3) {
-        console.error('❌ Invalid number of suggestions:', suggestions.length);
+      // Validate that we have exactly 3 selections as per schema
+      if (selections.length !== 3) {
+        console.error('❌ Invalid number of selections:', selections.length);
         return new Response(JSON.stringify({
           success: false,
-          error: 'Nombre de suggestions incorrect',
-          details: `Attendu: 3, reçu: ${suggestions.length}`
+          error: 'Nombre de sélections incorrect',
+          details: `Attendu: 3, reçu: ${selections.length}`
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+
+      // Convert selections to suggestions format for compatibility
+      suggestions = selections.map((selection: any, index: number) => {
+        // Find the corresponding product from availableProducts
+        const selectedProduct = availableProducts.find(p => p.asin === selection.selectedAsin);
+        
+        return {
+          title: selection.selectedTitle,
+          description: `${selection.reasoning} Ce produit a été sélectionné parmi les vrais produits Amazon disponibles.`,
+          estimatedPrice: selection.selectedPrice,
+          confidence: selection.confidence,
+          reasoning: selection.reasoning,
+          category: selection.category,
+          alternatives: [`Recherche Amazon: ${selection.selectedTitle}`],
+          purchaseLinks: selectedProduct ? [selectedProduct.link] : [],
+          priceInfo: {
+            displayPrice: selection.selectedPrice,
+            source: 'amazon_price',
+            originalEstimate: selection.selectedPrice,
+            amazonPrice: selection.selectedPrice
+          },
+          amazonData: selectedProduct ? {
+            asin: selectedProduct.asin,
+            rating: selectedProduct.rating,
+            reviewCount: selectedProduct.reviewCount,
+            actualPrice: selectedProduct.price,
+            imageUrl: selectedProduct.imageUrl,
+            productUrl: selectedProduct.link,
+            matchType: 'exact'
+          } : undefined
+        };
+      });
+      
+      console.log('✅ Converted selections to suggestions format');
+      
       
     } catch (parseError) {
       console.error('❌ Error parsing OpenAI response:', parseError);
@@ -463,196 +639,10 @@ Format JSON requis:
       });
     }
 
-    // 1) Utilitaire robuste : extraction ASIN depuis n'importe quel lien Amazon
-    const extractAsin = (link: string): string | null => {
-      if (!link) return null;
-      const pats = [
-        /\/dp\/([A-Z0-9]{10})/i,
-        /\/gp\/product\/([A-Z0-9]{10})/i,
-        /[?&]asin=([A-Z0-9]{10})/i,
-      ];
-      for (const re of pats) {
-        const m = link.match(re);
-        if (m) return m[1].toUpperCase();
-      }
-      return null;
-    };
-
-    // 2) Recherche Amazon SerpApi → renvoie le premier produit avec ASIN + infos utiles
-    async function searchAmazonProductSerpApi(query: string, serpApiKey: string, targetPrice?: number) {
-      const params = new URLSearchParams({
-        engine: 'amazon',
-        amazon_domain: 'amazon.fr',
-        language: 'fr_FR',
-        k: query,
-        api_key: serpApiKey,
-      });
-      
-      // Ajouter des filtres de prix intelligents basés sur le budget
-      if (targetPrice && targetPrice > 20) {
-        // Pour utiliser au mieux le budget, chercher des produits dans une fourchette plus élevée
-        const minPrice = Math.max(15, Math.round(targetPrice * 0.7)); // Minimum 70% du prix cible
-        const maxPrice = Math.round(targetPrice * 1.2); // Maximum 120% du prix cible
-        params.append('low_price', minPrice.toString());
-        params.append('high_price', maxPrice.toString());
-        console.log(`🎯 Recherche avec fourchette de prix optimisée: ${minPrice}€ - ${maxPrice}€`);
-      }
-      const r = await fetch(`https://serpapi.com/search.json?${params}`);
-      if (!r.ok) return null;
-      const data = await r.json();
-
-      const buckets = [
-        ...(data.sponsored_results || []),
-        ...(data.organic_results || []),
-        ...(data.search_results || []),
-      ];
-
-      for (const item of buckets.slice(0, 15)) {
-        const asin = item.asin || extractAsin(item.link);
-        if (!asin) continue;
-        const productUrl = `https://www.amazon.fr/dp/${asin}`;
-        return {
-          asin,
-          productUrl,
-          title: item.title,
-          price: item.price_string || item.price,
-          imageUrl: item.thumbnail || item.image,
-          rating: item.rating,
-          reviewCount: item.reviews_count,
-          matchType: 'direct' as const,
-        };
-      }
-      return null;
-    }
-
-    // 🛒 First, filter suggestions to respect budget (server-side validation)
-    console.log('💰 Filtering suggestions by budget...');
-    const budgetFilteredSuggestions = suggestions.filter((suggestion: any) => {
-      if (suggestion.estimatedPrice > budget) {
-        console.log(`❌ Filtering out "${suggestion.title}" - Price ${suggestion.estimatedPrice}€ exceeds budget ${budget}€`);
-        return false;
-      }
-      return true;
-    });
+    // ✅ Avec la nouvelle approche, les suggestions sont déjà enrichies et validées
+    console.log('💰 Final budget validation for selected products...');
     
-    console.log(`📊 Budget filter: ${suggestions.length} -> ${budgetFilteredSuggestions.length} suggestions`);
-    
-    // 🛒 Enrich filtered suggestions with Amazon data
-    console.log('🛒 Enriching suggestions with Amazon data...');
-    const enrichedSuggestions = await Promise.all(
-      budgetFilteredSuggestions.map(async (suggestion: any) => {
-        try {
-          // Requête plus précise : marque + modèle si dispo
-          let baseQuery = [suggestion.brand, suggestion.canonical_name || suggestion.title]
-            .filter(Boolean)
-            .join(' ');
-          
-          // Améliorer la recherche selon le budget pour éviter les produits trop bas de gamme
-          if (suggestion.estimatedPrice > 40) {
-            baseQuery += ' qualité premium haut de gamme';
-          } else if (suggestion.estimatedPrice > 25) {
-            baseQuery += ' qualité supérieure';
-          }
-          
-          const query = baseQuery || `${suggestion.title} ${suggestion.category}`;
-          console.log(`🔍 Searching Amazon for: ${query} (prix cible: ${suggestion.estimatedPrice}€)`);      
-
-          const result = await searchAmazonProductSerpApi(query, serpApiKey, suggestion.estimatedPrice);
-
-          if (result) {
-            console.log(`✅ Found Amazon product with ASIN: ${result.asin}`);
-        suggestion.amazonData = {
-          asin: result.asin,
-          productUrl: result.productUrl,
-          imageUrl: result.imageUrl || null,
-          rating: result.rating || null,
-          reviewCount: result.reviewCount || 0,
-          matchType: result.matchType,
-          // on garde un searchUrl de secours
-          searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`
-        };
-        suggestion.purchaseLinks = [result.productUrl]; // 🔒 lien direct produit
-        // Ajouter l'image du produit à la suggestion
-        if (result.imageUrl) {
-          suggestion.imageUrl = result.imageUrl;
-        }
-        // Mise à jour de prix avec logique optimisée pour utiliser le budget
-        let finalPrice = suggestion.estimatedPrice;
-        let priceSource = 'ai_estimate';
-        
-        if (result.price) {
-          const p = parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.'));
-          if (!isNaN(p) && p > 0 && p <= budget) {
-            const estimatedPrice = suggestion.estimatedPrice;
-            const priceRatio = p / estimatedPrice;
-            const budgetRatio = p / budget;
-            
-            // Logique améliorée: privilégier les produits qui utilisent bien le budget
-            if (priceRatio >= 0.5 && priceRatio <= 1.8 && budgetRatio >= 0.4) {
-              // Prix Amazon acceptable ET utilise au moins 40% du budget
-              finalPrice = Math.round(p);
-              priceSource = 'amazon_price';
-              
-              if (budgetRatio >= 0.7) {
-                // Utilise bien le budget (>70%) - bonus de confiance
-                suggestion.confidence = Math.min(0.95, (suggestion.confidence || 0.8) * 1.1);
-                console.log(`✅ Prix Amazon optimal (${finalPrice}€) utilise bien le budget (${Math.round(budgetRatio * 100)}%) pour "${suggestion.title}"`);
-              } else if (priceRatio < 0.7) {
-                // Prix plus bas que prévu mais acceptable
-                suggestion.confidence = Math.max(0.65, (suggestion.confidence || 0.8) * 0.9);
-                console.log(`✅ Prix Amazon (${finalPrice}€) accepté mais en dessous de l'estimation pour "${suggestion.title}"`);
-              } else {
-                console.log(`✅ Prix Amazon (${finalPrice}€) accepté pour "${suggestion.title}" (ratio budget: ${Math.round(budgetRatio * 100)}%)`);
-              }
-            } else if (budgetRatio < 0.4) {
-              // Prix trop bas par rapport au budget - ajuster vers le haut
-              finalPrice = Math.min(budget, Math.max(p, Math.round(budget * 0.5)));
-              priceSource = 'adjusted_up';
-              suggestion.confidence = Math.max(0.6, (suggestion.confidence || 0.8) * 0.8);
-              console.log(`⚠️ Prix Amazon trop bas (${p}€) pour le budget ${budget}€ - Ajusté à ${finalPrice}€ pour "${suggestion.title}"`);
-            } else if (priceRatio < 0.5) {
-              // Prix beaucoup trop bas par rapport à l'estimation - probablement pas le bon produit
-              console.log(`❌ Prix Amazon (${p}€) trop bas vs estimation IA (${estimatedPrice}€) pour "${suggestion.title}" - Conservation prix estimé`);
-            } else {
-              console.log(`⚠️ Prix Amazon (${p}€) inadéquat pour "${suggestion.title}" - Conservation prix estimé`);
-            }
-          } else if (p > budget) {
-            console.log(`❌ Prix Amazon (${p}€) dépasse le budget (${budget}€) pour "${suggestion.title}"`);
-          }
-        }
-        
-        // Ajouter des métadonnées sur le prix pour l'interface utilisateur
-        suggestion.priceInfo = {
-          displayPrice: finalPrice,
-          source: priceSource,
-          originalEstimate: suggestion.estimatedPrice,
-          amazonPrice: result.price ? parseFloat(String(result.price).replace(/[^\d,]/g, '').replace(',', '.')) : null
-        };
-        
-        // Double vérification: si même le prix final dépasse le budget, l'ajuster
-        if (finalPrice > budget) {
-          finalPrice = Math.min(budget, Math.round(budget * 0.9));
-          console.log(`🔧 Ajustement final du prix pour "${suggestion.title}": ${finalPrice}€`);
-        }
-        
-        suggestion.estimatedPrice = finalPrice;
-          } else {
-            console.log(`❌ No Amazon results for: ${query}`);
-            // fallback propre
-            const searchUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(query)}`;
-            suggestion.amazonData = { matchType: 'search', searchUrl };
-            suggestion.purchaseLinks = [searchUrl];
-          }
-          return suggestion;
-        } catch (e) {
-          console.error(`SerpApi enrich error for "${suggestion.title}":`, e);
-          return suggestion; // pas de crash
-        }
-      })
-    );
-
-    // Final budget validation - remove any suggestion that still exceeds budget
-    const finalValidatedSuggestions = enrichedSuggestions.filter((suggestion: any) => {
+    const finalValidatedSuggestions = suggestions.filter((suggestion: any) => {
       if (suggestion.estimatedPrice > budget) {
         console.log(`❌ Final filter: removing "${suggestion.title}" - Price ${suggestion.estimatedPrice}€ exceeds budget ${budget}€`);
         return false;
@@ -660,7 +650,7 @@ Format JSON requis:
       return true;
     });
     
-    console.log(`🎁 Final suggestions after budget validation: ${finalValidatedSuggestions.length}`);
+    console.log(`🎁 Final suggestions after validation: ${finalValidatedSuggestions.length}`);
     
     // If no suggestions remain after budget filtering, return an error
     if (finalValidatedSuggestions.length === 0) {
