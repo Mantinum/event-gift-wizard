@@ -394,7 +394,6 @@ serve(async (req) => {
     
     // Chercher des produits réels sur Amazon pour chaque requête
     const availableProducts = [];
-    const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
     
     if (serpApiKey) {
       for (const query of searchQueries.slice(0, 6)) { // Limiter à 6 requêtes max
