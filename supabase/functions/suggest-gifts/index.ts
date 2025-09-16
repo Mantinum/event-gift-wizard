@@ -413,30 +413,18 @@ serve(async (req) => {
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
-    // Limiter et diversifier les produits
-    const selectedProducts = diversifyProducts(availableProducts, 12);
+    // Limiter et diversifier les produits (réduire pour éviter limite tokens)
+    const selectedProducts = diversifyProducts(availableProducts, 8); // Réduit de 12 à 8
     
-    const prompt = `Tu es un expert en cadeaux. Voici ${selectedProducts.length} VRAIS PRODUITS AMAZON disponibles dans le budget ${minBudget}€-${maxBudget}€.
+    const prompt = `Expert cadeaux: sélectionne 3 produits Amazon pour ${personData.name}.
 
-PROFIL DE LA PERSONNE:
-- Nom: ${personData.name}
-- Âge: ${personData.age_years ? `${personData.age_years} ans` : 'Non spécifié'}
-- Relation: ${personData.relationship || 'Non spécifié'}
-- Intérêts: ${personData.interests?.join(', ') || 'Aucun'}
-- Notes: ${personData.notes || 'Aucune'}
-- Événement: ${eventType}
-- Contexte: ${additionalContext || 'Aucun'}
+PROFIL:
+Âge: ${personData.age_years || 'N/A'} | Intérêts: ${personData.interests?.join(', ') || 'Aucun'} | Notes: ${personData.notes || 'Aucune'}
 
-PRODUITS DISPONIBLES:
-${selectedProducts.map((p, i) => `${i+1}. "${p.title}" - ${p.price}€ (ASIN: ${p.asin}) - ${p.rating ? `${p.rating}/5⭐` : 'Pas de note'}`).join('\n')}
+PRODUITS DISPONIBLES (${minBudget}-${maxBudget}€):
+${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 60)}... - ${p.price}€ (${p.asin})`).join('\n')}
 
-MISSION: Sélectionne exactement 3 produits parmi cette liste qui correspondent le mieux à la personne.
-- Utilise les TITRES EXACTS des produits
-- Utilise les PRIX EXACTS indiqués
-- Justifie chaque choix selon le profil
-- Ordre par pertinence décroissante
-
-RÉPONSE OBLIGATOIRE au format JSON:`;
+Sélectionne 3 produits avec titres/prix/ASIN exacts. Format JSON obligatoire:`;
 
     // Define strict JSON schema for structured outputs - Adapté pour sélection depuis vrais produits
     const responseSchema = {
@@ -501,19 +489,19 @@ RÉPONSE OBLIGATOIRE au format JSON:`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5',
+        model: 'gpt-5-2025-08-07', // Utiliser le bon nom du modèle GPT-5
         response_format: responseSchema,
         messages: [
           {
             role: 'system',
-            content: 'Tu es un expert en cadeaux personnalisés. Utilise le schéma JSON fourni pour structurer tes réponses de manière précise et conforme.'
+            content: 'Expert cadeaux. Utilise le JSON schema fourni. Sois concis et précis.'
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        max_completion_tokens: 3000
+        max_completion_tokens: 1500 // Réduit de 3000 à 1500 pour éviter limite tokens
       }),
     });
 
