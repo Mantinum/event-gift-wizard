@@ -269,15 +269,19 @@ const GiftSuggestions = ({ persons }: GiftSuggestionsProps) => {
                       </Badge>
                       <Badge variant="outline" className="text-xs">
                         <Euro className="w-3 h-3 mr-1" />
-                        ~{suggestion.priceInfo?.displayPrice || suggestion.estimatedPrice}€
-                        {suggestion.priceInfo?.source === 'amazon_price' && (
-                          <span className="text-green-600 ml-1">✓</span>
+                        {suggestion.priceInfo?.source === 'amazon_price' ? (
+                          <>{suggestion.priceInfo.displayPrice}€ <span className="text-green-600">✓ Amazon</span></>
+                        ) : suggestion.priceInfo?.amazonPrice && suggestion.priceInfo.amazonPrice > (suggestion.priceInfo.displayPrice || suggestion.estimatedPrice) ? (
+                          <>~{suggestion.priceInfo.displayPrice || suggestion.estimatedPrice}€ <span className="text-orange-600">(ajusté budget)</span></>
+                        ) : (
+                          <>~{suggestion.priceInfo?.displayPrice || suggestion.estimatedPrice}€</>
                         )}
                       </Badge>
-                      {suggestion.priceInfo?.source === 'ai_estimate' && suggestion.priceInfo?.amazonPrice && 
-                       suggestion.priceInfo.amazonPrice !== suggestion.priceInfo.originalEstimate && (
+                      {suggestion.priceInfo?.amazonPrice && 
+                       suggestion.priceInfo.amazonPrice !== (suggestion.priceInfo.displayPrice || suggestion.estimatedPrice) &&
+                       suggestion.priceInfo.source !== 'amazon_price' && (
                         <Badge variant="secondary" className="text-xs text-orange-600">
-                          Amazon: {suggestion.priceInfo.amazonPrice}€
+                          Prix Amazon: {suggestion.priceInfo.amazonPrice}€
                         </Badge>
                       )}
                     </div>
