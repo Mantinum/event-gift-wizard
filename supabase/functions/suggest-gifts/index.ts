@@ -116,10 +116,20 @@ async function searchAmazonProducts(query: string, serpApiKey: string, minPrice:
         reviewCount: item.reviews_count,
         imageUrl: item.thumbnail,
         link: item.link,
-        description: item.snippet || item.description || null // Récupérer la vraie description Amazon
+        snippet: item.snippet,
+        description: item.description,
+        displayDescription: item.snippet || item.description || null // Récupérer la vraie description Amazon
       }))
       .slice(0, 5); // Max 5 produits par requête
       
+    console.log(`✅ ${products.length} produits trouvés pour "${query}"`);
+    console.log('🔍 Exemple de produit récupéré:', products[0] ? {
+      title: products[0].title,
+      displayDescription: products[0].displayDescription,
+      snippet: products[0].snippet,
+      description: products[0].description
+    } : 'Aucun produit');
+    return products;
   } catch (error) {
     console.error('Erreur recherche SerpApi:', error);
     return [];
@@ -562,8 +572,11 @@ JSON obligatoire:`;
         
         // Generate a contextual description based on product title and person profile
         const generateDescription = (title: string, person: any, eventType: string, productDescription?: string) => {
+          console.log('🔍 Génération description:', { title, productDescription, hasDescription: !!productDescription });
+          
           // Si on a la vraie description du produit Amazon, l'utiliser en priorité
           if (productDescription && productDescription.trim() && productDescription.trim() !== title) {
+            console.log('✅ Utilisation description Amazon:', productDescription.trim());
             return `${productDescription.trim()} Sélectionné spécialement pour ${person.name}.`;
           }
           
@@ -617,7 +630,7 @@ JSON obligatoire:`;
         
         return {
           title: selection.selectedTitle,
-          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct?.description),
+          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct?.displayDescription),
           estimatedPrice: selection.selectedPrice,
           confidence: selection.confidence,
           reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
@@ -638,7 +651,7 @@ JSON obligatoire:`;
             imageUrl: selectedProduct.imageUrl,
             productUrl: selectedProduct.link,
             matchType: 'exact',
-            description: selectedProduct.description // Ajouter la description Amazon
+            description: selectedProduct.displayDescription // Ajouter la description Amazon
           } : undefined
         };
       });
