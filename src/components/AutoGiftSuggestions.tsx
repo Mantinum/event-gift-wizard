@@ -25,6 +25,7 @@ interface AutoGiftSuggestionsProps {
 const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestionsProps) => {
   const { suggestions, loading, generateSuggestions } = useGiftSuggestions();
   const [generatedForEvent, setGeneratedForEvent] = useState<string | null>(null);
+  const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
 
   const getEventTypeInfo = (type: string) => {
     return EVENT_TYPES.find(et => et.value === type) || EVENT_TYPES[0];
@@ -43,13 +44,19 @@ const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestio
     const person = persons.find(p => p.id === event.personId);
     if (!person) return;
 
+    setLoadingEventId(event.id);
     setGeneratedForEvent(event.id);
-    await generateSuggestions({
-      personId: person.id,
-      eventType: event.type,
-      budget: event.budget,
-      additionalContext: `Événement: ${event.title} le ${new Date(event.date).toLocaleDateString('fr-FR')}`
-    });
+    
+    try {
+      await generateSuggestions({
+        personId: person.id,
+        eventType: event.type,
+        budget: event.budget,
+        additionalContext: `Événement: ${event.title} le ${new Date(event.date).toLocaleDateString('fr-FR')}`
+      });
+    } finally {
+      setLoadingEventId(null);
+    }
   };
 
   const getConfidenceColor = (confidence: number) => {
@@ -85,6 +92,7 @@ const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestio
         const person = persons.find(p => p.id === event.personId);
         const daysUntil = differenceInCalendarDays(startOfDay(parseISO(event.date)), startOfDay(new Date()));
         const hasGeneratedSuggestions = generatedForEvent === event.id && suggestions.length > 0;
+        const isLoadingThisEvent = loadingEventId === event.id;
         const eventTypeInfo = getEventTypeInfo(event.type);
         
         return (
@@ -142,14 +150,14 @@ const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestio
                   </div>
                 </div>
                 
-                {!hasGeneratedSuggestions ? (
+                 {!hasGeneratedSuggestions ? (
                   <Button
                     onClick={() => handleGenerateSuggestions(event)}
-                    disabled={loading}
+                    disabled={isLoadingThisEvent}
                     size="sm"
                     className="bg-gradient-primary text-white hover:shadow-glow transition-all duration-300"
                   >
-                    {loading ? (
+                    {isLoadingThisEvent ? (
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     ) : (
                       <Sparkles className="h-4 w-4 mr-2" />
@@ -159,12 +167,12 @@ const AutoGiftSuggestions = ({ events, persons, onEditEvent }: AutoGiftSuggestio
                 ) : (
                   <Button
                     onClick={() => handleGenerateSuggestions(event)}
-                    disabled={loading}
+                    disabled={isLoadingThisEvent}
                     size="sm"
                     variant="outline"
                     className="hover:bg-primary hover:text-white transition-colors"
                   >
-                    {loading ? (
+                    {isLoadingThisEvent ? (
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     ) : (
                       <Sparkles className="h-4 w-4 mr-2" />
