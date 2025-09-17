@@ -563,7 +563,7 @@ JSON obligatoire:`;
             content: prompt
           }
         ],
-        max_completion_tokens: 800 // Réduit drastiquement pour éviter limite tokens
+        max_completion_tokens: 300 // Réduit encore plus pour éviter troncature
       }),
     });
 
