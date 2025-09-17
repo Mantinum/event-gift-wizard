@@ -563,38 +563,51 @@ JSON obligatoire:`;
         break;
     }
 
-    async function callOpenAI(model: string, maxTokens = 1200) {
-      const isGPT5 = model.startsWith('gpt-5');
-      const tokensParam = isGPT5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
-      
-      return await fetch('https://api.openai.com/v1/chat/completions', {
+    // --- 1) Appel Chat Completions (non GPT-5) ---
+    async function callChatCompletions(model: string, maxTokens = 1200, userPrompt = prompt) {
+      return fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAIKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
           messages: [
-            {
-              role: 'system',
-              content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}`
-            },
-            {
-              role: 'user',
-              content: prompt
-            }
+            { role: 'system', content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}` },
+            { role: 'user', content: userPrompt }
           ],
-          ...tokensParam,
-          temperature: 0.2, // Température supportée avec Chat Completions
-          response_format: { type: "json_object" } // Format JSON pour Chat Completions
-        }),
+          max_tokens: maxTokens,
+          temperature: 0.2,
+          response_format: { type: 'json_object' }
+        })
       });
     }
 
-    console.log('🤖 Calling OpenAI Chat Completions with GPT-5');
+    // --- 2) Appel Responses API (GPT-5) ---
+    async function callResponses(model: string, maxOut = 1200, userPrompt = prompt) {
+      // On fusionne system + user en un seul "input" pour Responses API
+      const systemLine =
+        `Sélectionne 3 produits parmi la liste. Sois concis. ` +
+        `Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. ` +
+        `Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}\n\n`;
+      const fullInput = systemLine + userPrompt;
+      return fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          input: fullInput,
+          // Pour GPT-5, on utilise max_output_tokens
+          max_output_tokens: maxOut,
+          // Pour forcer le JSON, on peut garder le format simple
+          response_format: { type: 'json_object' }
+          // (Optionnel) si jamais ça bloque, on peut retirer response_format
+        })
+      });
+    }
+
+    console.log('🤖 Calling OpenAI with model preference: GPT-5');
     let modelUsed = 'gpt-5';
-    let openAIResponse = await callOpenAI(modelUsed, 1200);
+    // GPT-5 -> Responses API, sinon Chat
+    let openAIResponse = await callResponses(modelUsed, 1200);
 
     if (!openAIResponse.ok) {
       // Lis le JSON d'erreur proprement
@@ -608,7 +621,7 @@ JSON obligatoire:`;
       if (openAIResponse.status === 404 || type === 'model_not_found' || /model .* not found/i.test(msg)) {
         console.warn('↩️ Fallback automatique vers gpt-4o-mini');
         modelUsed = 'gpt-4o-mini';
-        openAIResponse = await callOpenAI(modelUsed, 1200);
+        openAIResponse = await callChatCompletions(modelUsed, 1200);
         if (!openAIResponse.ok) {
           const err2 = await openAIResponse.text();
           console.error('❌ Fallback gpt-4o-mini a aussi échoué:', openAIResponse.status, err2);
@@ -619,7 +632,7 @@ JSON obligatoire:`;
             details: err2
           }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-      } else if (openAIResponse.status === 400 && /context_length/i.test(msg)) {
+      } else if (openAIResponse.status === 400 && /context_length|maximum context length|too long/i.test(msg)) {
         console.warn('⚠️ Contexte trop long → on compresse le prompt et on retente');
         // 1) Réduire le bloc PRODUITS
         const shorterProducts = selectedProducts.slice(0, 3);
@@ -629,24 +642,12 @@ ${contextInfo}
 PRODUITS:
 ${shorterProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 40)} (${p.asin})`).join('\n')}
 JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3]}`;
-        // 2) Re-appel (même modèle)
-        const isGPT5Retry = modelUsed.startsWith('gpt-5');
-        const tokensParamRetry = isGPT5Retry ? { max_completion_tokens: 900 } : { max_tokens: 900 };
-        
-        openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelUsed,
-            messages: [
-              { role: 'system', content: `Réponds UNIQUEMENT en JSON valide. ${promptVariation}` },
-              { role: 'user', content: promptShort }
-            ],
-            ...tokensParamRetry,
-            temperature: 0.2,
-            response_format: { type: 'json_object' }
-          })
-        });
+        // 2) Re-appel (même modèle & bon endpoint)
+        if (modelUsed.startsWith('gpt-5')) {
+          openAIResponse = await callResponses(modelUsed, 900, promptShort);
+        } else {
+          openAIResponse = await callChatCompletions(modelUsed, 900, promptShort);
+        }
         if (!openAIResponse.ok) {
           const err3 = await openAIResponse.text();
           console.error('❌ Retry après compression a échoué:', openAIResponse.status, err3);
@@ -669,14 +670,13 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       }
     }
 
-    // Parse the AI response - with Structured Outputs, JSON is guaranteed
+    // Parse la réponse (endpoints différents)
     let suggestions = [];
     try {
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
-      console.log('🧠 finish_reason:', openAIData.choices?.[0]?.finish_reason, 'model:', openAIData.model);
-      console.log('📊 Usage:', openAIData.usage);
-      // évite de logger tout l'objet (trop verbeux)
+      console.log('🧠 model:', openAIData.model || modelUsed);
+      // Chat → choices[0].message.content ; Responses → output_text
       
       // Check if response was truncated due to token limit
       const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
@@ -707,8 +707,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         }
       }
       
-      // Try different ways to get the content from Chat Completions API
-      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
+      const aiContent = modelUsed.startsWith('gpt-5')
+        ? (openAIData.output_text ?? openAIData?.output?.[0]?.content?.[0]?.text ?? '')
+        : (openAIData.choices?.[0]?.message?.content ?? '');
       console.log('🧠 AI content length:', aiContent.length);
       console.log('📝 AI content preview:', aiContent.substring(0, 200));
       
