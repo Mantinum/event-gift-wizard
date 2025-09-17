@@ -588,18 +588,14 @@ JSON obligatoire:`;
         `Sélectionne 3 produits parmi la liste. Sois concis. ` +
         `Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. ` +
         `Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}\n\n`;
-      const fullInput = systemLine + userPrompt;
       return fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model,
-          input: fullInput,
-          // Pour GPT-5, on utilise max_output_tokens
-          max_output_tokens: maxOut,
-          // Pour forcer le JSON, on peut garder le format simple
-          response_format: { type: 'json_object' }
-          // (Optionnel) si jamais ça bloque, on peut retirer response_format
+          input: `${systemLine}${userPrompt}`,
+          max_output_tokens: maxOut
+          // ⚠️ PAS de response_format ici - non supporté par Responses API
         })
       });
     }
@@ -614,8 +610,10 @@ JSON obligatoire:`;
       let errJson: any = {};
       try { errJson = await openAIResponse.json(); } catch { /* ignore */ }
       const type = errJson?.error?.type;
+      const param = errJson?.error?.param;
+      const code = errJson?.error?.code;
       const msg  = errJson?.error?.message || (await openAIResponse.text().catch(()=>'')) || 'Unknown error';
-      console.error('❌ OpenAI error:', openAIResponse.status, type, msg);
+      console.error('❌ OpenAI error:', openAIResponse.status, type, code, param, msg);
 
       // Fallback auto si le modèle n'est pas accessible
       if (openAIResponse.status === 404 || type === 'model_not_found' || /model .* not found/i.test(msg)) {
@@ -681,35 +679,37 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       // Check if response was truncated due to token limit
       const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
       if (finishReason === 'length') {
-        console.warn('⚠️ Troncature → on retente avec max_tokens ↑');
-        const isGPT5Retry = modelUsed.startsWith('gpt-5');
-        const tokensParamRetry = isGPT5Retry ? { max_completion_tokens: 1600 } : { max_tokens: 1600 };
-        
-        const retry = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelUsed,
-            messages: [
-              { role: 'system', content: `Réponds UNIQUEMENT en JSON valide. ${promptVariation}` },
-              { role: 'user', content: prompt }
-            ],
-            ...tokensParamRetry,
-            temperature: 0.2,
-            response_format: { type: 'json_object' }
-          })
-        });
-        if (retry.ok) {
-          const rj = await retry.json();
-          openAIData.choices = rj.choices;
+        console.warn('⚠️ Troncature → retry avec budget de tokens ↑');
+        if (modelUsed.startsWith('gpt-5')) {
+          // Responses API
+          const retry = await callResponses(modelUsed, 1600, prompt);
+          if (retry.ok) {
+            const rj = await retry.json();
+            Object.assign(openAIData, rj); // réutilise la nouvelle sortie
+          }
         } else {
-          console.warn('⚠️ Retry length a échoué, on continue avec la première sortie.');
+          // Chat Completions
+          const retry = await callChatCompletions(modelUsed, 1600, prompt);
+          if (retry.ok) {
+            const rj = await retry.json();
+            openAIData.choices = rj.choices;
+          }
         }
       }
       
-      const aiContent = modelUsed.startsWith('gpt-5')
-        ? (openAIData.output_text ?? openAIData?.output?.[0]?.content?.[0]?.text ?? '')
-        : (openAIData.choices?.[0]?.message?.content ?? '');
+      // Chat → choices[0].message.content ; Responses → output_text  
+      let aiContent = '';
+      if (modelUsed.startsWith('gpt-5')) {
+        if (typeof openAIData.output_text === 'string') {
+          aiContent = openAIData.output_text;
+        } else if (Array.isArray(openAIData.output)) {
+          const first = openAIData.output[0];
+          const part = first?.content?.find?.((c: any) => c?.text);
+          aiContent = part?.text || '';
+        }
+      } else {
+        aiContent = openAIData.choices?.[0]?.message?.content ?? '';
+      }
       console.log('🧠 AI content length:', aiContent.length);
       console.log('📝 AI content preview:', aiContent.substring(0, 200));
       
