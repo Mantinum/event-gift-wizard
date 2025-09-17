@@ -553,17 +553,17 @@ JSON obligatoire:`;
         break;
     }
 
-    console.log('🤖 Calling OpenAI API with variation:', randomPromptVariation);
-    const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    console.log('🤖 Calling OpenAI Responses API with GPT-5 and variation:', randomPromptVariation);
+    const openAIResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Modèle sans reasoning tokens
+        model: 'gpt-5',
         response_format: responseSchema,
-        messages: [
+        input: [
           {
             role: 'system',
             content: `Sélectionne 3 produits parmi la liste. Sois concis. ${promptVariation}`
@@ -573,8 +573,9 @@ JSON obligatoire:`;
             content: prompt
           }
         ],
-        max_tokens: 500, // Utilise max_tokens pour gpt-4o-mini
-        temperature: 0.7 // Température supportée par gpt-4o-mini
+        max_output_tokens: 1200, // Utilise max_output_tokens pour Responses API
+        reasoning: { effort: 'minimal' }, // Réduit le reasoning interne GPT-5
+        text: { verbosity: 'low' } // Réponse plus concise
       }),
     });
 
@@ -599,8 +600,9 @@ JSON obligatoire:`;
       console.log('📊 Usage:', openAIData.usage);
       
       // Check if response was truncated due to token limit
-      const finishReason = openAIData.choices?.[0]?.finish_reason;
-      if (finishReason === 'length') {
+      // Note: Responses API might have different finish_reason structure
+      const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
+      if (finishReason === 'length' || finishReason === 'max_output_tokens') {
         console.error('❌ OpenAI response truncated due to token limit');
         return new Response(JSON.stringify({
           success: false,
@@ -611,7 +613,7 @@ JSON obligatoire:`;
         });
       }
       
-      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
+      const aiContent = openAIData.output_text ?? '';
       console.log('🧠 AI content length:', aiContent.length);
       
       if (!aiContent || aiContent.trim().length === 0) {
