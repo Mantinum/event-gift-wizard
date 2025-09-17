@@ -477,10 +477,20 @@ serve(async (req) => {
     // Limiter drastiquement les produits pour éviter limite tokens
     const selectedProducts = diversifyProducts(availableProducts, 4); // Réduit à 4 produits max
     
-    const prompt = `Sélectionne 3 produits pour ${personData.name} (${personData.age_years || '?'}ans, intérêts: ${personData.interests?.slice(0,2).join(',') || 'N/A'}).
+    // Build enhanced context with personal notes priority
+    const personalNotes = personData.notes || '';
+    const contextInfo = personalNotes 
+      ? `Notes personnelles: "${personalNotes}"`
+      : `Âge: ${personData.age_years || '?'} ans, Intérêts: ${personData.interests?.slice(0,3).join(', ') || 'N/A'}, Relation: ${personData.relationship || 'N/A'}`;
 
-PRODUITS (${minBudget}-${maxBudget}€):
-${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 40)} - ${p.price}€ (${p.asin})`).join('\n')}
+    const prompt = `Sélectionne 3 produits pour ${personData.name}.
+${contextInfo}
+Événement: ${eventType}, Budget: ${minBudget}-${maxBudget}€
+
+PRODUITS DISPONIBLES:
+${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 50)} - ${p.price}€ (${p.asin})`).join('\n')}
+
+${personalNotes ? 'Utilise prioritairement les notes personnelles pour choisir les produits les plus adaptés.' : 'Base-toi sur les centres d\'intérêt et l\'âge pour faire les meilleurs choix.'}
 
 JSON obligatoire:`;
 

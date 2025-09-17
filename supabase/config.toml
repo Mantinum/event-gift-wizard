@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.create-test-notification]
 verify_jwt = true
+
+[functions.generate-personal-note]
+verify_jwt = true

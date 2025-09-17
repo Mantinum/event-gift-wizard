@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
+import { usePersonalNoteGeneration } from '@/hooks/usePersonalNoteGeneration';
 import { 
   Plus, 
   X, 
@@ -18,7 +19,9 @@ import {
   User, 
   Save,
   Sparkles,
-  Euro
+  Euro,
+  Wand2,
+  RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -57,6 +60,7 @@ const PersonProfileModal = ({
 
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [newInterest, setNewInterest] = useState('');
+  const { isGenerating, generatePersonalNote } = usePersonalNoteGeneration();
 
   // Réinitialiser le formulaire quand la personne change
   useEffect(() => {
@@ -144,6 +148,35 @@ const PersonProfileModal = ({
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  const handleGenerateNote = async () => {
+    if (!formData.name || !formData.relationship) {
+      toast({
+        title: "Information manquante",
+        description: "Veuillez renseigner au moins le nom et la relation",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const age = formData.birthday ? new Date().getFullYear() - new Date(formData.birthday).getFullYear() : undefined;
+    
+    const note = await generatePersonalNote({
+      name: formData.name,
+      gender: formData.gender,
+      age,
+      relationship: formData.relationship,
+      interests: selectedInterests
+    });
+
+    if (note) {
+      setFormData({ ...formData, notes: note });
+      toast({
+        title: "Note générée",
+        description: "La note personnelle a été générée avec succès",
+      });
+    }
   };
 
   return (
@@ -347,14 +380,41 @@ const PersonProfileModal = ({
               </div>
               
               <div>
-                <Label htmlFor="notes" className="text-sm font-medium">Notes personnelles</Label>
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="notes" className="text-sm font-medium">Notes personnelles</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateNote}
+                    disabled={isGenerating || !formData.name || !formData.relationship}
+                    className="text-xs hover:bg-primary/10"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                        Génération...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-3 h-3 mr-1" />
+                        Générer automatiquement
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <Textarea
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Préférences spéciales, allergies, goûts particuliers..."
+                  placeholder="Décrivez cette personne: ses goûts, sa personnalité, ses préférences... ou cliquez sur 'Générer automatiquement'"
                   className="mt-1 min-h-[80px]"
                 />
+                {formData.notes && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ces informations aideront l'IA à proposer des cadeaux plus personnalisés
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
