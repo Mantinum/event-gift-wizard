@@ -553,7 +553,7 @@ JSON obligatoire:`;
         break;
     }
 
-    console.log('🤖 Calling OpenAI Responses API with GPT-5 and variation:', randomPromptVariation);
+    console.log('🤖 Calling OpenAI Chat Completions with GPT-5');
     const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -596,6 +596,7 @@ JSON obligatoire:`;
     try {
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
+      console.log('🧠 finish_reason:', openAIData.choices?.[0]?.finish_reason, 'model:', openAIData.model);
       console.log('📊 Usage:', openAIData.usage);
       console.log('🔍 OpenAI response structure:', JSON.stringify(openAIData, null, 2));
       
