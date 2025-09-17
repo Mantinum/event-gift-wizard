@@ -115,7 +115,8 @@ async function searchAmazonProducts(query: string, serpApiKey: string, minPrice:
         rating: item.rating,
         reviewCount: item.reviews_count,
         imageUrl: item.thumbnail,
-        link: item.link
+        link: item.link,
+        description: item.snippet || item.description || null // Récupérer la vraie description Amazon
       }))
       .slice(0, 5); // Max 5 produits par requête
       
@@ -560,7 +561,12 @@ JSON obligatoire:`;
         const selectedProduct = availableProducts.find(p => p.asin === selection.selectedAsin);
         
         // Generate a contextual description based on product title and person profile
-        const generateDescription = (title: string, person: any, eventType: string) => {
+        const generateDescription = (title: string, person: any, eventType: string, productDescription?: string) => {
+          // Si on a la vraie description du produit Amazon, l'utiliser en priorité
+          if (productDescription && productDescription.trim() && productDescription.trim() !== title) {
+            return `${productDescription.trim()} Sélectionné spécialement pour ${person.name}.`;
+          }
+          
           const interests = person.interests || [];
           const age = person.age_years || 0;
           const name = person.name;
@@ -611,7 +617,7 @@ JSON obligatoire:`;
         
         return {
           title: selection.selectedTitle,
-          description: generateDescription(selection.selectedTitle, personData, eventType),
+          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct?.description),
           estimatedPrice: selection.selectedPrice,
           confidence: selection.confidence,
           reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
@@ -631,7 +637,8 @@ JSON obligatoire:`;
             actualPrice: selectedProduct.price,
             imageUrl: selectedProduct.imageUrl,
             productUrl: selectedProduct.link,
-            matchType: 'exact'
+            matchType: 'exact',
+            description: selectedProduct.description // Ajouter la description Amazon
           } : undefined
         };
       });
