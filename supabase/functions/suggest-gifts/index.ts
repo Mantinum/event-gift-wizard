@@ -704,35 +704,76 @@ JSON obligatoire:`;
           
           // Generic description based on event type and product title
           if (eventType === 'birthday') {
-            // Extract product characteristics from title
-            const keywords = lowerTitle.split(' ').filter(word => word.length > 3);
-            const relevantKeywords = keywords.slice(0, 3).join(', ');
+            // Analyze product title to extract meaningful information
+            console.log('🔍 Analyse du titre:', lowerTitle);
             
-            // Match with interests
+            // More specific product detection based on actual titles
+            if (lowerTitle.includes('valet') || lowerTitle.includes('porte vêtement') || lowerTitle.includes('vestiaire')) {
+              return `Un valet de chambre élégant en bambou pour ${name}. Parfait pour organiser ses vêtements avec style et praticité.`;
+            }
+            
+            if (lowerTitle.includes('cônes') || lowerTitle.includes('barres') || lowerTitle.includes('agility')) {
+              return `Un set d'entraînement sportif complet avec cônes et barres. Idéal pour ${name} qui aime le sport et l'exercice physique.`;
+            }
+            
+            if (lowerTitle.includes('balle de golf') || lowerTitle.includes('golf')) {
+              return `Des balles de golf haute performance pour ${name}. Parfaites pour améliorer son jeu et profiter pleinement de sa passion golfique.`;
+            }
+            
+            if (lowerTitle.includes('haltères') || lowerTitle.includes('kettlebell') || lowerTitle.includes('musculation')) {
+              return `Un équipement de musculation polyvalent et réglable. Parfait pour que ${name} puisse s'entraîner efficacement à domicile.`;
+            }
+            
+            if (lowerTitle.includes('service à thé') || lowerTitle.includes('thé') || lowerTitle.includes('céramique')) {
+              return `Un élégant service à thé en céramique pour ${name}. Idéal pour savourer des moments de détente et partager des instants privilégiés.`;
+            }
+            
+            if (lowerTitle.includes('lego') || lowerTitle.includes('construction') || lowerTitle.includes('créatif')) {
+              return `Un set de construction créatif LEGO pour ${name}. Parfait pour exprimer sa créativité et créer de magnifiques œuvres d'art.`;
+            }
+            
+            if (lowerTitle.includes('puzzle') || lowerTitle.includes('jeu')) {
+              return `Un puzzle stimulant et divertissant pour ${name}. Idéal pour exercer l'esprit tout en passant d'agréables moments.`;
+            }
+            
+            // Relaxdays brand products
+            if (lowerTitle.includes('relaxdays')) {
+              if (lowerTitle.includes('set') || lowerTitle.includes('kit')) {
+                return `Un ensemble pratique de la marque Relaxdays pour ${name}. Conçu pour apporter fonctionnalité et confort dans le quotidien.`;
+              }
+              return `Un produit Relaxdays de qualité pour ${name}. Alliant design moderne et utilité pratique pour améliorer son quotidien.`;
+            }
+            
+            // Match with interests more broadly
             const matchingInterests = interests.filter(interest => 
               lowerTitle.includes(interest.toLowerCase()) || 
-              (interest === 'Sport' && (lowerTitle.includes('fitness') || lowerTitle.includes('exercice') || lowerTitle.includes('training'))) ||
-              (interest === 'Bien-être' && (lowerTitle.includes('relaxation') || lowerTitle.includes('massage') || lowerTitle.includes('zen')))
+              (interest === 'Sport' && (lowerTitle.includes('sport') || lowerTitle.includes('fitness') || lowerTitle.includes('exercice') || lowerTitle.includes('training') || lowerTitle.includes('cônes') || lowerTitle.includes('haltères'))) ||
+              (interest === 'Bien-être' && (lowerTitle.includes('relaxation') || lowerTitle.includes('massage') || lowerTitle.includes('zen') || lowerTitle.includes('thé')))
             );
             
             if (matchingInterests.length > 0) {
-              return `Un produit parfait pour les passionné(e)s de ${matchingInterests[0].toLowerCase()}. Ce ${lowerTitle.includes('set') ? 'set' : 'produit'} saura répondre aux attentes de ${name} pour son anniversaire.`;
+              const productType = lowerTitle.includes('set') ? 'set' : 
+                                 lowerTitle.includes('kit') ? 'kit' : 
+                                 lowerTitle.includes('collection') ? 'collection' : 'produit';
+              return `Un ${productType} parfait pour ${name} qui aime ${matchingInterests[0].toLowerCase()}. Ce cadeau correspond parfaitement à ses centres d'intérêt.`;
             }
             
-            // Description based on product type
-            if (lowerTitle.includes('relaxation') || lowerTitle.includes('massage')) {
-              return `Un cadeau relaxant pour permettre à ${name} de se détendre. Parfait pour créer des moments de bien-être à la maison.`;
+            // Extract brand and product type from title
+            const words = title.split(' ');
+            const brand = words[0];
+            const hasNumber = /\d/.test(title);
+            const isSet = lowerTitle.includes('set') || lowerTitle.includes('kit') || lowerTitle.includes('lot de');
+            
+            if (isSet && hasNumber) {
+              return `Un ensemble complet de ${brand} pour ${name}. Ce set offre tout le nécessaire pour une expérience complète et satisfaisante.`;
             }
             
-            if (lowerTitle.includes('portable') || lowerTitle.includes('voyage')) {
-              return `Un accessoire pratique et portable pour accompagner ${name} dans ses déplacements. Fonctionnel et élégant à la fois.`;
+            if (brand && brand.length > 3) {
+              return `Un produit de la marque ${brand} spécialement sélectionné pour ${name}. Alliant qualité et innovation pour répondre à ses besoins.`;
             }
             
-            // Default with product-specific elements
-            const productType = lowerTitle.includes('set') ? 'ensemble' : 
-                               lowerTitle.includes('kit') ? 'kit' : 
-                               lowerTitle.includes('collection') ? 'collection' : 'produit';
-            return `Un ${productType} soigneusement sélectionné pour l'anniversaire de ${name}. Alliant qualité et praticité, ce cadeau saura certainement lui faire plaisir.`;
+            // Final fallback with more personality
+            return `Un cadeau unique choisi avec soin pour l'anniversaire de ${name}. Ce produit saura lui apporter satisfaction et moments de bonheur.`;
           }
           
           // Default contextual description
