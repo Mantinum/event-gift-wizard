@@ -636,14 +636,30 @@ JSON obligatoire:`;
         // Find the corresponding product from availableProducts
         const selectedProduct = availableProducts.find(p => p.asin === selection.selectedAsin);
         
+        console.log('🔍 Debug produit sélectionné:', {
+          asinRecherche: selection.selectedAsin,
+          produitTrouve: !!selectedProduct,
+          displayDescription: selectedProduct?.displayDescription,
+          snippet: selectedProduct?.snippet,
+          description: selectedProduct?.description
+        });
+        
         // Generate a contextual description based on product title and person profile
-        const generateDescription = (title: string, person: any, eventType: string, productDescription?: string) => {
-          console.log('🔍 Génération description:', { title, productDescription, hasDescription: !!productDescription });
+        const generateDescription = (title: string, person: any, eventType: string, productData?: any) => {
+          console.log('🔍 Génération description:', { 
+            title, 
+            productData: productData ? {
+              displayDescription: productData.displayDescription,
+              snippet: productData.snippet,  
+              description: productData.description
+            } : null
+          });
           
           // Si on a la vraie description du produit Amazon, l'utiliser en priorité
-          if (productDescription && productDescription.trim() && productDescription.trim() !== title) {
-            console.log('✅ Utilisation description Amazon:', productDescription.trim());
-            return `${productDescription.trim()} Sélectionné spécialement pour ${person.name}.`;
+          const realDescription = productData?.displayDescription || productData?.snippet || productData?.description;
+          if (realDescription && realDescription.trim() && realDescription.trim() !== title) {
+            console.log('✅ Utilisation description Amazon:', realDescription.trim());
+            return realDescription.trim();
           }
           
           const interests = person.interests || [];
@@ -696,7 +712,7 @@ JSON obligatoire:`;
         
         return {
           title: selection.selectedTitle,
-          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct?.displayDescription),
+          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct),
           estimatedPrice: selection.selectedPrice,
           confidence: selection.confidence,
           reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
