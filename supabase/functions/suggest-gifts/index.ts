@@ -15,74 +15,116 @@ function generateTargetedSearchQueries(personData: any, eventType: string, budge
   const interests = personData.interests || [];
   const notes = personData.notes || '';
   const age = personData.age_years || 0;
+  const timestamp = Date.now();
   
-  // Queries basées sur les centres d'intérêt
+  // Ajouter de la randomisation avec des variantes de requêtes
+  const randomVariants = [
+    ['nouveau', 'moderne', 'tendance'],
+    ['original', 'unique', 'créatif'],
+    ['pratique', 'utile', 'fonctionnel'],
+    ['premium', 'qualité', 'haut de gamme']
+  ];
+  
+  const getRandomVariant = () => {
+    const category = randomVariants[Math.floor(Math.random() * randomVariants.length)];
+    return category[Math.floor(Math.random() * category.length)];
+  };
+  
+  // Queries basées sur les centres d'intérêt avec randomisation
   if (interests.includes('Tech')) {
-    if (budget > 80) queries.push('gadget technologique intelligent', 'accessoire high tech');
-    else queries.push('accessoire tech pratique', 'gadget connecté');
+    const variants = budget > 80 
+      ? [`gadget technologique ${getRandomVariant()}`, `accessoire high tech ${getRandomVariant()}`]
+      : [`accessoire tech ${getRandomVariant()}`, `gadget connecté ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Sport')) {
-    queries.push('équipement sport', 'accessoire fitness');
+    const variants = [`équipement sport ${getRandomVariant()}`, `accessoire fitness ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Lecture')) {
-    queries.push('livre bestseller 2025', 'accessoire lecture');
+    const variants = [`livre ${getRandomVariant()} 2025`, `accessoire lecture ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Cuisine')) {
-    queries.push('ustensile cuisine créatif', 'accessoire gourmand');
+    const variants = [`ustensile cuisine ${getRandomVariant()}`, `accessoire gourmand ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Jardinage')) {
-    queries.push('kit jardinage', 'plante cadeau', 'outil jardin');
+    const variants = [`kit jardinage ${getRandomVariant()}`, `plante cadeau ${getRandomVariant()}`, `outil jardin ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5).slice(0, 2));
   }
   
   if (interests.includes('Artisanat')) {
-    queries.push('kit créatif DIY', 'matériel artisanat');
+    const variants = [`kit créatif DIY ${getRandomVariant()}`, `matériel artisanat ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Mode')) {
-    queries.push('accessoire mode', 'bijou tendance');
+    const variants = [`accessoire mode ${getRandomVariant()}`, `bijou ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (interests.includes('Enfance') || interests.includes('Bébé')) {
-    queries.push('jouet éveil bébé', 'livre enfant', 'vêtement bébé mignon');
+    const variants = [`jouet éveil bébé ${getRandomVariant()}`, `livre enfant ${getRandomVariant()}`, `vêtement bébé ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5).slice(0, 2));
   }
   
-  // Queries basées sur les notes
+  // Queries basées sur les notes avec randomisation
   if (notes.toLowerCase().includes('nature')) {
-    queries.push('produit écologique', 'accessoire nature');
+    const variants = [`produit écologique ${getRandomVariant()}`, `accessoire nature ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (notes.toLowerCase().includes('musique')) {
-    queries.push('accessoire musique', 'instrument débutant');
+    const variants = [`accessoire musique ${getRandomVariant()}`, `instrument débutant ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
-  // Queries basées sur l'âge
+  // Queries basées sur l'âge avec randomisation
   if (age > 60) {
-    queries.push('cadeau senior confort', 'accessoire bien-être');
+    const variants = [`cadeau senior ${getRandomVariant()}`, `accessoire bien-être ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   } else if (age > 30) {
-    queries.push('cadeau adulte original', 'accessoire maison');
+    const variants = [`cadeau adulte ${getRandomVariant()}`, `accessoire maison ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   } else if (age > 15) {
-    queries.push('cadeau jeune adulte', 'accessoire tendance');
+    const variants = [`cadeau jeune adulte ${getRandomVariant()}`, `accessoire ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
-  // Queries basées sur l'événement
+  // Queries basées sur l'événement avec randomisation
   if (eventType === 'birthday') {
-    queries.push('cadeau anniversaire original', 'idée cadeau personnalisé');
+    const variants = [`cadeau anniversaire ${getRandomVariant()}`, `idée cadeau personnalisé ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
   if (eventType === 'wedding') {
-    queries.push('cadeau mariage couple', 'décoration maison');
+    const variants = [`cadeau mariage ${getRandomVariant()}`, `décoration maison ${getRandomVariant()}`];
+    queries.push(...variants.sort(() => Math.random() - 0.5));
   }
   
-  // Queries génériques de fallback
+  // Queries génériques de fallback avec randomisation
   if (queries.length < 3) {
-    queries.push('cadeau original', 'idée cadeau créative', 'accessoire utile');
+    const fallbackVariants = [
+      `cadeau ${getRandomVariant()} ${timestamp % 1000}`, 
+      `idée cadeau ${getRandomVariant()}`, 
+      `accessoire ${getRandomVariant()}`
+    ];
+    queries.push(...fallbackVariants.sort(() => Math.random() - 0.5));
   }
   
-  return queries.slice(0, 8); // Max 8 requêtes
+  // Mélanger toutes les requêtes et ajouter un élément de temps pour garantir la variété
+  const finalQueries = queries
+    .map(q => `${q} ${Math.random() > 0.7 ? getRandomVariant() : ''}`.trim())
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 8); // Max 8 requêtes
+    
+  console.log('🎲 Requêtes randomisées générées:', finalQueries);
+  return finalQueries;
 }
 
 async function searchAmazonProducts(query: string, serpApiKey: string, minPrice: number, maxPrice: number) {
@@ -477,7 +519,23 @@ JSON obligatoire:`;
     };
 
     // Call OpenAI API with forced JSON response
-    console.log('🤖 Calling OpenAI API...');
+    // Ajouter de la randomisation dans le prompt pour l'IA
+    const randomPromptVariation = Math.floor(Math.random() * 3);
+    let promptVariation = '';
+    
+    switch(randomPromptVariation) {
+      case 0:
+        promptVariation = 'Sois créatif et évite les choix évidents.';
+        break;
+      case 1:
+        promptVariation = 'Privilégie la diversité et l\'originalité dans tes sélections.';
+        break;
+      case 2:
+        promptVariation = 'Explore des options variées et inattendues.';
+        break;
+    }
+
+    console.log('🤖 Calling OpenAI API with variation:', randomPromptVariation);
     const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -490,7 +548,7 @@ JSON obligatoire:`;
         messages: [
           {
             role: 'system',
-            content: 'Sélectionne 3 produits parmi la liste. Sois concis.'
+            content: `Sélectionne 3 produits parmi la liste. Sois concis. ${promptVariation}`
           },
           {
             role: 'user',
