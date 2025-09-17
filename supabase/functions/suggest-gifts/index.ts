@@ -599,6 +599,7 @@ JSON obligatoire:`;
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
       console.log('📊 Usage:', openAIData.usage);
+      console.log('🔍 OpenAI response structure:', JSON.stringify(openAIData, null, 2));
       
       // Check if response was truncated due to token limit
       // Note: Responses API might have different finish_reason structure
@@ -614,8 +615,14 @@ JSON obligatoire:`;
         });
       }
       
-      const aiContent = openAIData.output_text ?? '';
+      // Try different ways to get the content from Responses API
+      const aiContent = openAIData.output_text ?? 
+                       openAIData.output?.[0]?.content ?? 
+                       openAIData.choices?.[0]?.message?.content ?? 
+                       '';
       console.log('🧠 AI content length:', aiContent.length);
+      console.log('📝 AI content preview:', aiContent.substring(0, 200));
+      
       
       if (!aiContent || aiContent.trim().length === 0) {
         console.error('❌ Empty AI response content');
