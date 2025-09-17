@@ -565,7 +565,7 @@ JSON obligatoire:`;
         input: [
           {
             role: 'system',
-            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT en JSON valide. ${promptVariation}`
+            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Format: {"suggestions":[...],"personName":"..."}. ${promptVariation}`
           },
           {
             role: 'user',
@@ -575,8 +575,7 @@ JSON obligatoire:`;
         max_output_tokens: 1200, // Utilise max_output_tokens pour Responses API
         reasoning: { effort: 'minimal' }, // Réduit le reasoning interne GPT-5
         text: { 
-          verbosity: 'low', // Réponse plus concise
-          format: 'json_object' // Equivalent de response_format pour Responses API
+          verbosity: 'low' // Réponse plus concise
         }
       }),
     });
