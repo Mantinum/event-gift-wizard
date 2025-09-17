@@ -145,23 +145,31 @@ async function searchAmazonProducts(query: string, serpApiKey: string, minPrice:
     const data = await response.json();
     const results = data.organic_results || [];
     
-    return results
+    const products = results
       .filter((item: any) => {
         const price = parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.'));
         return price >= minPrice && price <= maxPrice && item.asin;
       })
-      .map((item: any) => ({
-        title: item.title,
-        price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
-        asin: item.asin,
-        rating: item.rating,
-        reviewCount: item.reviews_count,
-        imageUrl: item.thumbnail,
-        link: item.link,
-        snippet: item.snippet,
-        description: item.description,
-        displayDescription: item.snippet || item.description || null // Récupérer la vraie description Amazon
-      }))
+      .map((item: any) => {
+        console.log('🔍 Description produit brute:', {
+          title: item.title,
+          snippet: item.snippet,
+          description: item.description
+        });
+        
+        return {
+          title: item.title,
+          price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
+          asin: item.asin,
+          rating: item.rating,
+          reviewCount: item.reviews_count,
+          imageUrl: item.thumbnail,
+          link: item.link,
+          snippet: item.snippet,
+          description: item.description,
+          displayDescription: item.snippet || item.description || null // Récupérer la vraie description Amazon
+        };
+      })
       .slice(0, 5); // Max 5 produits par requête
       
     console.log(`✅ ${products.length} produits trouvés pour "${query}"`);
