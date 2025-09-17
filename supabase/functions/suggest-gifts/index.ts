@@ -554,7 +554,7 @@ JSON obligatoire:`;
     }
 
     console.log('🤖 Calling OpenAI Responses API with GPT-5 and variation:', randomPromptVariation);
-    const openAIResponse = await fetch('https://api.openai.com/v1/responses', {
+    const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
@@ -562,7 +562,7 @@ JSON obligatoire:`;
       },
       body: JSON.stringify({
         model: 'gpt-5',
-        input: [
+        messages: [
           {
             role: 'system',
             content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Format: {"suggestions":[...],"personName":"..."}. ${promptVariation}`
@@ -572,11 +572,9 @@ JSON obligatoire:`;
             content: prompt
           }
         ],
-        max_output_tokens: 1200, // Utilise max_output_tokens pour Responses API
-        reasoning: { effort: 'minimal' }, // Réduit le reasoning interne GPT-5
-        text: { 
-          verbosity: 'low' // Réponse plus concise
-        }
+        max_tokens: 1200, // Utilise max_tokens pour Chat Completions
+        temperature: 0.2, // Température supportée avec Chat Completions
+        response_format: { type: "json_object" } // Format JSON pour Chat Completions
       }),
     });
 
@@ -615,11 +613,8 @@ JSON obligatoire:`;
         });
       }
       
-      // Try different ways to get the content from Responses API
-      const aiContent = openAIData.output_text ?? 
-                       openAIData.output?.[0]?.content ?? 
-                       openAIData.choices?.[0]?.message?.content ?? 
-                       '';
+      // Try different ways to get the content from Chat Completions API
+      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
       console.log('🧠 AI content length:', aiContent.length);
       console.log('📝 AI content preview:', aiContent.substring(0, 200));
       
