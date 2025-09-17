@@ -562,11 +562,10 @@ JSON obligatoire:`;
       },
       body: JSON.stringify({
         model: 'gpt-5',
-        response_format: responseSchema,
         input: [
           {
             role: 'system',
-            content: `Sélectionne 3 produits parmi la liste. Sois concis. ${promptVariation}`
+            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT en JSON valide. ${promptVariation}`
           },
           {
             role: 'user',
@@ -575,7 +574,10 @@ JSON obligatoire:`;
         ],
         max_output_tokens: 1200, // Utilise max_output_tokens pour Responses API
         reasoning: { effort: 'minimal' }, // Réduit le reasoning interne GPT-5
-        text: { verbosity: 'low' } // Réponse plus concise
+        text: { 
+          verbosity: 'low', // Réponse plus concise
+          format: 'json_object' // Equivalent de response_format pour Responses API
+        }
       }),
     });
 
