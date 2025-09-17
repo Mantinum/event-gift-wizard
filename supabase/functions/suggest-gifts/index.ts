@@ -559,9 +559,59 @@ JSON obligatoire:`;
         // Find the corresponding product from availableProducts
         const selectedProduct = availableProducts.find(p => p.asin === selection.selectedAsin);
         
+        // Generate a contextual description based on product title and person profile
+        const generateDescription = (title: string, person: any, eventType: string) => {
+          const interests = person.interests || [];
+          const age = person.age_years || 0;
+          const name = person.name;
+          
+          // Extract product type from title
+          const lowerTitle = title.toLowerCase();
+          
+          if (lowerTitle.includes('livre') || lowerTitle.includes('book')) {
+            return `Un livre parfait pour ${name} qui${interests.includes('Lecture') ? ' adore lire' : ' pourra découvrir de nouveaux horizons'}. Idéal pour enrichir sa bibliothèque personnelle.`;
+          }
+          
+          if (lowerTitle.includes('cuisine') || lowerTitle.includes('ustensile') || lowerTitle.includes('cookware')) {
+            return `Un accessoire de cuisine${interests.includes('Cuisine') ? ' pour satisfaire sa passion culinaire' : ' pratique et élégant'}. Parfait pour ${name} qui pourra créer de délicieux plats.`;
+          }
+          
+          if (lowerTitle.includes('tech') || lowerTitle.includes('gadget') || lowerTitle.includes('électronique') || lowerTitle.includes('smart')) {
+            return `Un gadget technologique${interests.includes('Tech') ? ' pour combler sa passion du numérique' : ' moderne et pratique'}. Idéal pour faciliter le quotidien de ${name}.`;
+          }
+          
+          if (lowerTitle.includes('sport') || lowerTitle.includes('fitness') || lowerTitle.includes('exercice')) {
+            return `Un équipement de sport${interests.includes('Sport') ? ' pour soutenir sa passion sportive' : ' pour encourager un mode de vie actif'}. Parfait pour que ${name} reste en forme.`;
+          }
+          
+          if (lowerTitle.includes('beauté') || lowerTitle.includes('cosmé') || lowerTitle.includes('soin')) {
+            return `Un produit de beauté élégant et raffiné. Parfait pour que ${name} puisse prendre soin d'elle et se sentir bien dans sa peau.`;
+          }
+          
+          if (lowerTitle.includes('enfant') || lowerTitle.includes('bébé') || lowerTitle.includes('jouet')) {
+            return `${age < 2 ? 'Un jouet d\'éveil' : 'Un cadeau ludique'} spécialement conçu pour stimuler la créativité et l'apprentissage. Parfait pour accompagner le développement de ${name}.`;
+          }
+          
+          if (lowerTitle.includes('bijou') || lowerTitle.includes('bracelet') || lowerTitle.includes('collier') || lowerTitle.includes('bague')) {
+            return `Un bijou élégant${interests.includes('Mode') ? ' qui complétera parfaitement sa garde-robe' : ' pour ajouter une touche de raffinement'}. Idéal pour ${name} lors d'occasions spéciales.`;
+          }
+          
+          if (lowerTitle.includes('maison') || lowerTitle.includes('décor') || lowerTitle.includes('home')) {
+            return `Un accessoire de décoration qui apportera une touche personnelle à son intérieur. Parfait pour que ${name} puisse créer un espace qui lui ressemble.`;
+          }
+          
+          // Generic description based on event type
+          if (eventType === 'birthday') {
+            return `Un cadeau d'anniversaire thoughtfully sélectionné pour ${name}. Ce produit a été choisi pour correspondre à ses goûts et à sa personnalité unique.`;
+          }
+          
+          // Default contextual description
+          return `Un cadeau soigneusement sélectionné pour ${name}. Ce produit combine qualité et utilité, parfait pour lui faire plaisir${age > 0 ? ` à ${age} ans` : ''}.`;
+        };
+        
         return {
           title: selection.selectedTitle,
-          description: `Produit sélectionné par l'IA parmi les vrais produits Amazon disponibles.`,
+          description: generateDescription(selection.selectedTitle, personData, eventType),
           estimatedPrice: selection.selectedPrice,
           confidence: selection.confidence,
           reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
