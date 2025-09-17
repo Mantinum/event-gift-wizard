@@ -563,42 +563,110 @@ JSON obligatoire:`;
         break;
     }
 
+    async function callOpenAI(model: string, maxTokens = 1200) {
+      const isGPT5 = model.startsWith('gpt-5');
+      const tokensParam = isGPT5 ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens };
+      
+      return await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'system',
+              content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}`
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          ...tokensParam,
+          temperature: 0.2, // Température supportée avec Chat Completions
+          response_format: { type: "json_object" } // Format JSON pour Chat Completions
+        }),
+      });
+    }
+
     console.log('🤖 Calling OpenAI Chat Completions with GPT-5');
-    const openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-5',
-        messages: [
-          {
-            role: 'system',
-            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        max_tokens: 1200, // Utilise max_tokens pour Chat Completions
-        temperature: 0.2, // Température supportée avec Chat Completions
-        response_format: { type: "json_object" } // Format JSON pour Chat Completions
-      }),
-    });
+    let modelUsed = 'gpt-5';
+    let openAIResponse = await callOpenAI(modelUsed, 1200);
 
     if (!openAIResponse.ok) {
-      const errText = await openAIResponse.text();
-      console.error('❌ OpenAI API error:', openAIResponse.status, errText);
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'OpenAI error',
-        status: openAIResponse.status,
-        details: errText
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      // Lis le JSON d'erreur proprement
+      let errJson: any = {};
+      try { errJson = await openAIResponse.json(); } catch { /* ignore */ }
+      const type = errJson?.error?.type;
+      const msg  = errJson?.error?.message || (await openAIResponse.text().catch(()=>'')) || 'Unknown error';
+      console.error('❌ OpenAI error:', openAIResponse.status, type, msg);
+
+      // Fallback auto si le modèle n'est pas accessible
+      if (openAIResponse.status === 404 || type === 'model_not_found' || /model .* not found/i.test(msg)) {
+        console.warn('↩️ Fallback automatique vers gpt-4o-mini');
+        modelUsed = 'gpt-4o-mini';
+        openAIResponse = await callOpenAI(modelUsed, 1200);
+        if (!openAIResponse.ok) {
+          const err2 = await openAIResponse.text();
+          console.error('❌ Fallback gpt-4o-mini a aussi échoué:', openAIResponse.status, err2);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'OpenAI error',
+            status: openAIResponse.status,
+            details: err2
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      } else if (openAIResponse.status === 400 && /context_length/i.test(msg)) {
+        console.warn('⚠️ Contexte trop long → on compresse le prompt et on retente');
+        // 1) Réduire le bloc PRODUITS
+        const shorterProducts = selectedProducts.slice(0, 3);
+        const promptShort = `Sélectionne 3 produits pour ${personData.name}.
+${contextInfo}
+Événement: ${eventType}, Budget: ${minBudget}-${maxBudget}€
+PRODUITS:
+${shorterProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 40)} (${p.asin})`).join('\n')}
+JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3]}`;
+        // 2) Re-appel (même modèle)
+        const isGPT5Retry = modelUsed.startsWith('gpt-5');
+        const tokensParamRetry = isGPT5Retry ? { max_completion_tokens: 900 } : { max_tokens: 900 };
+        
+        openAIResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelUsed,
+            messages: [
+              { role: 'system', content: `Réponds UNIQUEMENT en JSON valide. ${promptVariation}` },
+              { role: 'user', content: promptShort }
+            ],
+            ...tokensParamRetry,
+            temperature: 0.2,
+            response_format: { type: 'json_object' }
+          })
+        });
+        if (!openAIResponse.ok) {
+          const err3 = await openAIResponse.text();
+          console.error('❌ Retry après compression a échoué:', openAIResponse.status, err3);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'OpenAI error after context compression',
+            status: openAIResponse.status,
+            details: err3
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      } else {
+        // autre erreur : on renvoie l'info utile
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'OpenAI error',
+          status: openAIResponse.status,
+          details: msg,
+          type
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // Parse the AI response - with Structured Outputs, JSON is guaranteed
@@ -611,17 +679,32 @@ JSON obligatoire:`;
       // évite de logger tout l'objet (trop verbeux)
       
       // Check if response was truncated due to token limit
-      // Note: Responses API might have different finish_reason structure
       const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
-      if (finishReason === 'length' || finishReason === 'max_output_tokens') {
-        console.error('❌ OpenAI response truncated due to token limit');
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'Réponse AI tronquée - limite de tokens atteinte',
-          details: 'La réponse a été coupée, essayez avec un budget plus simple'
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      if (finishReason === 'length') {
+        console.warn('⚠️ Troncature → on retente avec max_tokens ↑');
+        const isGPT5Retry = modelUsed.startsWith('gpt-5');
+        const tokensParamRetry = isGPT5Retry ? { max_completion_tokens: 1600 } : { max_tokens: 1600 };
+        
+        const retry = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelUsed,
+            messages: [
+              { role: 'system', content: `Réponds UNIQUEMENT en JSON valide. ${promptVariation}` },
+              { role: 'user', content: prompt }
+            ],
+            ...tokensParamRetry,
+            temperature: 0.2,
+            response_format: { type: 'json_object' }
+          })
         });
+        if (retry.ok) {
+          const rj = await retry.json();
+          openAIData.choices = rj.choices;
+        } else {
+          console.warn('⚠️ Retry length a échoué, on continue avec la première sortie.');
+        }
       }
       
       // Try different ways to get the content from Chat Completions API
