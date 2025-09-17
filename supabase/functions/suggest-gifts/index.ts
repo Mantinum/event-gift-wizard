@@ -551,7 +551,7 @@ JSON obligatoire:`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5-mini-2025-08-07', // Modèle plus efficace pour éviter limite tokens
+        model: 'gpt-4o-mini', // Modèle sans reasoning tokens
         response_format: responseSchema,
         messages: [
           {
@@ -563,7 +563,8 @@ JSON obligatoire:`;
             content: prompt
           }
         ],
-        max_completion_tokens: 300 // Réduit encore plus pour éviter troncature
+        max_tokens: 500, // Utilise max_tokens pour gpt-4o-mini
+        temperature: 0.7 // Température supportée par gpt-4o-mini
       }),
     });
 
