@@ -145,11 +145,14 @@ async function searchAmazonProducts(query: string, serpApiKey: string, minPrice:
     const data = await response.json();
     const results = data.organic_results || [];
     
-    const products = results
-      .filter((item: any) => {
-        const price = parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.'));
-        return price >= minPrice && price <= maxPrice && item.asin;
-      })
+      const products = results
+        .filter((item: any) => {
+          if (!item.asin) return false;
+          // Garder l'item si pas de prix (on l'utilisera sans contraindre le budget sur SerpApi)
+          if (!item.price) return true;
+          const price = parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.'));
+          return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
+        })
       .map((item: any) => {
         console.log('🔍 Description produit brute:', {
           title: item.title,
@@ -226,7 +229,11 @@ serve(async (req) => {
 
   try {
     console.log('📥 Processing request...');
-    console.log('🔑 Headers:', Object.fromEntries(req.headers.entries()));
+  // Redact Authorization in logs
+  const safeHeaders = Object.fromEntries(
+    [...req.headers.entries()].map(([k,v]) => k.toLowerCase()==='authorization' ? [k,'REDACTED'] : [k,v])
+  );
+  console.log('🔑 Headers:', safeHeaders);
     
     // 2. Parse body with try/catch
     let body: any = {};
@@ -475,7 +482,10 @@ serve(async (req) => {
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
     // Limiter drastiquement les produits pour éviter limite tokens
-    const selectedProducts = diversifyProducts(availableProducts, 4); // Réduit à 4 produits max
+  const selectedProducts = diversifyProducts(availableProducts, 4);
+  if (selectedProducts.length === 0) {
+    console.warn('⚠️ Aucun produit SerpApi : on fera des liens de recherche Amazon taggés');
+  }
     
     // Build enhanced context with personal notes priority
     const personalNotes = personData.notes || '';
@@ -565,7 +575,7 @@ JSON obligatoire:`;
         messages: [
           {
             role: 'system',
-            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Format: {"suggestions":[...],"personName":"..."}. ${promptVariation}`
+            content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}`
           },
           {
             role: 'user',
@@ -598,7 +608,7 @@ JSON obligatoire:`;
       console.log('✅ OpenAI response received');
       console.log('🧠 finish_reason:', openAIData.choices?.[0]?.finish_reason, 'model:', openAIData.model);
       console.log('📊 Usage:', openAIData.usage);
-      console.log('🔍 OpenAI response structure:', JSON.stringify(openAIData, null, 2));
+      // évite de logger tout l'objet (trop verbeux)
       
       // Check if response was truncated due to token limit
       // Note: Responses API might have different finish_reason structure
@@ -633,7 +643,7 @@ JSON obligatoire:`;
       
       // With Structured Outputs, parsing should always succeed
       const parsedResponse = JSON.parse(aiContent);
-      const selections = parsedResponse.selections || [];
+      const selections = Array.isArray(parsedResponse.selections) ? parsedResponse.selections : [];
       console.log('🎯 Parsed selections count:', selections.length);
       
       // Validate that we have exactly 3 selections as per schema
@@ -649,9 +659,9 @@ JSON obligatoire:`;
       }
 
       // Convert selections to suggestions format for compatibility
-      suggestions = selections.map((selection: any, index: number) => {
-        // Find the corresponding product from availableProducts
-        const selectedProduct = availableProducts.find(p => p.asin === selection.selectedAsin);
+      suggestions = selections.map((selection: any) => {
+        // Cherche dans le PETIT set montré à l'IA
+        const selectedProduct = selectedProducts.find(p => p.asin === selection.selectedAsin);
         
         console.log('🔍 Debug produit sélectionné:', {
           asinRecherche: selection.selectedAsin,
@@ -804,7 +814,9 @@ JSON obligatoire:`;
           reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
           category: 'Cadeau personnalisé',
           alternatives: [`Recherche Amazon: ${selection.selectedTitle}`],
-          purchaseLinks: selectedProduct ? [selectedProduct.link] : [],
+          purchaseLinks: selectedProduct
+            ? [selectedProduct.link]
+            : [`https://www.amazon.fr/s?k=${encodeURIComponent(selection.selectedTitle)}&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`],
           priceInfo: {
             displayPrice: selection.selectedPrice,
             source: 'amazon_price',
@@ -820,7 +832,11 @@ JSON obligatoire:`;
             productUrl: selectedProduct.link,
             matchType: 'exact',
             description: selectedProduct.displayDescription // Ajouter la description Amazon
-          } : undefined
+          } : {
+            asin: selection.selectedAsin,
+            productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(selection.selectedTitle)}&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`,
+            matchType: 'search'
+          }
         };
       });
       
