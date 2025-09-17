@@ -702,9 +702,37 @@ JSON obligatoire:`;
             return `Un accessoire de décoration qui apportera une touche personnelle à son intérieur. Parfait pour que ${name} puisse créer un espace qui lui ressemble.`;
           }
           
-          // Generic description based on event type
+          // Generic description based on event type and product title
           if (eventType === 'birthday') {
-            return `Un cadeau d'anniversaire thoughtfully sélectionné pour ${name}. Ce produit a été choisi pour correspondre à ses goûts et à sa personnalité unique.`;
+            // Extract product characteristics from title
+            const keywords = lowerTitle.split(' ').filter(word => word.length > 3);
+            const relevantKeywords = keywords.slice(0, 3).join(', ');
+            
+            // Match with interests
+            const matchingInterests = interests.filter(interest => 
+              lowerTitle.includes(interest.toLowerCase()) || 
+              (interest === 'Sport' && (lowerTitle.includes('fitness') || lowerTitle.includes('exercice') || lowerTitle.includes('training'))) ||
+              (interest === 'Bien-être' && (lowerTitle.includes('relaxation') || lowerTitle.includes('massage') || lowerTitle.includes('zen')))
+            );
+            
+            if (matchingInterests.length > 0) {
+              return `Un produit parfait pour les passionné(e)s de ${matchingInterests[0].toLowerCase()}. Ce ${lowerTitle.includes('set') ? 'set' : 'produit'} saura répondre aux attentes de ${name} pour son anniversaire.`;
+            }
+            
+            // Description based on product type
+            if (lowerTitle.includes('relaxation') || lowerTitle.includes('massage')) {
+              return `Un cadeau relaxant pour permettre à ${name} de se détendre. Parfait pour créer des moments de bien-être à la maison.`;
+            }
+            
+            if (lowerTitle.includes('portable') || lowerTitle.includes('voyage')) {
+              return `Un accessoire pratique et portable pour accompagner ${name} dans ses déplacements. Fonctionnel et élégant à la fois.`;
+            }
+            
+            // Default with product-specific elements
+            const productType = lowerTitle.includes('set') ? 'ensemble' : 
+                               lowerTitle.includes('kit') ? 'kit' : 
+                               lowerTitle.includes('collection') ? 'collection' : 'produit';
+            return `Un ${productType} soigneusement sélectionné pour l'anniversaire de ${name}. Alliant qualité et praticité, ce cadeau saura certainement lui faire plaisir.`;
           }
           
           // Default contextual description
