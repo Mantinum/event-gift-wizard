@@ -650,7 +650,15 @@ Deno.serve(async (req) => {
     // Chercher des produits réels sur Amazon pour chaque requête avec parallélisation
     const availableProducts = [];
     
+    console.log('🔍 Vérification des clés API:', { 
+      serpApiKey: !!serpApiKey, 
+      rainforestApiKey: !!rainforestApiKey,
+      serpLength: serpApiKey?.length || 0,
+      rainforestLength: rainforestApiKey?.length || 0
+    });
+    
     if (serpApiKey || rainforestApiKey) {
+      console.log('✅ Au moins une clé API disponible, début recherche...');
       // Limite à 4 requêtes max, concurrence 2, timeout strict
       const queries = searchQueries.slice(0, 4);
       const startTime = Date.now();
@@ -661,10 +669,19 @@ Deno.serve(async (req) => {
         try {
           console.log(`🔍 Recherche parallèle pour "${query}"`);
           const results = await searchAmazonProducts(query, serpApiKey, minBudget, maxBudget, rainforestApiKey);
+          console.log(`📦 Résultats bruts pour "${query}":`, results?.length || 0);
           if (results && results.length > 0) {
             console.log(`✅ ${results.length} produits trouvés pour "${query}"`);
-            return results.slice(0, 3); // Max 3 produits par requête
+            const limitedResults = results.slice(0, 3); // Max 3 produits par requête
+            console.log(`📋 Échantillon des résultats:`, limitedResults.slice(0, 1).map(r => ({
+              title: r.title?.substring(0, 50),
+              asin: r.asin,
+              link: r.link?.substring(0, 50),
+              price: r.price
+            })));
+            return limitedResults;
           }
+          console.log(`❌ Aucun produit trouvé pour "${query}"`);
           return [];
         } catch (error) {
           console.error(`❌ Erreur recherche "${query}":`, error);
@@ -689,20 +706,60 @@ Deno.serve(async (req) => {
 
       const allResults = await runLimited(searchTasks, 2);
       availableProducts.push(...allResults);
+      console.log(`📦 Total après parallélisation: ${availableProducts.length}`);
+    } else {
+      console.log('❌ Aucune clé API disponible pour la recherche');
     }
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
+    // Debug détaillé des produits avant filtrage
+    if (availableProducts.length > 0) {
+      console.log('🔍 Échantillon de produits bruts avant filtrage:');
+      availableProducts.slice(0, 3).forEach((p, i) => {
+        console.log(`  [${i}] Title: ${p.title?.substring(0, 60)}...`);
+        console.log(`      ASIN: ${p.asin} (valid: ${isValidAsin(p.asin)})`);
+        console.log(`      Link: ${p.link?.substring(0, 80)}... (has /dp/: ${p.link?.includes('/dp/')})`);
+        console.log(`      Price: ${p.price}`);
+      });
+    }
+    
     // ⚠️ Filtre global : aucun produit sans dp ni ASIN valide ne passe dans le pool
-    const sanitized = availableProducts.filter(p =>
-      (p.link && p.link.includes('/dp/')) || isValidAsin(p.asin)
-    );
+    const sanitized = availableProducts.filter(p => {
+      const hasValidLink = p.link && p.link.includes('/dp/');
+      const hasValidAsin = isValidAsin(p.asin);
+      const isValid = hasValidLink || hasValidAsin;
+      
+      if (!isValid) {
+        console.log(`❌ Produit rejeté: ${p.title?.substring(0, 40)} - Link: ${hasValidLink ? '✅' : '❌'}, ASIN: ${hasValidAsin ? '✅' : '❌'}`);
+      }
+      
+      return isValid;
+    });
     console.log(`🧹 Produits après nettoyage: ${sanitized.length}`);
+    
+    // Debug des produits après filtrage
+    if (sanitized.length > 0) {
+      console.log('✅ Échantillon de produits après filtrage:');
+      sanitized.slice(0, 2).forEach((p, i) => {
+        console.log(`  [${i}] Title: ${p.title?.substring(0, 60)}...`);
+        console.log(`      ASIN: ${p.asin}, Link: ${p.link?.substring(0, 80)}...`);
+      });
+    } else {
+      console.log('❌ Aucun produit valide après filtrage');
+    }
     
     // Limiter drastiquement les produits pour éviter limite tokens
     const selectedProducts = diversifyProducts(sanitized, 4);
+    console.log(`🎯 Produits sélectionnés après diversification: ${selectedProducts.length}`);
+    
     if (selectedProducts.length === 0) {
-      console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
+      console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : passage en mode fallback');
+      console.log('🔍 Détail du pipeline:');
+      console.log(`  - Requêtes générées: ${searchQueries.length}`);
+      console.log(`  - Produits bruts trouvés: ${availableProducts.length}`);
+      console.log(`  - Produits après filtrage: ${sanitized.length}`);
+      console.log(`  - Produits finaux: ${selectedProducts.length}`);
       
       // Si aucun produit trouvé, utiliser la logique de fallback directement
       return generateFallbackSuggestions(personData, eventType, budget);
