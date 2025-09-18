@@ -658,6 +658,9 @@ serve(async (req) => {
     const selectedProducts = diversifyProducts(sanitized, 4);
     if (selectedProducts.length === 0) {
       console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
+      
+      // Si aucun produit trouvé, utiliser la logique de fallback directement
+      return generateFallbackSuggestions(personData, eventType, budget);
     }
 
     // 🎯 Étape 2: Indexation des produits pour retrouver les liens directs
@@ -911,6 +914,12 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             title: match.title, 
             price: match.price 
           };
+        }
+        
+        // Si le pool est petit (< 6 produits), on est moins strict
+        if (selectedProducts.length < 6) {
+          console.log(`⚠️ Pool réduit (${selectedProducts.length} produits), on garde "${s.title}" avec recherche`);
+          return s; // On garde la suggestion même si ASIN non trouvé
         }
         
         // Rien trouvé → on refuse (évite les dp 404)
@@ -1209,5 +1218,129 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+}
+
+// Fonction de fallback quand aucun produit n'est trouvé
+async function generateFallbackSuggestions(personData: any, eventType: string, budget: number) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+  
+  const withAffiliate = (url: string) => {
+    const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') || '';
+    const partnerTagActive = (Deno.env.get('AMZ_PARTNER_TAG_ACTIVE') || 'false').toLowerCase() === 'true';
+    if (!partnerTagActive || !partnerTag) return url;
+    const u = new URL(url);
+    u.searchParams.set('tag', partnerTag);
+    return u.toString();
+  };
+
+  // Générer des suggestions génériques basées sur le profil
+  const suggestions = [];
+  const interests = personData.interests || [];
+  const notes = personData.notes || '';
+  
+  // Suggestion 1: Basée sur les intérêts principaux
+  let query1 = 'cadeau original';
+  let reasoning1 = `Cadeau sélectionné pour ${personData.name}`;
+  
+  if (interests.includes('Sport')) {
+    query1 = 'accessoire sport fitness';
+    reasoning1 = `Perfect pour ${personData.name} qui aime le sport`;
+  } else if (interests.includes('Lecture')) {
+    query1 = 'livre bestseller roman';
+    reasoning1 = `Idéal pour ${personData.name} qui aime la lecture`;
+  } else if (interests.includes('Cuisine')) {
+    query1 = 'ustensile cuisine accessoire';
+    reasoning1 = `Parfait pour ${personData.name} passionné(e) de cuisine`;
+  } else if (interests.includes('Technologie')) {
+    query1 = 'gadget technologique moderne';
+    reasoning1 = `Cadeau tech pour ${personData.name}`;
   }
+  
+  // Suggestion 2: Basée sur l'événement
+  let query2 = 'cadeau anniversaire original';
+  let reasoning2 = `Cadeau d'anniversaire pour ${personData.name}`;
+  
+  if (eventType === 'wedding') {
+    query2 = 'cadeau mariage couple';
+    reasoning2 = `Cadeau de mariage pour ${personData.name}`;
+  } else if (eventType === 'christmas') {
+    query2 = 'cadeau noel famille';
+    reasoning2 = `Cadeau de Noël pour ${personData.name}`;
+  }
+  
+  // Suggestion 3: Basée sur les notes ou âge
+  let query3 = 'cadeau personnel utile';
+  let reasoning3 = `Cadeau pratique pour ${personData.name}`;
+  
+  if (notes.toLowerCase().includes('nature')) {
+    query3 = 'produit écologique naturel';
+    reasoning3 = `Produit écologique pour ${personData.name} qui aime la nature`;
+  } else if (notes.toLowerCase().includes('voyage')) {
+    query3 = 'accessoire voyage pratique';
+    reasoning3 = `Accessoire de voyage pour ${personData.name}`;
+  } else if (personData.age_years > 50) {
+    query3 = 'cadeau bien-être relaxation';
+    reasoning3 = `Cadeau bien-être pour ${personData.name}`;
+  }
+
+  const fallbackSuggestions = [
+    {
+      title: query1.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      price: Math.round(budget * 0.8),
+      confidence: 0.7,
+      reasoning: reasoning1,
+      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
+      searchQueries: [query1],
+      amazonData: {
+        asin: null,
+        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
+        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}`),
+        matchType: 'search'
+      }
+    },
+    {
+      title: query2.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      price: Math.round(budget * 0.9),
+      confidence: 0.8,
+      reasoning: reasoning2,
+      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
+      searchQueries: [query2],
+      amazonData: {
+        asin: null,
+        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
+        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}`),
+        matchType: 'search'
+      }
+    },
+    {
+      title: query3.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      price: budget,
+      confidence: 0.75,
+      reasoning: reasoning3,
+      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
+      searchQueries: [query3],
+      amazonData: {
+        asin: null,
+        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
+        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}`),
+        matchType: 'search'
+      }
+    }
+  ];
+
+  return new Response(JSON.stringify({
+    success: true,
+    suggestions: fallbackSuggestions,
+    metadata: {
+      totalSuggestions: 3,
+      fallbackMode: true,
+      reason: 'APIs externes indisponibles - suggestions génériques générées'
+    }
+  }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
 });
