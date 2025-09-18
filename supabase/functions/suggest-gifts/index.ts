@@ -674,8 +674,12 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
       console.log('🧠 model:', openAIData.model || modelUsed);
-      // Chat → choices[0].message.content ; Responses → output_text
       
+      // DEBUG: Log de la structure complète pour GPT-5
+      if (modelUsed.startsWith('gpt-5')) {
+        console.log('🔍 GPT-5 Response structure:', JSON.stringify(openAIData, null, 2));
+      }
+
       // Check if response was truncated due to token limit
       const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
       if (finishReason === 'length') {
@@ -697,16 +701,29 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         }
       }
       
-      // Chat → choices[0].message.content ; Responses → output_text  
+      // Extraction du contenu selon l'endpoint
       let aiContent = '';
       if (modelUsed.startsWith('gpt-5')) {
-        if (typeof openAIData.output_text === 'string') {
+        // Responses API - plusieurs formats possibles
+        if (typeof openAIData.output === 'string') {
+          aiContent = openAIData.output;
+        } else if (typeof openAIData.output_text === 'string') {
           aiContent = openAIData.output_text;
         } else if (Array.isArray(openAIData.output)) {
           const first = openAIData.output[0];
-          const part = first?.content?.find?.((c: any) => c?.text);
-          aiContent = part?.text || '';
+          if (typeof first === 'string') {
+            aiContent = first;
+          } else if (first?.content) {
+            const part = Array.isArray(first.content) 
+              ? first.content.find((c: any) => c?.text || c?.type === 'text')
+              : first.content;
+            aiContent = part?.text || part || '';
+          }
+        } else if (openAIData.choices?.[0]?.message?.content) {
+          // Fallback au cas où GPT-5 retournerait du Chat format
+          aiContent = openAIData.choices[0].message.content;
         }
+        console.log('🔍 GPT-5 aiContent extracted:', aiContent.substring(0, 100) + '...');
       } else {
         aiContent = openAIData.choices?.[0]?.message?.content ?? '';
       }
