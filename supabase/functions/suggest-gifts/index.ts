@@ -304,7 +304,31 @@ function withAffiliate(url: string) {
 }
 
 const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a || '');
-const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+const normalizeTitle = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // enlève accents
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Fonction de similarité pour fuzzy matching
+function similarity(a: string, b: string) {
+  const A = new Set(normalizeTitle(a).split(' ').filter(x => x.length > 1));
+  const B = new Set(normalizeTitle(b).split(' ').filter(x => x.length > 1));
+  const inter = [...A].filter(x => B.has(x)).length;
+  const uni = new Set([...A, ...B]).size;
+  return uni ? inter / uni : 0;
+}
+
+function bestPoolMatchByTitle(title: string, pool: any[], threshold = 0.45) {
+  let best = null, bestScore = 0;
+  for (const p of pool) {
+    const score = similarity(title, p.title || '');
+    if (score > bestScore) { best = p; bestScore = score; }
+  }
+  return bestScore >= threshold ? best : null;
+}
 
 serve(async (req) => {
   console.log('🚀 Function started successfully');
@@ -605,8 +629,10 @@ ${contextInfo}
 Événement: ${eventType}, Budget: ${minBudget}-${maxBudget}€
 
 PRODUITS DISPONIBLES:
-${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 50)} - ${p.price}€ (${p.asin})`).join('\n')}
+${selectedProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 50)} - ${p.price}€ (ASIN: ${p.asin})`).join('\n')}
 
+IMPORTANT: Tu DOIS choisir uniquement parmi les PRODUITS DISPONIBLES ci-dessus.
+Renvoie l'ASIN exactement tel qu'affiché. N'invente jamais d'ASIN.
 ${personalNotes ? 'Utilise prioritairement les notes personnelles pour choisir les produits les plus adaptés.' : 'Base-toi sur les centres d\'intérêt et l\'âge pour faire les meilleurs choix.'}
 
 JSON obligatoire:`;
@@ -678,7 +704,7 @@ JSON obligatoire:`;
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"suggestions":[{ "title": "...", "price": 0, "asin": "...", "confidence": 0.0, "reasoning": "..." }, ...3 au total]}. ${promptVariation}` },
+            { role: 'system', content: `Sélectionne 3 produits parmi la liste fournie. Tu DOIS choisir uniquement parmi les PRODUITS DISPONIBLES. Renvoie l'ASIN exactement tel qu'affiché. N'invente jamais d'ASIN. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Format JSON exact: {"suggestions":[{ "title": "...", "price": 0, "asin": "<UN DES ASIN DE LA LISTE>", "confidence": 0.0, "reasoning": "..." }, ...3 au total]}. ${promptVariation}` },
             { role: 'user', content: userPrompt }
           ],
           max_tokens: maxTokens,
@@ -808,14 +834,26 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
 
       console.log('🎯 Parsed direct suggestions count:', rawSuggestions.length);
       
-      // Normaliser les champs pour la compatibilité
+      // Valider que les ASINs correspondent à la liste fournie
+      const allowedAsins = new Set(selectedProducts.map(p => p.asin));
+      console.log('✅ ASINs autorisés:', Array.from(allowedAsins));
+      
+      // Normaliser les champs pour la compatibilité et valider ASINs
       const directSuggestions = rawSuggestions.map((raw: any) => ({
         title: raw.title ?? raw.selectedTitle ?? '',
         asin: raw.asin ?? raw.selectedAsin ?? '',
         price: raw.price ?? raw.selectedPrice ?? 0,
         confidence: raw.confidence ?? 0.5,
-        reasoning: raw.reasoning ?? ''
+        reasoning: raw.reasoning ?? '',
+        _needsReconcile: !allowedAsins.has(raw.asin ?? raw.selectedAsin ?? '')
       }));
+      
+      // Log des suggestions avec ASINs invalides pour debugging
+      directSuggestions.forEach((s, i) => {
+        if (s._needsReconcile) {
+          console.warn(`⚠️ Suggestion ${i+1}: ASIN "${s.asin}" non trouvé dans la liste - tentative de réconciliation par titre`);
+        }
+      });
       
       // Validate that we have exactly 3 suggestions as per schema
       if (directSuggestions.length !== 3) {
@@ -964,35 +1002,40 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           return `Un produit de qualité sélectionné pour ${name}. Ce cadeau saura lui apporter satisfaction grâce à son utilité et son design soigné.`;
         };
         
-        // Créer des liens Amazon directs et spécifiques en utilisant d'abord les produits indexés
-        const resolveAmazonLinks = (title: string, asin: string | undefined) => {
-          // Vérifier si l'ASIN existe dans notre pool de produits (validation)
-          const safeAsin = (asin && byAsin.has(asin)) ? asin : undefined;
-          
-          const fromAsin = safeAsin ? byAsin.get(safeAsin) : undefined;
-          const fromTitle = !fromAsin && title ? byTitle.get(normalizeTitle(title)) : undefined;
-          const picked = fromAsin || fromTitle;
-
-          // 1er choix: Lien d'origine du pool (le plus fiable)
-          let base = picked?.link || null;
-
-          // 2e choix: DP propre seulement si ASIN valide ET connu du pool
-          if (!base && isValidAsin(safeAsin)) {
-            base = `https://www.amazon.fr/dp/${safeAsin}`;
+        // Fonction améliorée de résolution des liens Amazon avec fuzzy matching
+        const resolveAmazonLinks = (title: string, asinFromIa: string | undefined) => {
+          // 1) Recherche dans le pool par ASIN puis par titre fuzzy
+          let poolProduct = asinFromIa && byAsin.get(asinFromIa);
+          if (!poolProduct) {
+            poolProduct = bestPoolMatchByTitle(title, selectedProducts) || null;
+            if (poolProduct) {
+              console.log(`🔍 Fuzzy match trouvé: "${title}" → "${poolProduct.title}" (score: ${similarity(title, poolProduct.title)})`);
+            }
           }
 
-          // 3e choix: Fallback recherche
-          const encodedTitle = encodeURIComponent(title.replace(/[^\w\s-]/g, '').trim());
+          // 2) Base URL = lien d'origine s'il contient déjà /dp/
+          let base = poolProduct?.link && poolProduct.link.includes('/dp/') ? poolProduct.link : null;
+
+          // 3) Sinon, si on a un ASIN valide (du pool ou de l'IA), fabrique /dp/
+          const candidateAsin = poolProduct?.asin || asinFromIa;
+          if (!base && isValidAsin(candidateAsin)) {
+            base = `https://www.amazon.fr/dp/${candidateAsin}`;
+          }
+
+          // 4) Fallback recherche avec titre nettoyé
+          const encodedTitle = encodeURIComponent(
+            title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s-]/g, ' ').trim()
+          ).replace(/\s+/g, '+');
           const search = `https://www.amazon.fr/s?k=${encodedTitle}`;
 
-          console.log(`🔗 Résolution liens pour "${title}": original=${!!picked?.link}, ASIN=${safeAsin}, base=${!!base}`);
+          console.log(`🔗 Résolution pour "${title}": pool=${!!poolProduct}, direct=${!!base}, ASIN=${candidateAsin}`);
 
           return {
             primary: withAffiliate(base || search),
             search: withAffiliate(search),
             isDirectLink: !!base,
-            originalProductFound: !!picked,
-            validAsin: !!safeAsin
+            effectiveAsin: candidateAsin,
+            poolProduct: poolProduct
           };
         };
 
@@ -1017,13 +1060,15 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             amazonPrice: suggestion.price
           },
           amazonData: {
-            asin: amazonLinks.validAsin ? suggestion.asin : null,
+            asin: amazonLinks.effectiveAsin || null,
             productUrl: amazonLinks.primary,
-            addToCartUrl: (partnerTagActive && amazonLinks.validAsin)
-              ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
+            addToCartUrl: (partnerTagActive && isValidAsin(amazonLinks.effectiveAsin))
+              ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${amazonLinks.effectiveAsin}&Quantity.1=1&tag=${partnerTag}`
               : null, // null si tag inactif ou ASIN invalide
             searchUrl: amazonLinks.search,
-            matchType: amazonLinks.isDirectLink ? (amazonLinks.originalProductFound ? 'pool_link' : 'dp_from_asin') : 'search',
+            matchType: amazonLinks.isDirectLink 
+              ? (amazonLinks.poolProduct ? 'pool_link' : 'direct_asin') 
+              : 'search',
             description: suggestion.reasoning
           }
         };
