@@ -563,7 +563,7 @@ JSON obligatoire:`;
         break;
     }
 
-    // --- 1) Appel Chat Completions (non GPT-5) ---
+    // Fonction pour appeler OpenAI Chat Completions
     async function callChatCompletions(model: string, maxTokens = 1200, userPrompt = prompt) {
       return fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -577,25 +577,6 @@ JSON obligatoire:`;
           max_tokens: maxTokens,
           temperature: 0.2,
           response_format: { type: 'json_object' }
-        })
-      });
-    }
-
-    // --- 2) Appel Responses API (GPT-5) ---
-    async function callResponses(model: string, maxOut = 1200, userPrompt = prompt) {
-      // On fusionne system + user en un seul "input" pour Responses API
-      const systemLine =
-        `Sélectionne 3 produits parmi la liste. Sois concis. ` +
-        `Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. ` +
-        `Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}\n\n`;
-      return fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          input: `${systemLine}${userPrompt}`,
-          max_output_tokens: maxOut
-          // ⚠️ PAS de response_format ici - non supporté par Responses API
         })
       });
     }
@@ -615,24 +596,10 @@ JSON obligatoire:`;
       const msg  = errJson?.error?.message || (await openAIResponse.text().catch(()=>'')) || 'Unknown error';
       console.error('❌ OpenAI error:', openAIResponse.status, type, code, param, msg);
 
-      // Fallback auto si le modèle n'est pas accessible
-      if (openAIResponse.status === 404 || type === 'model_not_found' || /model .* not found/i.test(msg)) {
-        console.warn('↩️ Fallback automatique vers gpt-4o-mini');
-        modelUsed = 'gpt-4o-mini';
-        openAIResponse = await callChatCompletions(modelUsed, 1200);
-        if (!openAIResponse.ok) {
-          const err2 = await openAIResponse.text();
-          console.error('❌ Fallback gpt-4o-mini a aussi échoué:', openAIResponse.status, err2);
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'OpenAI error',
-            status: openAIResponse.status,
-            details: err2
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-      } else if (openAIResponse.status === 400 && /context_length|maximum context length|too long/i.test(msg)) {
-        console.warn('⚠️ Contexte trop long → on compresse le prompt et on retente');
-        // 1) Réduire le bloc PRODUITS
+      // Gestion des erreurs spécifiques
+      if (openAIResponse.status === 400 && /context_length|maximum context length|too long/i.test(msg)) {
+        console.warn('⚠️ Contexte trop long → compression du prompt et retry');
+        // Réduire le prompt en gardant seulement 3 produits
         const shorterProducts = selectedProducts.slice(0, 3);
         const promptShort = `Sélectionne 3 produits pour ${personData.name}.
 ${contextInfo}
@@ -640,12 +607,8 @@ ${contextInfo}
 PRODUITS:
 ${shorterProducts.map((p, i) => `${i+1}. ${p.title.substring(0, 40)} (${p.asin})`).join('\n')}
 JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3]}`;
-        // 2) Re-appel (même modèle & bon endpoint)
-        if (modelUsed.startsWith('gpt-5')) {
-          openAIResponse = await callResponses(modelUsed, 900, promptShort);
-        } else {
-          openAIResponse = await callChatCompletions(modelUsed, 900, promptShort);
-        }
+        
+        openAIResponse = await callChatCompletions(modelUsed, 900, promptShort);
         if (!openAIResponse.ok) {
           const err3 = await openAIResponse.text();
           console.error('❌ Retry après compression a échoué:', openAIResponse.status, err3);
@@ -674,42 +637,61 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       const openAIData = await openAIResponse.json();
       console.log('✅ OpenAI response received');
       console.log('🧠 model:', openAIData.model || modelUsed);
-      
-      // DEBUG: Log de la structure complète pour GPT-5
-      if (modelUsed.startsWith('gpt-5')) {
-        console.log('🔍 GPT-5 Response structure:', JSON.stringify(openAIData, null, 2));
-      }
 
-      // Check if response was truncated due to token limit
-      const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
+      // Vérifier si la réponse a été tronquée
+      const finishReason = openAIData.choices?.[0]?.finish_reason;
       if (finishReason === 'length') {
-        console.warn('⚠️ Troncature → retry avec budget de tokens ↑');
+        console.warn('⚠️ Troncature détectée → retry avec plus de tokens');
         const retry = await callChatCompletions(modelUsed, 1600, prompt);
         if (retry.ok) {
-          const rj = await retry.json();
-          openAIData.choices = rj.choices;
+          const retryData = await retry.json();
+          openAIData.choices = retryData.choices;
         }
       }
       
-      // Extraction du contenu - uniquement Chat Completions format
-      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
+      // Extraction et nettoyage du contenu AI
+      let aiContent = openAIData.choices?.[0]?.message?.content ?? '';
       console.log('🧠 AI content length:', aiContent.length);
       console.log('📝 AI content preview:', aiContent.substring(0, 200));
       
-      
+      // Validation du contenu AI
       if (!aiContent || aiContent.trim().length === 0) {
-        console.error('❌ Empty AI response content');
+        console.error('❌ Réponse AI vide détectée');
+        console.error('🔍 Structure OpenAI complète:', JSON.stringify(openAIData, null, 2));
         return new Response(JSON.stringify({
           success: false,
           error: 'Réponse AI vide',
-          details: 'Aucun contenu généré par l\'IA'
+          details: 'L\'IA n\'a généré aucun contenu',
+          debug: {
+            hasChoices: !!openAIData.choices,
+            choicesLength: openAIData.choices?.length || 0,
+            finishReason: finishReason,
+            model: openAIData.model
+          }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
       
-      // With Structured Outputs, parsing should always succeed
-      const parsedResponse = JSON.parse(aiContent);
+      // Nettoyage du contenu AI (suppression des markdown fences)
+      const cleanedContent = aiContent.trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      
+      console.log('🧽 Contenu nettoyé:', cleanedContent.substring(0, 100));
+      
+      // Parsing JSON sécurisé
+      let parsedResponse;
+      try {
+        parsedResponse = JSON.parse(cleanedContent);
+      } catch (jsonError) {
+        console.error('❌ Erreur parsing JSON:', jsonError);
+        console.error('🔍 Contenu original:', aiContent);
+        console.error('🔍 Contenu nettoyé:', cleanedContent);
+        throw new Error(`Erreur parsing JSON: ${(jsonError as Error).message}`);
+      }
+      
       const selections = Array.isArray(parsedResponse.selections) ? parsedResponse.selections : [];
       console.log('🎯 Parsed selections count:', selections.length);
       
