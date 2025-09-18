@@ -810,7 +810,7 @@ JSON obligatoire:`;
           temperature: 0.2,
           response_format: { type: 'json_object' }
         })
-      }), 10000); // 10s timeout pour OpenAI
+      }, 10000); // 10s timeout pour OpenAI
     }
 
     console.log('🤖 Calling OpenAI with GPT-4o-mini (stable model)');
