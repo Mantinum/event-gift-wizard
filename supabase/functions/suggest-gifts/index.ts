@@ -163,9 +163,8 @@ async function searchAmazonProductsRainforest(
       })
       .map((item: any) => {
         const asin = item.asin;
-        const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
         
-        // Prioriser les liens directs DP quand possible
+        // Prioriser les liens directs DP quand possible avec validation ASIN
         const directLink = item.link && item.link.includes('/dp/')
           ? item.link
           : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
@@ -229,9 +228,8 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
             })
             .map((item: any) => {
               const asin = item.asin;
-              const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
               
-              // Prioriser les liens directs DP quand possible
+              // Prioriser les liens directs DP quand possible avec validation ASIN
               const directLink = item.link && item.link.includes('/dp/')
                 ? item.link
                 : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
@@ -423,6 +421,23 @@ serve(async (req) => {
     // Initialize Supabase client with service role key (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
+
+    // Helper functions for affiliate links and ASIN validation
+    const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') || '';
+    const partnerTagActive = (Deno.env.get('AMZ_PARTNER_TAG_ACTIVE') || 'false').toLowerCase() === 'true';
+
+    function appendQuery(url: string, key: string, value: string) {
+      const u = new URL(url);
+      if (value) u.searchParams.set(key, value);
+      return u.toString();
+    }
+
+    function withAffiliate(url: string) {
+      return (partnerTagActive && partnerTag) ? appendQuery(url, 'tag', partnerTag) : url;
+    }
+
+    const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a || '');
+    const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
     // 5. Check authentication and AI usage limits
     console.log('🔒 Checking authentication and usage limits...');
@@ -951,42 +966,38 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         };
         
         // Créer des liens Amazon directs et spécifiques en utilisant d'abord les produits indexés
-        const createAmazonLinksWithIndexation = (title: string, asin: string) => {
-          const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21';
-          const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
+        const resolveAmazonLinks = (title: string, asin: string | undefined) => {
+          // Vérifier si l'ASIN existe dans notre pool de produits (validation)
+          const safeAsin = (asin && byAsin.has(asin)) ? asin : undefined;
           
-          // 1er choix : Trouver le produit dans l'index et utiliser son lien direct
-          const fromAsin = asin ? byAsin.get(asin) : undefined;
+          const fromAsin = safeAsin ? byAsin.get(safeAsin) : undefined;
           const fromTitle = !fromAsin && title ? byTitle.get(normalizeTitle(title)) : undefined;
-          const originalProduct = fromAsin || fromTitle;
-          
-          // 2e choix : URL canonique DP avec ASIN si l'ASIN est valide
-          const directUrl = originalProduct?.link 
-            || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}?tag=${partnerTag}` : undefined);
-          
-          // 3e choix : lien de recherche taggé
+          const picked = fromAsin || fromTitle;
+
+          // 1er choix: Lien d'origine du pool (le plus fiable)
+          let base = picked?.link || null;
+
+          // 2e choix: DP propre seulement si ASIN valide ET connu du pool
+          if (!base && isValidAsin(safeAsin)) {
+            base = `https://www.amazon.fr/dp/${safeAsin}`;
+          }
+
+          // 3e choix: Fallback recherche
           const encodedTitle = encodeURIComponent(title.replace(/[^\w\s-]/g, '').trim());
-          const searchUrl = `https://www.amazon.fr/s?k=${encodedTitle}&tag=${partnerTag}`;
-          
-          // Autres liens alternatifs
-          const preciseSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&ref=sr_nr_p_85_1&fst=as%3Aoff&rh=p_85%3A2470955031&qid=1577836800&rnid=2470954031&tag=${partnerTag}`;
-          const titleWords = title.split(' ');
-          const possibleBrand = titleWords[0];
-          const brandSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&rh=p_89%3A${encodeURIComponent(possibleBrand)}&tag=${partnerTag}`;
-          
-          console.log(`🔗 Liens générés pour "${title}": direct=${!!directUrl}, original=${!!originalProduct?.link}, asin=${asin}`);
-          
+          const search = `https://www.amazon.fr/s?k=${encodedTitle}`;
+
+          console.log(`🔗 Résolution liens pour "${title}": original=${!!picked?.link}, ASIN=${safeAsin}, base=${!!base}`);
+
           return {
-            primary: directUrl ?? searchUrl,
-            search: preciseSearchLink,
-            brand: brandSearchLink,
-            fallback: searchUrl,
-            isDirectLink: !!directUrl,
-            originalProductFound: !!originalProduct
+            primary: withAffiliate(base || search),
+            search: withAffiliate(search),
+            isDirectLink: !!base,
+            originalProductFound: !!picked,
+            validAsin: !!safeAsin
           };
         };
 
-        const amazonLinks = createAmazonLinksWithIndexation(suggestion.title, suggestion.asin);
+        const amazonLinks = resolveAmazonLinks(suggestion.title, suggestion.asin);
         
         return {
           title: suggestion.title,
@@ -999,7 +1010,7 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             `Recherche précise: ${suggestion.title}`,
             `Recherche par marque: ${suggestion.title.split(' ')[0]}`
           ],
-          purchaseLinks: [amazonLinks.primary], // Utiliser le lien direct en priorité
+          purchaseLinks: [amazonLinks.primary],
           priceInfo: {
             displayPrice: suggestion.price,
             source: 'ai_estimate',
@@ -1007,17 +1018,14 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             amazonPrice: suggestion.price
           },
           amazonData: {
-            asin: suggestion.asin,
+            asin: amazonLinks.validAsin ? suggestion.asin : null,
             productUrl: amazonLinks.primary,
-            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`,
+            addToCartUrl: (partnerTagActive && amazonLinks.validAsin)
+              ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
+              : null, // null si tag inactif ou ASIN invalide
             searchUrl: amazonLinks.search,
-            matchType: 'ai_generated',
-            description: suggestion.reasoning,
-            alternativeUrls: [
-              amazonLinks.search,
-              amazonLinks.brand,
-              amazonLinks.fallback
-            ]
+            matchType: amazonLinks.isDirectLink ? (amazonLinks.originalProductFound ? 'pool_link' : 'dp_from_asin') : 'search',
+            description: suggestion.reasoning
           }
         };
       });
