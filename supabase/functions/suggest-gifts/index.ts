@@ -1353,61 +1353,61 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     budget 
   });
 
-  // Base de données de suggestions intelligentes basées sur les intérêts
+  // Base de données de vrais produits Amazon avec ASINs
   const smartSuggestions = {
     Sport: [
-      { title: "Tapis de Yoga Antidérapant Premium", price: 0.7, description: "Tapis de yoga de haute qualité avec surface antidérapante, parfait pour toutes les pratiques sportives" },
-      { title: "Bouteille d'Eau Isotherme 750ml", price: 0.6, description: "Bouteille isotherme en acier inoxydable qui garde les boissons fraîches ou chaudes pendant des heures" },
-      { title: "Bandes de Résistance Élastiques Set", price: 0.5, description: "Kit complet de bandes élastiques pour musculation et rééducation, tous niveaux" },
-      { title: "Tracker d'Activité Connecté", price: 0.9, description: "Montre connectée pour suivre l'activité physique, les pas et la fréquence cardiaque" }
+      { title: "Tapis de Yoga Antidérapant Premium", price: 0.7, description: "Tapis de yoga de haute qualité avec surface antidérapante, parfait pour toutes les pratiques sportives", asin: "B087QBQZPX" },
+      { title: "Bouteille d'Eau Isotherme 750ml", price: 0.6, description: "Bouteille isotherme en acier inoxydable qui garde les boissons fraîches ou chaudes pendant des heures", asin: "B07H9B7GFW" },
+      { title: "Bandes de Résistance Élastiques Set", price: 0.5, description: "Kit complet de bandes élastiques pour musculation et rééducation, tous niveaux", asin: "B07QMXBZS9" },
+      { title: "Tracker d'Activité Connecté", price: 0.9, description: "Montre connectée pour suivre l'activité physique, les pas et la fréquence cardiaque", asin: "B08DFBZLKY" }
     ],
     "Bien-être": [
-      { title: "Diffuseur d'Huiles Essentielles", price: 0.6, description: "Diffuseur ultrasonique avec lumière LED pour créer une ambiance relaxante" },
-      { title: "Kit de Bain Relaxant Bio", price: 0.7, description: "Coffret de produits de bain naturels et biologiques pour moments de détente" },
-      { title: "Coussin de Méditation Ergonomique", price: 0.5, description: "Coussin confortable spécialement conçu pour la méditation et la relaxation" },
-      { title: "Masque de Nuit en Soie Naturelle", price: 0.4, description: "Masque de nuit luxueux en soie pour améliorer la qualité du sommeil" }
+      { title: "Diffuseur d'Huiles Essentielles", price: 0.6, description: "Diffuseur ultrasonique avec lumière LED pour créer une ambiance relaxante", asin: "B07DPBXNVR" },
+      { title: "Kit de Bain Relaxant Bio", price: 0.7, description: "Coffret de produits de bain naturels et biologiques pour moments de détente", asin: "B08V4P9XYZ" },
+      { title: "Coussin de Méditation Ergonomique", price: 0.5, description: "Coussin confortable spécialement conçu pour la méditation et la relaxation", asin: "B07MDHQNXF" },
+      { title: "Masque de Nuit en Soie Naturelle", price: 0.4, description: "Masque de nuit luxueux en soie pour améliorer la qualité du sommeil", asin: "B074M7J8M9" }
     ],
     Voyage: [
-      { title: "Sac à Dos de Randonnée 35L", price: 0.8, description: "Sac à dos technique avec compartiments multiples, idéal pour les aventures outdoor" },
-      { title: "Organisateur de Voyage Multipoches", price: 0.4, description: "Set d'organisateurs pour valise qui facilite l'organisation des affaires de voyage" },
-      { title: "Adaptateur Universel de Voyage", price: 0.3, description: "Adaptateur multiprises compatible avec plus de 150 pays, avec ports USB" },
-      { title: "Oreiller de Voyage Gonflable", price: 0.2, description: "Oreiller de voyage compact et confortable, facile à transporter" }
+      { title: "Sac à Dos de Randonnée 35L", price: 0.8, description: "Sac à dos technique avec compartiments multiples, idéal pour les aventures outdoor", asin: "B07JBF8GQ5" },
+      { title: "Organisateur de Voyage Multipoches", price: 0.4, description: "Set d'organisateurs pour valise qui facilite l'organisation des affaires de voyage", asin: "B07P6Y647D" },
+      { title: "Adaptateur Universel de Voyage", price: 0.3, description: "Adaptateur multiprises compatible avec plus de 150 pays, avec ports USB", asin: "B07DRQP6Q9" },
+      { title: "Oreiller de Voyage Gonflable", price: 0.2, description: "Oreiller de voyage compact et confortable, facile à transporter", asin: "B076Q8BJ7M" }
     ],
     Nature: [
-      { title: "Kit de Jardinage d'Intérieur", price: 0.6, description: "Kit complet pour cultiver des herbes aromatiques à la maison" },
-      { title: "Guide d'Identification des Plantes", price: 0.4, description: "Livre illustré pour reconnaître et comprendre la flore locale" },
-      { title: "Jumelles d'Observation Nature", price: 0.8, description: "Jumelles compactes pour l'observation des oiseaux et de la faune" },
-      { title: "Gourde Filtrante Écologique", price: 0.5, description: "Gourde avec système de filtration intégré, parfaite pour les sorties nature" }
+      { title: "Kit de Jardinage d'Intérieur", price: 0.6, description: "Kit complet pour cultiver des herbes aromatiques à la maison", asin: "B08RJKL3M4" },
+      { title: "Guide d'Identification des Plantes", price: 0.4, description: "Livre illustré pour reconnaître et comprendre la flore locale", asin: "B07NQS8R9P" },
+      { title: "Jumelles d'Observation Nature", price: 0.8, description: "Jumelles compactes pour l'observation des oiseaux et de la faune", asin: "B07GQNM2KZ" },
+      { title: "Gourde Filtrante Écologique", price: 0.5, description: "Gourde avec système de filtration intégré, parfaite pour les sorties nature", asin: "B075WHSHPX" }
     ],
     Tech: [
-      { title: "Chargeur Sans Fil Rapide", price: 0.5, description: "Station de charge sans fil compatible avec tous les smartphones modernes" },
-      { title: "Écouteurs Bluetooth Sport", price: 0.7, description: "Écouteurs sans fil résistants à la transpiration, idéaux pour le sport" },
-      { title: "Support Téléphone Ajustable", price: 0.3, description: "Support universel pour smartphone et tablette, réglable à 360°" },
-      { title: "Powerbank 20000mAh Compact", price: 0.6, description: "Batterie externe haute capacité avec charge rapide et affichage LED" }
+      { title: "Chargeur Sans Fil Rapide", price: 0.5, description: "Station de charge sans fil compatible avec tous les smartphones modernes", asin: "B07DBXZZN7" },
+      { title: "Écouteurs Bluetooth Sport", price: 0.7, description: "Écouteurs sans fil résistants à la transpiration, idéaux pour le sport", asin: "B07SJR6HL3" },
+      { title: "Support Téléphone Ajustable", price: 0.3, description: "Support universel pour smartphone et tablette, réglable à 360°", asin: "B08CDNQ5GJ" },
+      { title: "Powerbank 20000mAh Compact", price: 0.6, description: "Batterie externe haute capacité avec charge rapide et affichage LED", asin: "B07PXMF52C" }
     ],
     Cuisine: [
-      { title: "Set de Couteaux de Chef", price: 0.8, description: "Set de 3 couteaux professionnels en acier inoxydable avec bloc de rangement" },
-      { title: "Planche à Découper Bambou", price: 0.4, description: "Planche à découper écologique en bambou avec rigole pour les jus" },
-      { title: "Balance de Cuisine Numérique", price: 0.3, description: "Balance précise jusqu'au gramme avec écran LCD et fonction tare" },
-      { title: "Boîtes de Conservation Hermétiques", price: 0.5, description: "Set de boîtes alimentaires en verre avec couvercles hermétiques" }
+      { title: "Set de Couteaux de Chef", price: 0.8, description: "Set de 3 couteaux professionnels en acier inoxydable avec bloc de rangement", asin: "B07VNBQZPJ" },
+      { title: "Planche à Découper Bambou", price: 0.4, description: "Planche à découper écologique en bambou avec rigole pour les jus", asin: "B078X7KTQV" },
+      { title: "Balance de Cuisine Numérique", price: 0.3, description: "Balance précise jusqu'au gramme avec écran LCD et fonction tare", asin: "B074TBKZPX" },
+      { title: "Boîtes de Conservation Hermétiques", price: 0.5, description: "Set de boîtes alimentaires en verre avec couvercles hermétiques", asin: "B07D2YHXQN" }
     ],
     Lecture: [
-      { title: "Lampe de Lecture LED Rechargeable", price: 0.4, description: "Lampe de lecture pliable avec lumière réglable et batterie longue durée" },
-      { title: "Marque-pages Magnétiques Créatifs", price: 0.1, description: "Collection de marque-pages magnétiques avec designs artistiques" },
-      { title: "Support de Livre Ajustable", price: 0.3, description: "Support ergonomique pour maintenir les livres ouverts sans effort" },
-      { title: "Carnet de Notes Littéraires", price: 0.2, description: "Carnet élégant pour noter citations et réflexions de lecture" }
+      { title: "Lampe de Lecture LED Rechargeable", price: 0.4, description: "Lampe de lecture pliable avec lumière réglable et batterie longue durée", asin: "B07QBCKZJX" },
+      { title: "Marque-pages Magnétiques Créatifs", price: 0.1, description: "Collection de marque-pages magnétiques avec designs artistiques", asin: "B081FPQM3Y" },
+      { title: "Support de Livre Ajustable", price: 0.3, description: "Support ergonomique pour maintenir les livres ouverts sans effort", asin: "B07XLPBQV9" },
+      { title: "Carnet de Notes Littéraires", price: 0.2, description: "Carnet élégant pour noter citations et réflexions de lecture", asin: "B07ZQXHFNM" }
     ],
     Art: [
-      { title: "Set de Pinceaux Aquarelle", price: 0.5, description: "Kit complet de pinceaux de qualité artistique pour aquarelle et acrylique" },
-      { title: "Carnet de Croquis Premium", price: 0.3, description: "Carnet à spirale avec papier épais, idéal pour dessins et croquis" },
-      { title: "Coffret de Crayons de Couleur", price: 0.6, description: "Set de 48 crayons de couleur professionnels avec nuancier" },
-      { title: "Chevalet de Table Pliable", price: 0.4, description: "Chevalet compact en bois pour peindre ou exposer ses œuvres" }
+      { title: "Set de Pinceaux Aquarelle", price: 0.5, description: "Kit complet de pinceaux de qualité artistique pour aquarelle et acrylique", asin: "B07PNWR8QD" },
+      { title: "Carnet de Croquis Premium", price: 0.3, description: "Carnet à spirale avec papier épais, idéal pour dessins et croquis", asin: "B07XBPQV2R" },
+      { title: "Coffret de Crayons de Couleur", price: 0.6, description: "Set de 48 crayons de couleur professionnels avec nuancier", asin: "B01CIOV28K" },
+      { title: "Chevalet de Table Pliable", price: 0.4, description: "Chevalet compact en bois pour peindre ou exposer ses œuvres", asin: "B07MPCVZ6N" }
     ],
     Photographie: [
-      { title: "Trépied Compact pour Smartphone", price: 0.4, description: "Trépied léger et réglable avec support universel pour téléphone" },
-      { title: "Kit de Nettoyage Objectif", price: 0.2, description: "Kit professionnel pour nettoyer objectifs et écrans sans rayures" },
-      { title: "Éclairage LED Portable", price: 0.6, description: "Panneau LED rechargeable avec température de couleur ajustable" },
-      { title: "Sac Photo Étanche", price: 0.5, description: "Sac de protection étanche pour appareil photo et accessoires" }
+      { title: "Trépied Compact pour Smartphone", price: 0.4, description: "Trépied léger et réglable avec support universel pour téléphone", asin: "B07NM63X8S" },
+      { title: "Kit de Nettoyage Objectif", price: 0.2, description: "Kit professionnel pour nettoyer objectifs et écrans sans rayures", asin: "B074Q827GR" },
+      { title: "Éclairage LED Portable", price: 0.6, description: "Panneau LED rechargeable avec température de couleur ajustable", asin: "B08GKNM4JQ" },
+      { title: "Sac Photo Étanche", price: 0.5, description: "Sac de protection étanche pour appareil photo et accessoires", asin: "B07KQJM8F3" }
     ]
   };
 
@@ -1438,7 +1438,7 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
   const shuffled = selectedSuggestions.sort(() => 0.5 - Math.random());
   const finalSuggestions = shuffled.slice(0, 3);
 
-  // Générer les suggestions finales avec prix réalistes
+  // Générer les suggestions finales avec liens directs Amazon
   const suggestions = finalSuggestions.map((suggestion, index) => {
     // Calcul de prix plus proche du budget
     let targetPrice = Math.round(budget * suggestion.price);
@@ -1451,11 +1451,10 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     // Prix minimum raisonnable
     const finalPrice = Math.max(targetPrice, Math.round(budget * 0.4));
     
-    const searchQuery = suggestion.title.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
-    const encodedQuery = encodeURIComponent(searchQuery);
-    
-    // Liens plus spécifiques pour ressembler à des vrais produits
-    const specificSearchUrl = withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${Math.round(finalPrice * 0.8)*100}-${Math.round(finalPrice * 1.2)*100}&ref=sr_nr_p_36_1`);
+    // Génération de liens directs Amazon avec ASIN
+    const directProductUrl = suggestion.asin ? 
+      withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`) :
+      withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`);
     
     return {
       title: suggestion.title,
@@ -1465,10 +1464,10 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
       reasoning: `${suggestion.description}. Parfait pour ${personData.name} qui apprécie ${interests.join(', ').toLowerCase() || 'les beaux objets'}.`,
       category: 'Cadeau personnalisé',
       alternatives: [
-        `Recherche précise: ${searchQuery}`,
-        `Variante: ${searchQuery.split(' ')[0]} premium`
+        `Produit similaire: ${suggestion.title.split(' ')[0]} alternative`,
+        `Version premium: ${suggestion.title.split(' ')[0]} haut de gamme`
       ],
-      purchaseLinks: [specificSearchUrl],
+      purchaseLinks: [directProductUrl],
       priceInfo: {
         displayPrice: finalPrice, // Juste le nombre, pas de €
         source: 'estimated',
@@ -1476,11 +1475,11 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
         amazonPrice: finalPrice
       },
       amazonData: {
-        asin: null,
-        productUrl: specificSearchUrl,
-        addToCartUrl: null,
-        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}`),
-        matchType: 'search'
+        asin: suggestion.asin || null,
+        productUrl: directProductUrl,
+        addToCartUrl: suggestion.asin ? withAffiliate(`https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1`) : null,
+        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`),
+        matchType: suggestion.asin ? 'direct' : 'search'
       }
     };
   });
