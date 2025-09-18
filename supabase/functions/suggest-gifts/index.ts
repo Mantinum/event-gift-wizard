@@ -161,18 +161,28 @@ async function searchAmazonProductsRainforest(
         const price = parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.'));
         return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
       })
-      .map((item: any) => ({
-        title: item.title,
-        price: parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.')),
-        asin: item.asin,
-        rating: item.rating,
-        reviewCount: item.reviews_count,
-        imageUrl: item.image,
-        link: item.link,
-        snippet: item.snippet,
-        description: item.snippet,
-        displayDescription: item.snippet || null
-      }))
+      .map((item: any) => {
+        const asin = item.asin;
+        const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
+        
+        // Prioriser les liens directs DP quand possible
+        const directLink = item.link && item.link.includes('/dp/')
+          ? item.link
+          : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
+        
+        return {
+          title: item.title,
+          price: parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.')),
+          asin,
+          rating: item.rating,
+          reviewCount: item.reviews_count,
+          imageUrl: item.image,
+          link: directLink ?? item.link ?? null, // Garder DP si possible
+          snippet: item.snippet,
+          description: item.snippet,
+          displayDescription: item.snippet || null
+        };
+      })
       .slice(0, 5); // Max 5 produits par requête
     
     console.log(`📦 RainforestAPI - Products found for "${query}": ${products.length}`);
@@ -217,18 +227,28 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
               const price = parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.'));
               return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
             })
-            .map((item: any) => ({
-              title: item.title,
-              price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
-              asin: item.asin,
-              rating: item.rating,
-              reviewCount: item.reviews_count,
-              imageUrl: item.thumbnail,
-              link: item.link,
-              snippet: item.snippet,
-              description: item.description,
-              displayDescription: item.snippet || item.description || null
-            }))
+            .map((item: any) => {
+              const asin = item.asin;
+              const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
+              
+              // Prioriser les liens directs DP quand possible
+              const directLink = item.link && item.link.includes('/dp/')
+                ? item.link
+                : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
+              
+              return {
+                title: item.title,
+                price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
+                asin,
+                rating: item.rating,
+                reviewCount: item.reviews_count,
+                imageUrl: item.thumbnail,
+                link: directLink ?? item.link ?? null, // Garder DP si possible
+                snippet: item.snippet,
+                description: item.description,
+                displayDescription: item.snippet || item.description || null
+              };
+            })
             .slice(0, 5);
           
           console.log(`✅ SerpAPI - ${products.length} produits trouvés pour "${query}"`);
@@ -549,10 +569,16 @@ serve(async (req) => {
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
     // Limiter drastiquement les produits pour éviter limite tokens
-  const selectedProducts = diversifyProducts(availableProducts, 4);
-  if (selectedProducts.length === 0) {
-    console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
-  }
+    const selectedProducts = diversifyProducts(availableProducts, 4);
+    if (selectedProducts.length === 0) {
+      console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
+    }
+
+    // 🎯 Étape 2: Indexation des produits pour retrouver les liens directs
+    const allPool = [...availableProducts, ...selectedProducts];
+    const byAsin = new Map(allPool.filter(p => p.asin).map(p => [p.asin, p]));
+    const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+    const byTitle = new Map(allPool.map(p => [normalizeTitle(p.title || ''), p]));
     
     // Build enhanced context with personal notes priority
     const personalNotes = personData.notes || '';
@@ -638,7 +664,7 @@ JSON obligatoire:`;
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin": "...", "confidence": 0.0 }, ...3 au total]}. ${promptVariation}` },
+            { role: 'system', content: `Sélectionne 3 produits parmi la liste. Sois concis. Réponds UNIQUEMENT avec un JSON valide sans texte supplémentaire. Retourne exactement {"suggestions":[{ "title": "...", "price": 0, "asin": "...", "confidence": 0.0, "reasoning": "..." }, ...3 au total]}. ${promptVariation}` },
             { role: 'user', content: userPrompt }
           ],
           max_tokens: maxTokens,
@@ -759,8 +785,23 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         throw new Error(`Erreur parsing JSON: ${(jsonError as Error).message}`);
       }
       
-      const directSuggestions = Array.isArray(parsedResponse.suggestions) ? parsedResponse.suggestions : [];
-      console.log('🎯 Parsed direct suggestions count:', directSuggestions.length);
+      // Parser tolérant - accepte "suggestions" ou "selections" 
+      const rawSuggestions = Array.isArray(parsedResponse?.suggestions)
+        ? parsedResponse.suggestions
+        : Array.isArray(parsedResponse?.selections)
+          ? parsedResponse.selections
+          : [];
+
+      console.log('🎯 Parsed direct suggestions count:', rawSuggestions.length);
+      
+      // Normaliser les champs pour la compatibilité
+      const directSuggestions = rawSuggestions.map((raw: any) => ({
+        title: raw.title ?? raw.selectedTitle ?? '',
+        asin: raw.asin ?? raw.selectedAsin ?? '',
+        price: raw.price ?? raw.selectedPrice ?? 0,
+        confidence: raw.confidence ?? 0.5,
+        reasoning: raw.reasoning ?? ''
+      }));
       
       // Validate that we have exactly 3 suggestions as per schema
       if (directSuggestions.length !== 3) {
@@ -909,33 +950,43 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           return `Un produit de qualité sélectionné pour ${name}. Ce cadeau saura lui apporter satisfaction grâce à son utilité et son design soigné.`;
         };
         
-        // Créer des liens Amazon directs et spécifiques
-        const createAmazonLinks = (title: string, asin: string) => {
+        // Créer des liens Amazon directs et spécifiques en utilisant d'abord les produits indexés
+        const createAmazonLinksWithIndexation = (title: string, asin: string) => {
           const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21';
+          const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a);
           
-          // Créer plusieurs types de liens pour maximiser les chances de trouver le produit
+          // 1er choix : Trouver le produit dans l'index et utiliser son lien direct
+          const fromAsin = asin ? byAsin.get(asin) : undefined;
+          const fromTitle = !fromAsin && title ? byTitle.get(normalizeTitle(title)) : undefined;
+          const originalProduct = fromAsin || fromTitle;
+          
+          // 2e choix : URL canonique DP avec ASIN si l'ASIN est valide
+          const directUrl = originalProduct?.link 
+            || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}?tag=${partnerTag}` : undefined);
+          
+          // 3e choix : lien de recherche taggé
           const encodedTitle = encodeURIComponent(title.replace(/[^\w\s-]/g, '').trim());
+          const searchUrl = `https://www.amazon.fr/s?k=${encodedTitle}&tag=${partnerTag}`;
           
-          // 1. Lien direct avec ASIN (si c'est un vrai ASIN)
-          const directLink = `https://www.amazon.fr/dp/${asin}?tag=${partnerTag}`;
-          
-          // 2. Lien de recherche précise avec tous les mots-clés
+          // Autres liens alternatifs
           const preciseSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&ref=sr_nr_p_85_1&fst=as%3Aoff&rh=p_85%3A2470955031&qid=1577836800&rnid=2470954031&tag=${partnerTag}`;
-          
-          // 3. Lien de recherche par marque si détectable
           const titleWords = title.split(' ');
           const possibleBrand = titleWords[0];
           const brandSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&rh=p_89%3A${encodeURIComponent(possibleBrand)}&tag=${partnerTag}`;
           
+          console.log(`🔗 Liens générés pour "${title}": direct=${!!directUrl}, original=${!!originalProduct?.link}, asin=${asin}`);
+          
           return {
-            primary: directLink,
+            primary: directUrl ?? searchUrl,
             search: preciseSearchLink,
             brand: brandSearchLink,
-            fallback: `https://www.amazon.fr/s?k=${encodedTitle}&tag=${partnerTag}`
+            fallback: searchUrl,
+            isDirectLink: !!directUrl,
+            originalProductFound: !!originalProduct
           };
         };
 
-        const amazonLinks = createAmazonLinks(suggestion.title, suggestion.asin);
+        const amazonLinks = createAmazonLinksWithIndexation(suggestion.title, suggestion.asin);
         
         return {
           title: suggestion.title,
