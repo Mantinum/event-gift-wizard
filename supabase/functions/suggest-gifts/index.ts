@@ -600,10 +600,10 @@ JSON obligatoire:`;
       });
     }
 
-    console.log('🤖 Calling OpenAI with model preference: GPT-5');
-    let modelUsed = 'gpt-5';
-    // GPT-5 -> Responses API, sinon Chat
-    let openAIResponse = await callResponses(modelUsed, 1200);
+    console.log('🤖 Calling OpenAI with GPT-4o-mini (stable model)');
+    let modelUsed = 'gpt-4o-mini';
+    // Utiliser Chat Completions directement pour plus de stabilité
+    let openAIResponse = await callChatCompletions(modelUsed, 1200);
 
     if (!openAIResponse.ok) {
       // Lis le JSON d'erreur proprement
@@ -684,49 +684,15 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       const finishReason = openAIData.finish_reason || openAIData.choices?.[0]?.finish_reason;
       if (finishReason === 'length') {
         console.warn('⚠️ Troncature → retry avec budget de tokens ↑');
-        if (modelUsed.startsWith('gpt-5')) {
-          // Responses API
-          const retry = await callResponses(modelUsed, 1600, prompt);
-          if (retry.ok) {
-            const rj = await retry.json();
-            Object.assign(openAIData, rj); // réutilise la nouvelle sortie
-          }
-        } else {
-          // Chat Completions
-          const retry = await callChatCompletions(modelUsed, 1600, prompt);
-          if (retry.ok) {
-            const rj = await retry.json();
-            openAIData.choices = rj.choices;
-          }
+        const retry = await callChatCompletions(modelUsed, 1600, prompt);
+        if (retry.ok) {
+          const rj = await retry.json();
+          openAIData.choices = rj.choices;
         }
       }
       
-      // Extraction du contenu selon l'endpoint
-      let aiContent = '';
-      if (modelUsed.startsWith('gpt-5')) {
-        // Responses API - plusieurs formats possibles
-        if (typeof openAIData.output === 'string') {
-          aiContent = openAIData.output;
-        } else if (typeof openAIData.output_text === 'string') {
-          aiContent = openAIData.output_text;
-        } else if (Array.isArray(openAIData.output)) {
-          const first = openAIData.output[0];
-          if (typeof first === 'string') {
-            aiContent = first;
-          } else if (first?.content) {
-            const part = Array.isArray(first.content) 
-              ? first.content.find((c: any) => c?.text || c?.type === 'text')
-              : first.content;
-            aiContent = part?.text || part || '';
-          }
-        } else if (openAIData.choices?.[0]?.message?.content) {
-          // Fallback au cas où GPT-5 retournerait du Chat format
-          aiContent = openAIData.choices[0].message.content;
-        }
-        console.log('🔍 GPT-5 aiContent extracted:', aiContent.substring(0, 100) + '...');
-      } else {
-        aiContent = openAIData.choices?.[0]?.message?.content ?? '';
-      }
+      // Extraction du contenu - uniquement Chat Completions format
+      const aiContent = openAIData.choices?.[0]?.message?.content ?? '';
       console.log('🧠 AI content length:', aiContent.length);
       console.log('📝 AI content preview:', aiContent.substring(0, 200));
       
