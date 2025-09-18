@@ -170,10 +170,10 @@ async function searchAmazonProductsRainforest(
     console.log(`🌧️ RainforestAPI - Recherche Amazon: "${query}" (${minPrice}€-${maxPrice}€)`);
     console.log(`🔑 RainforestAPI Key length: ${rainforestApiKey.length} chars`);
     
-    const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}&min_price=${minPrice}&max_price=${maxPrice}`;
+    const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}`;
     console.log(`📡 RainforestAPI Request URL: ${searchUrl.replace(rainforestApiKey, 'HIDDEN')}`);
     
-    const response = await withTimeoutFetch(searchUrl, {}, 6000);
+    const response = await withTimeoutFetch(searchUrl, {}, 9000);
     console.log(`📡 RainforestAPI Response: ${response.status} ${response.statusText}`);
     
     if (!response.ok) {
@@ -207,7 +207,11 @@ async function searchAmazonProductsRainforest(
     console.log(`📦 RainforestAPI - Products found for "${query}": ${products.length}`);
     return products;
   } catch (error) {
-    console.error(`❌ Erreur RainforestAPI lors de la recherche Amazon pour "${query}":`, error);
+    if (error.name === 'AbortError') {
+      console.error(`⏰ RainforestAPI Timeout pour "${query}"`);
+    } else {
+      console.error(`❌ Erreur RainforestAPI lors de la recherche Amazon pour "${query}":`, error);
+    }
     return [];
   }
 }
@@ -240,7 +244,10 @@ function normalizeSerpApiItem(item: any) {
     asin,
     link: withAffiliate(direct || dp || search),
     searchUrl: withAffiliate(search),
-    price: item.price ? parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.')) : undefined,
+    price: (typeof item.price === 'object')
+      ? (item.price?.value ??
+         parseFloat(String(item.price?.raw ?? '').replace(/[^\d.,]/g, '').replace(',', '.')))
+      : parseFloat(String(item.price ?? '').replace(/[^\d.,]/g, '').replace(',', '.')) || undefined,
     rating: item.rating,
     reviewCount: item.reviews_count,
     imageUrl: item.thumbnail,
@@ -273,7 +280,7 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
       const searchUrl = `https://serpapi.com/search.json?${params}`;
       console.log(`📡 SerpAPI Request URL: ${searchUrl.replace(serpApiKey, 'HIDDEN')}`);
       
-      const response = await withTimeoutFetch(searchUrl, {}, 6000);
+      const response = await withTimeoutFetch(searchUrl, {}, 9000);
       console.log(`📡 SerpAPI Response: ${response.status} ${response.statusText}`);
       
       if (response.ok) {
@@ -318,9 +325,13 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
         console.error(`❌ SerpAPI HTTP error: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.error(`❌ SerpAPI exception for "${query}":`, error);
-      console.error(`   Error type: ${error?.name}`);
-      console.error(`   Error message: ${error?.message}`);
+      if (error.name === 'AbortError') {
+        console.error(`⏰ SerpAPI Timeout pour "${query}"`);
+      } else {
+        console.error(`❌ SerpAPI exception for "${query}":`, error);
+        console.error(`   Error type: ${error?.name}`);
+        console.error(`   Error message: ${error?.message}`);
+      }
     }
   }
   
@@ -699,10 +710,10 @@ Deno.serve(async (req) => {
     
     if (serpApiKey || rainforestApiKey) {
       console.log('✅ Au moins une clé API disponible, début recherche...');
-      // Limite à 4 requêtes max, concurrence 2, timeout strict
-      const queries = searchQueries.slice(0, 4);
+      // Limite à 2 requêtes max, concurrence 2, timeout strict
+      const queries = searchQueries.slice(0, 2);
       const startTime = Date.now();
-      const MAX_WALL_MS = 15000; // 15s mur global
+      const MAX_WALL_MS = 12000; // 12s mur global
 
       const searchTasks = queries.map(query => async () => {
         if (Date.now() - startTime > MAX_WALL_MS) throw new Error('global-timeout');
@@ -753,10 +764,20 @@ Deno.serve(async (req) => {
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
+    // Post-normalisation: Garantir /dp/{ASIN} quand ASIN valide disponible
+    const normalized = availableProducts.map(p => {
+      const asin = toAsin(p.asin);
+      let link = p.link || '';
+      if (isValidAsin(asin) && (!link || !link.includes('/dp/'))) {
+        link = `https://www.amazon.fr/dp/${asin}`;
+      }
+      return { ...p, asin, link: withAffiliate(link) };
+    });
+    
     // Debug détaillé des produits avant filtrage
-    if (availableProducts.length > 0) {
+    if (normalized.length > 0) {
       console.log('🔍 Échantillon de produits bruts avant filtrage:');
-      availableProducts.slice(0, 3).forEach((p, i) => {
+      normalized.slice(0, 3).forEach((p, i) => {
         console.log(`  [${i}] Title: ${p.title?.substring(0, 60)}...`);
         console.log(`      ASIN: ${p.asin} (valid: ${isValidAsin(p.asin)})`);
         console.log(`      Link: ${p.link?.substring(0, 80)}... (has /dp/: ${p.link?.includes('/dp/')})`);
@@ -764,8 +785,8 @@ Deno.serve(async (req) => {
       });
     }
     
-    // ⚠️ Filtre global : aucun produit sans dp ni ASIN valide ne passe dans le pool
-    const sanitized = availableProducts.filter(p => {
+    // ⚠️ Filtre global : amélioration avec normalisation préalable
+    const sanitized = normalized.filter(p => {
       const hasValidLink = p.link && p.link.includes('/dp/');
       const hasValidAsin = isValidAsin(p.asin);
       const isValid = hasValidLink || hasValidAsin;
@@ -1243,8 +1264,8 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           // 1) Si on a un lien source déjà en /dp/, on le garde
           let base = product?.link && product.link.includes('/dp/') ? product.link : null;
           
-          // 2) Sinon on forge /dp/{asin} SEULEMENT si le produit est dans byAsin (ASIN validé)
-          if (!base && product && isValidAsin(asin)) {
+          // 2) Sinon on forge /dp/{asin} si ASIN valide (même si pas dans byAsin)
+          if (!base && isValidAsin(asin)) {
             base = `https://www.amazon.fr/dp/${toAsin(asin)}`;
           }
           
@@ -1264,9 +1285,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           console.log(`🔗 Résolution pour "${title}": pool=${!!product}, direct=${!!base}, ASIN=${asin}`);
           
           return { 
-            primary: base || search, 
+            primary: base || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${toAsin(asin)}` : search), 
             search, 
-            isDirectLink: !!base 
+            isDirectLink: !!base || (isValidAsin(asin) && !base ? true : false)
           };
         };
 
