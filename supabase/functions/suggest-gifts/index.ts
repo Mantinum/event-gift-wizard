@@ -202,7 +202,7 @@ async function searchAmazonProductsRainforest(
         if (!item.price) return true;
         return item.price >= minPrice && item.price <= maxPrice;
       })
-      .slice(0, 5); // Max 5 produits par requête
+      .slice(0, 8); // Max 8 produits par requête pour plus de diversité
     
     console.log(`📦 RainforestAPI - Products found for "${query}": ${products.length}`);
     return products;
@@ -293,7 +293,10 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
         }
         
         if (!data.error) {
-          const results = data.organic_results || [];
+          const results = [
+            ...(data.product_results || []),
+            ...(data.organic_results || []),
+          ];
           console.log(`📦 SerpAPI Raw results count: ${results.length}`);
           
           products = results
@@ -308,7 +311,7 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
               if (!item.price) return true;
               return item.price >= minPrice && item.price <= maxPrice;
             })
-            .slice(0, 5);
+            .slice(0, 8); // Max 8 produits par requête pour plus de diversité
           
           console.log(`✅ SerpAPI - ${products.length} produits trouvés pour "${query}"`);
           
@@ -388,6 +391,14 @@ const isValidAsin = (a?: string) => /^[A-Z0-9]{10}$/.test(toAsin(a));
 
 function extractAsinFromUrl(url?: string) {
   if (!url) return null;
+  // Dérouler picassoRedirect: ...&url=<encodé>
+  try {
+    const u = new URL(url);
+    if (u.pathname.includes('/slredirect/') || u.pathname.includes('/gp/redirect.html')) {
+      const target = u.searchParams.get('url');
+      if (target) url = decodeURIComponent(target);
+    }
+  } catch {}
   for (const re of ASIN_RES) {
     const m = url.match(re);
     if (m) return toAsin(m[1]);
@@ -692,7 +703,7 @@ Deno.serve(async (req) => {
     console.log('🔍 Étape 1: Recherche préliminaire de produits Amazon dans le budget');
     
     const maxBudget = budget;
-    const minBudget = Math.max(15, Math.round(budget * 0.7)); // Minimum 70% du budget pour éviter les produits trop bas
+    const minBudget = Math.max(5, Math.round(budget * 0.3)); // 30% du budget pour laisser respirer
     
     // Générer des requêtes de recherche ciblées basées sur le profil
     const searchQueries = generateTargetedSearchQueries(personData, eventType, budget);
@@ -711,7 +722,21 @@ Deno.serve(async (req) => {
     if (serpApiKey || rainforestApiKey) {
       console.log('✅ Au moins une clé API disponible, début recherche...');
       // Limite à 2 requêtes max, concurrence 2, timeout strict
-      const queries = searchQueries.slice(0, 2);
+  // Forcer des requêtes déterministes par catégorie, en plus des requêtes "créatives"
+  const forced: string[] = [];
+  if ((personData.interests || []).includes('Sport')) {
+    forced.push('tapis yoga', 'bouteille isotherme sport');
+  }
+  if ((personData.interests || []).includes('Tech') || (personData.interests || []).includes('Technologie')) {
+    forced.push('accessoire smartphone', 'chargeur portable');
+  }
+  if ((personData.interests || []).includes('Cuisine')) {
+    forced.push('ustensile cuisine', 'accessoire patisserie');
+  }
+  if ((personData.interests || []).includes('Lecture')) {
+    forced.push('marque page original', 'lampe lecture');
+  }
+  const queries = [...forced, ...searchQueries].slice(0, 4);
       const startTime = Date.now();
       const MAX_WALL_MS = 12000; // 12s mur global
 
@@ -1309,7 +1334,11 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             `Recherche précise: ${suggestion.title}`,
             `Recherche par marque: ${suggestion.title.split(' ')[0]}`
           ],
-          purchaseLinks: [amazonLinks.primary],
+          purchaseLinks: [
+            isValidAsin(suggestion.asin)
+              ? withAffiliate(`https://www.amazon.fr/dp/${toAsin(suggestion.asin)}`)
+              : amazonLinks.primary
+          ],
           priceInfo: {
             displayPrice: suggestion.price,
             source: 'ai_estimate',
