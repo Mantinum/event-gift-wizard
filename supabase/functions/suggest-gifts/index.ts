@@ -126,6 +126,39 @@ function generateTargetedSearchQueries(personData: any, eventType: string, budge
   return finalQueries;
 }
 
+// Normalisation RainforestAPI selon approche simplifiée
+function normalizeRainforestItem(item: any) {
+  const asinField = toAsin(item.asin);
+  const asinFromLink = extractAsinFromUrl(item.link);
+  const asin = isValidAsin(asinFromLink) ? asinFromLink : asinField;
+
+  // 1) si link contient /dp/, garde-le
+  const direct = item.link && item.link.includes('/dp/') ? item.link : null;
+  // 2) sinon, si ASIN valide => /dp/ASIN
+  const dp = !direct && isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null;
+  // 3) sinon, fallback recherche
+  const title = item.title || '';
+  const search = `https://www.amazon.fr/s?k=${encodeURIComponent(title.replace(/[^\w\s-]/g, ' ').trim())}`;
+
+  const price = parseFloat(String(item.price?.value ?? item.price ?? '')
+    .replace(/[^\d.,]/g, '')
+    .replace(',', '.')) || undefined;
+
+  return {
+    title,
+    asin,
+    link: withAffiliate(direct || dp || search),
+    searchUrl: withAffiliate(search),
+    price,
+    rating: item.rating,
+    reviewCount: item.reviews_count,
+    imageUrl: item.image,
+    snippet: item.snippet,
+    description: item.snippet,
+    displayDescription: item.snippet || null
+  };
+}
+
 // Recherche de produits Amazon avec RainforestAPI
 async function searchAmazonProductsRainforest(
   query: string, 
@@ -153,39 +186,16 @@ async function searchAmazonProductsRainforest(
     }
 
     const products = (data.search_results || [])
-      .filter((item: any) => {
-        if (!item.asin) return false;
-        // Filter by price if available
-        if (!item.price) return true;
-        const price = parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.'));
-        return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
-      })
-      .map((item: any) => {
-        const asinFromField = toAsin(item.asin);
-        const asinFromLink = extractAsinFromUrl(item.link);
-        const asin = isValidAsin(asinFromLink) ? asinFromLink : asinFromField;
-        
-        // Prioriser les liens directs DP quand possible avec validation ASIN
-        const directLink = item.link && item.link.includes('/dp/')
-          ? item.link
-          : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
-        
-        return {
-          title: item.title,
-          price: parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.')),
-          asin,
-          rating: item.rating,
-          reviewCount: item.reviews_count,
-          imageUrl: item.image,
-          link: directLink ?? item.link ?? null, // Garder DP si possible
-          snippet: item.snippet,
-          description: item.snippet,
-          displayDescription: item.snippet || null
-        };
-      })
+      .filter((item: any) => item.asin) // Garder seulement ceux avec ASIN
+      .map(normalizeRainforestItem)
       .filter(item => {
         // Ne garder que les produits avec lien /dp/ OU ASIN valide
         return (item.link && item.link.includes('/dp/')) || isValidAsin(item.asin);
+      })
+      .filter(item => {
+        // Filtrer par prix si disponible
+        if (!item.price) return true;
+        return item.price >= minPrice && item.price <= maxPrice;
       })
       .slice(0, 5); // Max 5 produits par requête
     
@@ -204,6 +214,35 @@ function withTimeoutFetch(url: string, init: RequestInit = {}, ms = 6000): Promi
   
   return fetch(url, { ...init, signal: controller.signal })
     .finally(() => clearTimeout(timeout));
+}
+
+// Normalisation SerpAPI selon approche simplifiée
+function normalizeSerpApiItem(item: any) {
+  const asinField = toAsin(item.asin);
+  const asinFromLink = extractAsinFromUrl(item.link);
+  const asin = isValidAsin(asinFromLink) ? asinFromLink : asinField;
+
+  // 1) si link contient /dp/, garde-le
+  const direct = item.link && item.link.includes('/dp/') ? item.link : null;
+  // 2) sinon, si ASIN valide => /dp/ASIN
+  const dp = !direct && isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null;
+  // 3) sinon, fallback recherche
+  const title = item.title || '';
+  const search = `https://www.amazon.fr/s?k=${encodeURIComponent(title.replace(/[^\w\s-]/g, ' ').trim())}`;
+
+  return {
+    title,
+    asin,
+    link: withAffiliate(direct || dp || search),
+    searchUrl: withAffiliate(search),
+    price: item.price ? parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.')) : undefined,
+    rating: item.rating,
+    reviewCount: item.reviews_count,
+    imageUrl: item.thumbnail,
+    snippet: item.snippet,
+    description: item.description,
+    displayDescription: item.snippet || item.description || null
+  };
 }
 
 // Recherche de produits Amazon avec SerpApi et fallback RainforestAPI
@@ -234,38 +273,16 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
           const results = data.organic_results || [];
           
           products = results
-            .filter((item: any) => {
-              if (!item.asin) return false;
-              if (!item.price) return true;
-              const price = parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.'));
-              return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
-            })
-            .map((item: any) => {
-              const asinFromField = toAsin(item.asin);
-              const asinFromLink = extractAsinFromUrl(item.link);
-              const asin = isValidAsin(asinFromLink) ? asinFromLink : asinFromField;
-              
-              // Prioriser les liens directs DP quand possible avec validation ASIN
-              const directLink = item.link && item.link.includes('/dp/')
-                ? item.link
-                : (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : undefined);
-              
-              return {
-                title: item.title,
-                price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
-                asin,
-                rating: item.rating,
-                reviewCount: item.reviews_count,
-                imageUrl: item.thumbnail,
-                link: directLink ?? item.link ?? null, // Garder DP si possible
-                snippet: item.snippet,
-                description: item.description,
-                displayDescription: item.snippet || item.description || null
-              };
-            })
+            .filter((item: any) => item.asin) // Garder seulement ceux avec ASIN
+            .map(normalizeSerpApiItem)
             .filter(item => {
               // Ne garder que les produits avec lien /dp/ OU ASIN valide
               return (item.link && item.link.includes('/dp/')) || isValidAsin(item.asin);
+            })
+            .filter(item => {
+              // Filtrer par prix si disponible
+              if (!item.price) return true;
+              return item.price >= minPrice && item.price <= maxPrice;
             })
             .slice(0, 5);
           
@@ -1330,20 +1347,11 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
   }
 });
 
-// Fonction de fallback quand aucun produit n'est trouvé
+// Fonction de fallback simplifiée qui utilise les APIs ou génère des suggestions génériques
 async function generateFallbackSuggestions(personData: any, eventType: string, budget: number) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  };
-  
-  const withAffiliate = (url: string) => {
-    const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') || '';
-    const partnerTagActive = (Deno.env.get('AMZ_PARTNER_TAG_ACTIVE') || 'false').toLowerCase() === 'true';
-    if (!partnerTagActive || !partnerTag) return url;
-    const u = new URL(url);
-    u.searchParams.set('tag', partnerTag);
-    return u.toString();
   };
 
   console.log('🎯 Génération fallback pour:', { 
@@ -1353,149 +1361,193 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     budget 
   });
 
-  // Base de données de vrais produits Amazon avec ASINs
-  const smartSuggestions = {
-    Sport: [
-      { title: "Tapis de Yoga Antidérapant Premium", price: 0.7, description: "Tapis de yoga de haute qualité avec surface antidérapante, parfait pour toutes les pratiques sportives", asin: "B087QBQZPX" },
-      { title: "Bouteille d'Eau Isotherme 750ml", price: 0.6, description: "Bouteille isotherme en acier inoxydable qui garde les boissons fraîches ou chaudes pendant des heures", asin: "B07H9B7GFW" },
-      { title: "Bandes de Résistance Élastiques Set", price: 0.5, description: "Kit complet de bandes élastiques pour musculation et rééducation, tous niveaux", asin: "B07QMXBZS9" },
-      { title: "Tracker d'Activité Connecté", price: 0.9, description: "Montre connectée pour suivre l'activité physique, les pas et la fréquence cardiaque", asin: "B08DFBZLKY" }
-    ],
-    "Bien-être": [
-      { title: "Diffuseur d'Huiles Essentielles", price: 0.6, description: "Diffuseur ultrasonique avec lumière LED pour créer une ambiance relaxante", asin: "B07DPBXNVR" },
-      { title: "Kit de Bain Relaxant Bio", price: 0.7, description: "Coffret de produits de bain naturels et biologiques pour moments de détente", asin: "B08V4P9XYZ" },
-      { title: "Coussin de Méditation Ergonomique", price: 0.5, description: "Coussin confortable spécialement conçu pour la méditation et la relaxation", asin: "B07MDHQNXF" },
-      { title: "Masque de Nuit en Soie Naturelle", price: 0.4, description: "Masque de nuit luxueux en soie pour améliorer la qualité du sommeil", asin: "B074M7J8M9" }
-    ],
-    Voyage: [
-      { title: "Sac à Dos de Randonnée 35L", price: 0.8, description: "Sac à dos technique avec compartiments multiples, idéal pour les aventures outdoor", asin: "B07JBF8GQ5" },
-      { title: "Organisateur de Voyage Multipoches", price: 0.4, description: "Set d'organisateurs pour valise qui facilite l'organisation des affaires de voyage", asin: "B07P6Y647D" },
-      { title: "Adaptateur Universel de Voyage", price: 0.3, description: "Adaptateur multiprises compatible avec plus de 150 pays, avec ports USB", asin: "B07DRQP6Q9" },
-      { title: "Oreiller de Voyage Gonflable", price: 0.2, description: "Oreiller de voyage compact et confortable, facile à transporter", asin: "B076Q8BJ7M" }
-    ],
-    Nature: [
-      { title: "Kit de Jardinage d'Intérieur", price: 0.6, description: "Kit complet pour cultiver des herbes aromatiques à la maison", asin: "B08RJKL3M4" },
-      { title: "Guide d'Identification des Plantes", price: 0.4, description: "Livre illustré pour reconnaître et comprendre la flore locale", asin: "B07NQS8R9P" },
-      { title: "Jumelles d'Observation Nature", price: 0.8, description: "Jumelles compactes pour l'observation des oiseaux et de la faune", asin: "B07GQNM2KZ" },
-      { title: "Gourde Filtrante Écologique", price: 0.5, description: "Gourde avec système de filtration intégré, parfaite pour les sorties nature", asin: "B075WHSHPX" }
-    ],
-    Tech: [
-      { title: "Chargeur Sans Fil Rapide", price: 0.5, description: "Station de charge sans fil compatible avec tous les smartphones modernes", asin: "B07DBXZZN7" },
-      { title: "Écouteurs Bluetooth Sport", price: 0.7, description: "Écouteurs sans fil résistants à la transpiration, idéaux pour le sport", asin: "B07SJR6HL3" },
-      { title: "Support Téléphone Ajustable", price: 0.3, description: "Support universel pour smartphone et tablette, réglable à 360°", asin: "B08CDNQ5GJ" },
-      { title: "Powerbank 20000mAh Compact", price: 0.6, description: "Batterie externe haute capacité avec charge rapide et affichage LED", asin: "B07PXMF52C" }
-    ],
-    Cuisine: [
-      { title: "Set de Couteaux de Chef", price: 0.8, description: "Set de 3 couteaux professionnels en acier inoxydable avec bloc de rangement", asin: "B07VNBQZPJ" },
-      { title: "Planche à Découper Bambou", price: 0.4, description: "Planche à découper écologique en bambou avec rigole pour les jus", asin: "B078X7KTQV" },
-      { title: "Balance de Cuisine Numérique", price: 0.3, description: "Balance précise jusqu'au gramme avec écran LCD et fonction tare", asin: "B074TBKZPX" },
-      { title: "Boîtes de Conservation Hermétiques", price: 0.5, description: "Set de boîtes alimentaires en verre avec couvercles hermétiques", asin: "B07D2YHXQN" }
-    ],
-    Lecture: [
-      { title: "Lampe de Lecture LED Rechargeable", price: 0.4, description: "Lampe de lecture pliable avec lumière réglable et batterie longue durée", asin: "B07QBCKZJX" },
-      { title: "Marque-pages Magnétiques Créatifs", price: 0.1, description: "Collection de marque-pages magnétiques avec designs artistiques", asin: "B081FPQM3Y" },
-      { title: "Support de Livre Ajustable", price: 0.3, description: "Support ergonomique pour maintenir les livres ouverts sans effort", asin: "B07XLPBQV9" },
-      { title: "Carnet de Notes Littéraires", price: 0.2, description: "Carnet élégant pour noter citations et réflexions de lecture", asin: "B07ZQXHFNM" }
-    ],
-    Art: [
-      { title: "Set de Pinceaux Aquarelle", price: 0.5, description: "Kit complet de pinceaux de qualité artistique pour aquarelle et acrylique", asin: "B07PNWR8QD" },
-      { title: "Carnet de Croquis Premium", price: 0.3, description: "Carnet à spirale avec papier épais, idéal pour dessins et croquis", asin: "B07XBPQV2R" },
-      { title: "Coffret de Crayons de Couleur", price: 0.6, description: "Set de 48 crayons de couleur professionnels avec nuancier", asin: "B01CIOV28K" },
-      { title: "Chevalet de Table Pliable", price: 0.4, description: "Chevalet compact en bois pour peindre ou exposer ses œuvres", asin: "B07MPCVZ6N" }
-    ],
-    Photographie: [
-      { title: "Trépied Compact pour Smartphone", price: 0.4, description: "Trépied léger et réglable avec support universel pour téléphone", asin: "B07NM63X8S" },
-      { title: "Kit de Nettoyage Objectif", price: 0.2, description: "Kit professionnel pour nettoyer objectifs et écrans sans rayures", asin: "B074Q827GR" },
-      { title: "Éclairage LED Portable", price: 0.6, description: "Panneau LED rechargeable avec température de couleur ajustable", asin: "B08GKNM4JQ" },
-      { title: "Sac Photo Étanche", price: 0.5, description: "Sac de protection étanche pour appareil photo et accessoires", asin: "B07KQJM8F3" }
-    ]
-  };
-
-  // Suggestions par défaut si aucun intérêt ne correspond
-  const defaultSuggestions = [
-    { title: "Coffret Cadeau Artisanal Local", price: 0.7, description: "Sélection de produits artisanaux de qualité fabriqués localement" },
-    { title: "Plante d'Intérieur Dépolluante", price: 0.5, description: "Belle plante verte qui purifie l'air et apporte de la vie au foyer" },
-    { title: "Bougie Parfumée Naturelle", price: 0.3, description: "Bougie artisanale aux huiles essentielles avec cire végétale" }
-  ];
-
-  // Sélectionner les suggestions basées sur les intérêts
-  let selectedSuggestions: any[] = [];
-  const interests = personData.interests || [];
+  // Essayer une dernière fois avec les APIs sur des requêtes très génériques
+  const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+  const rainforestApiKey = Deno.env.get('RAINFOREST_API_KEY');
   
-  // Collecter les suggestions pertinentes
-  for (const interest of interests) {
-    if (smartSuggestions[interest]) {
-      selectedSuggestions.push(...smartSuggestions[interest]);
-    }
-  }
-
-  // Si pas d'intérêts correspondants, utiliser les suggestions par défaut
-  if (selectedSuggestions.length === 0) {
-    selectedSuggestions = defaultSuggestions;
-  }
-
-  // Mélanger et sélectionner 3 suggestions
-  const shuffled = selectedSuggestions.sort(() => 0.5 - Math.random());
-  const finalSuggestions = shuffled.slice(0, 3);
-
-  // Générer les suggestions finales avec liens directs Amazon
-  const suggestions = finalSuggestions.map((suggestion, index) => {
-    // Calcul de prix plus proche du budget
-    let targetPrice = Math.round(budget * suggestion.price);
+  if (serpApiKey || rainforestApiKey) {
+    console.log('🔄 Tentative fallback avec APIs externes...');
     
-    // Ajustements pour être plus proche du budget
-    if (targetPrice < budget * 0.6) {
-      targetPrice = Math.round(budget * (0.6 + Math.random() * 0.3)); // Entre 60% et 90% du budget
+    // Créer des requêtes très simples basées sur les intérêts
+    const interests = personData.interests || [];
+    const fallbackQueries = [];
+    
+    if (interests.includes('Sport')) fallbackQueries.push('cadeau sport');
+    if (interests.includes('Tech')) fallbackQueries.push('gadget tech');
+    if (interests.includes('Cuisine')) fallbackQueries.push('accessoire cuisine');
+    if (interests.includes('Lecture')) fallbackQueries.push('livre cadeau');
+    
+    // Queries génériques si pas d'intérêts
+    if (fallbackQueries.length === 0) {
+      fallbackQueries.push('cadeau original', 'idée cadeau', 'accessoire pratique');
     }
     
-    // Prix minimum raisonnable
-    const finalPrice = Math.max(targetPrice, Math.round(budget * 0.4));
+    const minPrice = Math.round(budget * 0.4);
+    const maxPrice = budget;
     
-    // Génération de liens directs Amazon avec ASIN
-    const directProductUrl = suggestion.asin ? 
-      withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`) :
-      withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`);
+    let allProducts: any[] = [];
+    
+    // Essayer quelques requêtes simples
+    for (const query of fallbackQueries.slice(0, 2)) {
+      try {
+        const products = await searchAmazonProducts(query, serpApiKey, minPrice, maxPrice, rainforestApiKey);
+        allProducts.push(...products);
+        
+        if (allProducts.length >= 3) break; // On s'arrête si on a assez de produits
+      } catch (error) {
+        console.warn(`⚠️ Fallback query "${query}" failed:`, error);
+      }
+    }
+    
+    // Si on a trouvé des produits via les APIs, les retourner
+    if (allProducts.length > 0) {
+      console.log(`✅ Fallback API a trouvé ${allProducts.length} produits`);
+      
+      const selectedProducts = diversifyProducts(allProducts, 3);
+      const suggestions = selectedProducts.map((product: any, index: number) => ({
+        title: product.title,
+        description: product.displayDescription || `${product.title.substring(0, 100)}...`,
+        estimatedPrice: Math.round(product.price || (budget * 0.7)),
+        confidence: 0.7 - (index * 0.1),
+        reasoning: `Suggestion trouvée pour ${personData.name} correspondant à ses intérêts.`,
+        category: 'Suggestion API',
+        alternatives: [`Recherche similaire: ${product.title.split(' ').slice(0, 2).join(' ')}`],
+        purchaseLinks: [product.link],
+        priceInfo: {
+          displayPrice: Math.round(product.price || (budget * 0.7)),
+          source: 'api_fallback',
+          originalEstimate: Math.round(product.price || (budget * 0.7)),
+          amazonPrice: product.price
+        },
+        amazonData: {
+          asin: product.asin,
+          productUrl: product.link,
+          addToCartUrl: product.asin && isValidAsin(product.asin) ? 
+            withAffiliate(`https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${product.asin}&Quantity.1=1`) : null,
+          searchUrl: product.searchUrl || withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(product.title)}`),
+          matchType: product.asin && isValidAsin(product.asin) ? 'api_match' : 'search'
+        }
+      }));
+      
+      return new Response(JSON.stringify({
+        success: true,
+        suggestions,
+        personName: personData.name,
+        metadata: {
+          totalSuggestions: suggestions.length,
+          fallbackMode: true,
+          reason: 'Suggestions trouvées via APIs en mode fallback'
+        }
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  
+  // Si vraiment aucune API ne fonctionne, générer des suggestions génériques très simples
+  console.log('⚠️ Aucune API disponible - génération de suggestions génériques');
+  
+  const interests = personData.interests || [];
+  const age = personData.age_years || 30;
+  
+  // Suggestions génériques basées sur le profil
+  const genericSuggestions = [];
+  
+  if (interests.includes('Sport')) {
+    genericSuggestions.push({
+      title: 'Accessoire Sport',
+      description: 'Un accessoire pratique pour les activités sportives',
+      category: 'Sport'
+    });
+  }
+  
+  if (interests.includes('Tech')) {
+    genericSuggestions.push({
+      title: 'Gadget Technologique',
+      description: 'Un accessoire tech moderne et utile',
+      category: 'Technologie'
+    });
+  }
+  
+  if (interests.includes('Lecture')) {
+    genericSuggestions.push({
+      title: 'Livre ou Accessoire Lecture',
+      description: 'Un livre intéressant ou un accessoire pour la lecture',
+      category: 'Culture'
+    });
+  }
+  
+  // Suggestions par défaut si pas d'intérêts spécifiques
+  if (genericSuggestions.length === 0) {
+    genericSuggestions.push(
+      {
+        title: 'Cadeau Personnalisé',
+        description: 'Un cadeau thoughtful et personnel',
+        category: 'Général'
+      },
+      {
+        title: 'Accessoire Pratique',
+        description: 'Un objet utile pour le quotidien',
+        category: 'Pratique'
+      },
+      {
+        title: 'Produit de Bien-être',
+        description: 'Quelque chose pour le confort et le bien-être',
+        category: 'Bien-être'
+      }
+    );
+  }
+  
+  // Compléter jusqu'à 3 suggestions si nécessaire
+  while (genericSuggestions.length < 3) {
+    genericSuggestions.push({
+      title: 'Idée Cadeau Original',
+      description: 'Une surprise originale et plaisante',
+      category: 'Surprise'
+    });
+  }
+  
+  // Créer les suggestions finales avec liens de recherche
+  const finalSuggestions = genericSuggestions.slice(0, 3).map((suggestion, index) => {
+    const targetPrice = Math.round(budget * (0.6 + Math.random() * 0.3)); // Entre 60% et 90% du budget
+    const searchQuery = `${suggestion.title} cadeau ${personData.name}`.replace(/[^\w\s]/g, ' ').trim();
+    const searchUrl = withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`);
     
     return {
       title: suggestion.title,
       description: suggestion.description,
-      estimatedPrice: finalPrice,
-      confidence: 0.85 - (index * 0.05), // Confiance élevée
-      reasoning: `${suggestion.description}. Parfait pour ${personData.name} qui apprécie ${interests.join(', ').toLowerCase() || 'les beaux objets'}.`,
-      category: 'Cadeau personnalisé',
-      alternatives: [
-        `Produit similaire: ${suggestion.title.split(' ')[0]} alternative`,
-        `Version premium: ${suggestion.title.split(' ')[0]} haut de gamme`
-      ],
-      purchaseLinks: [directProductUrl],
+      estimatedPrice: targetPrice,
+      confidence: 0.5 - (index * 0.1), // Confiance faible car générique
+      reasoning: `Suggestion générique pour ${personData.name} basée sur son profil. Recherchez pour trouver l'option parfaite.`,
+      category: suggestion.category,
+      alternatives: [`Recherche: ${suggestion.title.toLowerCase()}`],
+      purchaseLinks: [searchUrl],
       priceInfo: {
-        displayPrice: finalPrice, // Juste le nombre, pas de €
+        displayPrice: targetPrice,
         source: 'estimated',
-        originalEstimate: finalPrice,
-        amazonPrice: finalPrice
+        originalEstimate: targetPrice,
+        amazonPrice: null
       },
       amazonData: {
-        asin: suggestion.asin || null,
-        productUrl: directProductUrl,
-        addToCartUrl: suggestion.asin ? withAffiliate(`https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1`) : null,
-        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`),
-        matchType: suggestion.asin ? 'direct' : 'search'
+        asin: null,
+        productUrl: searchUrl,
+        addToCartUrl: null,
+        searchUrl: searchUrl,
+        matchType: 'generic_search'
       }
     };
   });
 
-  console.log('✅ Suggestions fallback générées:', suggestions.map(s => ({ 
-    title: s.title, 
-    price: s.estimatedPrice 
-  })));
+  console.log('⚠️ Suggestions génériques générées (APIs indisponibles)');
 
   return new Response(JSON.stringify({
     success: true,
-    suggestions,
+    suggestions: finalSuggestions,
+    personName: personData.name,
     metadata: {
-      totalSuggestions: suggestions.length,
+      totalSuggestions: finalSuggestions.length,
       fallbackMode: true,
-      reason: 'APIs externes indisponibles - suggestions intelligentes générées'
+      reason: 'APIs indisponibles - suggestions génériques avec liens de recherche'
     }
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
