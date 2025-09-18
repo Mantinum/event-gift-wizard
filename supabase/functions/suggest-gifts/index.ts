@@ -1,5 +1,3 @@
-import "https://deno.land/x/xhr@0.1.0/mod.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -140,7 +138,7 @@ async function searchAmazonProductsRainforest(
     
     const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}&min_price=${minPrice}&max_price=${maxPrice}`;
     
-    const response = await fetch(searchUrl);
+    const response = await withTimeout(fetch(searchUrl), 6000);
     
     if (!response.ok) {
       console.error(`❌ RainforestAPI error: ${response.status} - ${response.statusText}`);
@@ -199,6 +197,16 @@ async function searchAmazonProductsRainforest(
   }
 }
 
+// Timeout wrapper for fetch requests
+function withTimeout(promise: Promise<Response>, ms = 6000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]).finally(() => clearTimeout(timeout));
+}
+
 // Recherche de produits Amazon avec SerpApi et fallback RainforestAPI
 async function searchAmazonProducts(query: string, serpApiKey: string | undefined, minPrice: number, maxPrice: number, rainforestApiKey?: string) {
   let products: any[] = [];
@@ -218,7 +226,7 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
         api_key: serpApiKey,
       });
       
-      const response = await fetch(`https://serpapi.com/search.json?${params}`);
+      const response = await withTimeout(fetch(`https://serpapi.com/search.json?${params}`), 6000);
       
       if (response.ok) {
         const data = await response.json();
@@ -372,14 +380,14 @@ function bestPoolMatchByTitle(title: string, pool: any[], threshold = 0.45) {
   return bestScore >= threshold ? best : null;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   console.log('🚀 Function started successfully');
   console.log('Request method:', req.method);
   console.log('Request URL:', req.url);
   
   if (req.method === 'OPTIONS') {
     console.log('✅ Handling CORS preflight request');
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   // Health check for debugging
@@ -640,22 +648,48 @@ serve(async (req) => {
     const searchQueries = generateTargetedSearchQueries(personData, eventType, budget);
     console.log('📝 Requêtes de recherche générées:', searchQueries);
     
-    // Chercher des produits réels sur Amazon pour chaque requête
+    // Chercher des produits réels sur Amazon pour chaque requête avec parallélisation
     const availableProducts = [];
     
     if (serpApiKey || rainforestApiKey) {
-      for (const query of searchQueries.slice(0, 6)) { // Limiter à 6 requêtes max
+      // Limite à 4 requêtes max, concurrence 2, timeout strict
+      const queries = searchQueries.slice(0, 4);
+      const startTime = Date.now();
+      const MAX_WALL_MS = 15000; // 15s mur global
+
+      const searchTasks = queries.map(query => async () => {
+        if (Date.now() - startTime > MAX_WALL_MS) throw new Error('global-timeout');
         try {
+          console.log(`🔍 Recherche parallèle pour "${query}"`);
           const results = await searchAmazonProducts(query, serpApiKey, minBudget, maxBudget, rainforestApiKey);
-          
           if (results && results.length > 0) {
-            availableProducts.push(...results.slice(0, 3)); // Max 3 produits par requête
             console.log(`✅ ${results.length} produits trouvés pour "${query}"`);
+            return results.slice(0, 3); // Max 3 produits par requête
           }
+          return [];
         } catch (error) {
           console.error(`❌ Erreur recherche "${query}":`, error);
+          return [];
         }
+      });
+
+      // Exécution avec plafond de concurrence
+      async function runLimited(funcs: Array<() => Promise<any[]>>, limit = 2) {
+        const out: any[] = [];
+        let i = 0;
+        const runners = Array.from({ length: Math.min(limit, funcs.length) }, async function run() {
+          while (i < funcs.length && Date.now() - startTime < MAX_WALL_MS) {
+            const idx = i++;
+            const res = await funcs[idx]();
+            out.push(...(res || []));
+          }
+        });
+        await Promise.allSettled(runners);
+        return out;
       }
+
+      const allResults = await runLimited(searchTasks, 2);
+      availableProducts.push(...allResults);
     }
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
@@ -762,9 +796,9 @@ JSON obligatoire:`;
         break;
     }
 
-    // Fonction pour appeler OpenAI Chat Completions
+    // Fonction pour appeler OpenAI Chat Completions avec timeout
     async function callChatCompletions(model: string, maxTokens = 1200, userPrompt = prompt) {
-      return fetch('https://api.openai.com/v1/chat/completions', {
+      return withTimeout(fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -777,7 +811,7 @@ JSON obligatoire:`;
           temperature: 0.2,
           response_format: { type: 'json_object' }
         })
-      });
+      }), 10000); // 10s timeout pour OpenAI
     }
 
     console.log('🤖 Calling OpenAI with GPT-4o-mini (stable model)');
