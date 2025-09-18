@@ -827,13 +827,11 @@ Deno.serve(async (req) => {
     }
 
     // 🎯 Étape 2: Indexation des produits pour retrouver les liens directs
-    const allPool = [...availableProducts, ...selectedProducts];
     const byAsin = new Map(
-      allPool
+      selectedProducts
         .filter(p => isValidAsin(p.asin))
         .map(p => [toAsin(p.asin), p])
     );
-    const byTitle = new Map(allPool.map(p => [normalizeTitle(p.title || ''), p]));
     
     // Build enhanced context with personal notes priority
     const personalNotes = personData.notes || '';
@@ -1064,13 +1062,18 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       }));
       
       // Remplacement / rejet si ASIN hors pool
+      const usedAsins = new Set<string>();
       const reconciled = directSuggestions.map(s => {
-        if (allowedAsins.has(s.asin)) return s; // OK, ASIN trouvé dans le pool
+        if (allowedAsins.has(s.asin) && !usedAsins.has(s.asin)) {
+          usedAsins.add(s.asin);
+          return s; // OK, ASIN trouvé dans le pool
+        }
         
         // Tentative de rattrapage par titre → récupérer un produit du pool
         const match = bestPoolMatchByTitle(s.title, selectedProducts);
-        if (match) {
+        if (match && !usedAsins.has(toAsin(match.asin))) {
           console.log(`🔄 Réconciliation: "${s.title}" → "${match.title}" (ASIN: ${match.asin})`);
+          usedAsins.add(toAsin(match.asin));
           return { 
             ...s, 
             asin: toAsin(match.asin), 
@@ -1079,14 +1082,19 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           };
         }
         
-        // Si le pool est petit (< 6 produits), on est moins strict
-        if (selectedProducts.length < 6) {
-          console.log(`⚠️ Pool réduit (${selectedProducts.length} produits), on garde "${s.title}" avec recherche`);
-          return s; // On garde la suggestion même si ASIN non trouvé
+        // Rien trouvé → on force un produit du pool non utilisé
+        const fallback = selectedProducts.find(p => !usedAsins.has(toAsin(p.asin)));
+        if (fallback) {
+          console.log(`🔄 Remplacement hors-pool: "${s.title}" → "${fallback.title}" (ASIN ${fallback.asin})`);
+          usedAsins.add(toAsin(fallback.asin));
+          return {
+            ...s,
+            asin: toAsin(fallback.asin),
+            title: fallback.title,
+            price: fallback.price ?? s.price
+          };
         }
-        
-        // Rien trouvé → on refuse (évite les dp 404)
-        console.warn(`❌ Rejet suggestion: "${s.title}" - ASIN "${s.asin}" hors pool et pas de match par titre`);
+        // Si vraiment rien de dispo, on écarte
         return null;
       }).filter(Boolean);
       
@@ -1113,9 +1121,6 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           });
         }
       }
-
-      // Créer une map des produits du pool avec ASIN normalisés (seulement ASINs valides) en dehors du map
-      const byAsin = new Map(selectedProducts.filter(p => isValidAsin(p.asin)).map(p => [toAsin(p.asin), p]));
 
       // Convert reconciled suggestions to final format - Using for...of to handle async properly
       const finalSuggestions: any[] = [];
@@ -1285,9 +1290,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           console.log(`🔗 Résolution pour "${title}": pool=${!!product}, direct=${!!base}, ASIN=${asin}`);
           
           return { 
-            primary: base || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${toAsin(asin)}` : search), 
-            search, 
-            isDirectLink: !!base || (isValidAsin(asin) && !base ? true : false)
+            primary: isValidAsin(asin) ? withAffiliate(base || `https://www.amazon.fr/dp/${toAsin(asin)}`) : withAffiliate(search),
+            search: withAffiliate(search),
+            isDirectLink: isValidAsin(asin) || !!base
           };
         };
 
