@@ -951,6 +951,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         }
       }
 
+      // Créer une map des produits du pool avec ASIN normalisés (seulement ASINs valides) en dehors du map
+      const byAsin = new Map(selectedProducts.filter(p => isValidAsin(p.asin)).map(p => [toAsin(p.asin), p]));
+
       // Convert reconciled suggestions to final format
       suggestions = reconciled.slice(0, 3).map((suggestion: any) => {
         console.log('🔍 Processing suggestion:', {
@@ -1120,8 +1123,6 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           };
         };
 
-        // Créer une map des produits du pool avec ASIN normalisés (seulement ASINs valides)
-        const byAsin = new Map(selectedProducts.filter(p => isValidAsin(p.asin)).map(p => [toAsin(p.asin), p]));
         const amazonLinks = await resolveAmazonLinksFromPool(suggestion.asin, byAsin, suggestion.title);
         
         return {
