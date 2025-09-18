@@ -138,7 +138,7 @@ async function searchAmazonProductsRainforest(
     
     const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}&min_price=${minPrice}&max_price=${maxPrice}`;
     
-    const response = await withTimeout(fetch(searchUrl), 6000);
+    const response = await withTimeoutFetch(searchUrl, {}, 6000);
     
     if (!response.ok) {
       console.error(`❌ RainforestAPI error: ${response.status} - ${response.statusText}`);
@@ -197,14 +197,13 @@ async function searchAmazonProductsRainforest(
   }
 }
 
-// Timeout wrapper for fetch requests
-function withTimeout(promise: Promise<Response>, ms = 6000) {
+// Timeout wrapper for fetch requests with proper AbortController
+function withTimeoutFetch(url: string, init: RequestInit = {}, ms = 6000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ms);
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
-  ]).finally(() => clearTimeout(timeout));
+  
+  return fetch(url, { ...init, signal: controller.signal })
+    .finally(() => clearTimeout(timeout));
 }
 
 // Recherche de produits Amazon avec SerpApi et fallback RainforestAPI
@@ -226,7 +225,7 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
         api_key: serpApiKey,
       });
       
-      const response = await withTimeout(fetch(`https://serpapi.com/search.json?${params}`), 6000);
+      const response = await withTimeoutFetch(`https://serpapi.com/search.json?${params}`, {}, 6000);
       
       if (response.ok) {
         const data = await response.json();
@@ -798,7 +797,7 @@ JSON obligatoire:`;
 
     // Fonction pour appeler OpenAI Chat Completions avec timeout
     async function callChatCompletions(model: string, maxTokens = 1200, userPrompt = prompt) {
-      return withTimeout(fetch('https://api.openai.com/v1/chat/completions', {
+      return withTimeoutFetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${openAIKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1000,8 +999,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
       // Créer une map des produits du pool avec ASIN normalisés (seulement ASINs valides) en dehors du map
       const byAsin = new Map(selectedProducts.filter(p => isValidAsin(p.asin)).map(p => [toAsin(p.asin), p]));
 
-      // Convert reconciled suggestions to final format
-      suggestions = reconciled.slice(0, 3).map((suggestion: any) => {
+      // Convert reconciled suggestions to final format - Using for...of to handle async properly
+      const finalSuggestions: any[] = [];
+      for (const suggestion of reconciled.slice(0, 3)) {
         console.log('🔍 Processing suggestion:', {
           title: suggestion.title,
           asin: suggestion.asin,
@@ -1059,42 +1059,46 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             return `Une solution de voyage durable et pratique pour ${name}. Conçue pour accompagner ses aventures avec style et fonctionnalité.`;
           }
           
-          // Accessoires bien-être/nature
-          if (lowerTitle.includes('huile') && (lowerTitle.includes('essentielle') || lowerTitle.includes('massage') || lowerTitle.includes('aromathérapie'))) {
-            return `Un produit de bien-être naturel pour ${name}. Parfait pour créer une atmosphère relaxante et prendre soin de soi au quotidien.`;
+          // Vêtements et accessoires
+          if (lowerTitle.includes('t-shirt') || lowerTitle.includes('maillot') || lowerTitle.includes('chemise')) {
+            return `Un vêtement confortable et stylé pour ${name}. Parfait pour son style personnel et ses activités quotidiennes.`;
           }
           
-          if (lowerTitle.includes('diffuseur') || lowerTitle.includes('aromathérapie')) {
-            return `Un diffuseur élégant pour ${name} qui apprécie les moments de détente. Il créera une ambiance apaisante et parfumée dans son espace de vie.`;
+          if (lowerTitle.includes('casquette') || lowerTitle.includes('chapeau') || lowerTitle.includes('bonnet')) {
+            return `Un accessoire de mode pratique pour ${name}. Idéal pour la protéger du soleil ou compléter son look avec style.`;
           }
           
-          // Produits technologiques
-          if (lowerTitle.includes('montre') && (lowerTitle.includes('sport') || lowerTitle.includes('connectée') || lowerTitle.includes('fitness'))) {
-            return `Une montre intelligente pour ${name} qui combine style et fonctionnalités sportives. Parfaite pour suivre ses activités et rester connectée.`;
+          // Tech et gadgets
+          if (lowerTitle.includes('écouteurs') || lowerTitle.includes('casque') || lowerTitle.includes('audio')) {
+            return `Un équipement audio de qualité pour ${name}. Parfait pour profiter de sa musique préférée avec un son cristallin.`;
           }
           
-          if (lowerTitle.includes('écouteurs') || lowerTitle.includes('casque')) {
-            return `Des écouteurs de qualité pour ${name}. Idéaux pour profiter de sa musique préférée pendant le sport ou les déplacements.`;
+          if (lowerTitle.includes('montre') || lowerTitle.includes('bracelet') && lowerTitle.includes('connect')) {
+            return `Un accessoire connecté moderne pour ${name}. Alliant style et technologie pour l'accompagner au quotidien.`;
           }
           
-          // Accessoires de cuisine/maison
-          if (lowerTitle.includes('gourde') || lowerTitle.includes('thermos')) {
-            return `Une gourde pratique et élégante pour ${name}. Parfaite pour maintenir ses boissons à la bonne température lors de ses activités quotidiennes.`;
+          // Cuisine et maison
+          if (lowerTitle.includes('couteau') || lowerTitle.includes('ustensile') || lowerTitle.includes('cuisine')) {
+            return `Un ustensile de cuisine pratique pour ${name}. Idéal pour préparer de délicieux repas avec facilité et plaisir.`;
           }
           
-          if (lowerTitle.includes('lunch box') || lowerTitle.includes('boîte repas')) {
-            return `Une boîte repas pratique et écologique pour ${name}. Idéale pour emporter ses repas sains partout où elle va.`;
+          if (lowerTitle.includes('planche') && lowerTitle.includes('découper')) {
+            return `Une planche à découper de qualité pour ${name}. Un accessoire indispensable pour une cuisine bien équipée.`;
           }
           
-          // PRIORITÉ 3: Analyse basée sur les centres d'intérêt
-          const matchingInterests = interests.filter(interest => {
-            const lowerInterest = interest.toLowerCase();
-            return lowerTitle.includes(lowerInterest) || 
-                   (interest === 'Sport' && (lowerTitle.includes('sport') || lowerTitle.includes('fitness') || lowerTitle.includes('entraînement'))) ||
-                   (interest === 'Bien-être' && (lowerTitle.includes('relaxation') || lowerTitle.includes('massage') || lowerTitle.includes('zen'))) ||
-                   (interest === 'Voyage' && (lowerTitle.includes('voyage') || lowerTitle.includes('sac') || lowerTitle.includes('organisateur'))) ||
-                   (interest === 'Nature' && (lowerTitle.includes('nature') || lowerTitle.includes('outdoor') || lowerTitle.includes('camping')));
-          });
+          // Livres et culture
+          if (lowerTitle.includes('livre') || lowerTitle.includes('roman') || lowerTitle.includes('guide')) {
+            return `Une lecture captivante pour ${name}. Ce livre saura l'enrichir et lui offrir de beaux moments de détente.`;
+          }
+          
+          // PRIORITÉ 3: Correspondance avec les centres d'intérêt
+          const matchingInterests = interests.filter((interest: string) => 
+            lowerTitle.includes(interest.toLowerCase()) || 
+            interest.toLowerCase().includes(lowerTitle.split(' ')[0]) ||
+            (interest.toLowerCase() === 'sport' && (lowerTitle.includes('fitness') || lowerTitle.includes('exercice'))) ||
+            (interest.toLowerCase() === 'voyage' && (lowerTitle.includes('sac') || lowerTitle.includes('bagage'))) ||
+            (interest.toLowerCase() === 'lecture' && lowerTitle.includes('livre'))
+          );
           
           if (matchingInterests.length > 0) {
             const interest = matchingInterests[0];
@@ -1171,7 +1175,7 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
 
         const amazonLinks = await resolveAmazonLinksFromPool(suggestion.asin, byAsin, suggestion.title);
         
-        return {
+        finalSuggestions.push({
           title: suggestion.title,
           description: generateEnhancedDescription(suggestion.title, suggestion.reasoning, personData),
           estimatedPrice: suggestion.price,
@@ -1198,8 +1202,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
             searchUrl: withAffiliate(amazonLinks.search),
             matchType: amazonLinks.isDirectLink ? 'direct' : 'search'
           }
-        };
-      });
+        });
+      }
+      suggestions = finalSuggestions;
       
       console.log('✅ Converted selections to suggestions format');
       
