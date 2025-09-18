@@ -1346,108 +1346,147 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     return u.toString();
   };
 
-  // Générer des suggestions génériques basées sur le profil
-  const suggestions = [];
+  console.log('🎯 Génération fallback pour:', { 
+    name: personData.name, 
+    interests: personData.interests, 
+    age: personData.age_years,
+    budget 
+  });
+
+  // Base de données de suggestions intelligentes basées sur les intérêts
+  const smartSuggestions = {
+    Sport: [
+      { title: "Tapis de Yoga Antidérapant Premium", price: 0.7, description: "Tapis de yoga de haute qualité avec surface antidérapante, parfait pour toutes les pratiques sportives" },
+      { title: "Bouteille d'Eau Isotherme 750ml", price: 0.6, description: "Bouteille isotherme en acier inoxydable qui garde les boissons fraîches ou chaudes pendant des heures" },
+      { title: "Bandes de Résistance Élastiques Set", price: 0.5, description: "Kit complet de bandes élastiques pour musculation et rééducation, tous niveaux" },
+      { title: "Tracker d'Activité Connecté", price: 0.9, description: "Montre connectée pour suivre l'activité physique, les pas et la fréquence cardiaque" }
+    ],
+    "Bien-être": [
+      { title: "Diffuseur d'Huiles Essentielles", price: 0.6, description: "Diffuseur ultrasonique avec lumière LED pour créer une ambiance relaxante" },
+      { title: "Kit de Bain Relaxant Bio", price: 0.7, description: "Coffret de produits de bain naturels et biologiques pour moments de détente" },
+      { title: "Coussin de Méditation Ergonomique", price: 0.5, description: "Coussin confortable spécialement conçu pour la méditation et la relaxation" },
+      { title: "Masque de Nuit en Soie Naturelle", price: 0.4, description: "Masque de nuit luxueux en soie pour améliorer la qualité du sommeil" }
+    ],
+    Voyage: [
+      { title: "Sac à Dos de Randonnée 35L", price: 0.8, description: "Sac à dos technique avec compartiments multiples, idéal pour les aventures outdoor" },
+      { title: "Organisateur de Voyage Multipoches", price: 0.4, description: "Set d'organisateurs pour valise qui facilite l'organisation des affaires de voyage" },
+      { title: "Adaptateur Universel de Voyage", price: 0.3, description: "Adaptateur multiprises compatible avec plus de 150 pays, avec ports USB" },
+      { title: "Oreiller de Voyage Gonflable", price: 0.2, description: "Oreiller de voyage compact et confortable, facile à transporter" }
+    ],
+    Nature: [
+      { title: "Kit de Jardinage d'Intérieur", price: 0.6, description: "Kit complet pour cultiver des herbes aromatiques à la maison" },
+      { title: "Guide d'Identification des Plantes", price: 0.4, description: "Livre illustré pour reconnaître et comprendre la flore locale" },
+      { title: "Jumelles d'Observation Nature", price: 0.8, description: "Jumelles compactes pour l'observation des oiseaux et de la faune" },
+      { title: "Gourde Filtrante Écologique", price: 0.5, description: "Gourde avec système de filtration intégré, parfaite pour les sorties nature" }
+    ],
+    Tech: [
+      { title: "Chargeur Sans Fil Rapide", price: 0.5, description: "Station de charge sans fil compatible avec tous les smartphones modernes" },
+      { title: "Écouteurs Bluetooth Sport", price: 0.7, description: "Écouteurs sans fil résistants à la transpiration, idéaux pour le sport" },
+      { title: "Support Téléphone Ajustable", price: 0.3, description: "Support universel pour smartphone et tablette, réglable à 360°" },
+      { title: "Powerbank 20000mAh Compact", price: 0.6, description: "Batterie externe haute capacité avec charge rapide et affichage LED" }
+    ],
+    Cuisine: [
+      { title: "Set de Couteaux de Chef", price: 0.8, description: "Set de 3 couteaux professionnels en acier inoxydable avec bloc de rangement" },
+      { title: "Planche à Découper Bambou", price: 0.4, description: "Planche à découper écologique en bambou avec rigole pour les jus" },
+      { title: "Balance de Cuisine Numérique", price: 0.3, description: "Balance précise jusqu'au gramme avec écran LCD et fonction tare" },
+      { title: "Boîtes de Conservation Hermétiques", price: 0.5, description: "Set de boîtes alimentaires en verre avec couvercles hermétiques" }
+    ],
+    Lecture: [
+      { title: "Lampe de Lecture LED Rechargeable", price: 0.4, description: "Lampe de lecture pliable avec lumière réglable et batterie longue durée" },
+      { title: "Marque-pages Magnétiques Créatifs", price: 0.1, description: "Collection de marque-pages magnétiques avec designs artistiques" },
+      { title: "Support de Livre Ajustable", price: 0.3, description: "Support ergonomique pour maintenir les livres ouverts sans effort" },
+      { title: "Carnet de Notes Littéraires", price: 0.2, description: "Carnet élégant pour noter citations et réflexions de lecture" }
+    ],
+    Art: [
+      { title: "Set de Pinceaux Aquarelle", price: 0.5, description: "Kit complet de pinceaux de qualité artistique pour aquarelle et acrylique" },
+      { title: "Carnet de Croquis Premium", price: 0.3, description: "Carnet à spirale avec papier épais, idéal pour dessins et croquis" },
+      { title: "Coffret de Crayons de Couleur", price: 0.6, description: "Set de 48 crayons de couleur professionnels avec nuancier" },
+      { title: "Chevalet de Table Pliable", price: 0.4, description: "Chevalet compact en bois pour peindre ou exposer ses œuvres" }
+    ],
+    Photographie: [
+      { title: "Trépied Compact pour Smartphone", price: 0.4, description: "Trépied léger et réglable avec support universel pour téléphone" },
+      { title: "Kit de Nettoyage Objectif", price: 0.2, description: "Kit professionnel pour nettoyer objectifs et écrans sans rayures" },
+      { title: "Éclairage LED Portable", price: 0.6, description: "Panneau LED rechargeable avec température de couleur ajustable" },
+      { title: "Sac Photo Étanche", price: 0.5, description: "Sac de protection étanche pour appareil photo et accessoires" }
+    ]
+  };
+
+  // Suggestions par défaut si aucun intérêt ne correspond
+  const defaultSuggestions = [
+    { title: "Coffret Cadeau Artisanal Local", price: 0.7, description: "Sélection de produits artisanaux de qualité fabriqués localement" },
+    { title: "Plante d'Intérieur Dépolluante", price: 0.5, description: "Belle plante verte qui purifie l'air et apporte de la vie au foyer" },
+    { title: "Bougie Parfumée Naturelle", price: 0.3, description: "Bougie artisanale aux huiles essentielles avec cire végétale" }
+  ];
+
+  // Sélectionner les suggestions basées sur les intérêts
+  let selectedSuggestions: any[] = [];
   const interests = personData.interests || [];
-  const notes = personData.notes || '';
   
-  // Suggestion 1: Basée sur les intérêts principaux
-  let query1 = 'cadeau original';
-  let reasoning1 = `Cadeau sélectionné pour ${personData.name}`;
-  
-  if (interests.includes('Sport')) {
-    query1 = 'accessoire sport fitness';
-    reasoning1 = `Perfect pour ${personData.name} qui aime le sport`;
-  } else if (interests.includes('Lecture')) {
-    query1 = 'livre bestseller roman';
-    reasoning1 = `Idéal pour ${personData.name} qui aime la lecture`;
-  } else if (interests.includes('Cuisine')) {
-    query1 = 'ustensile cuisine accessoire';
-    reasoning1 = `Parfait pour ${personData.name} passionné(e) de cuisine`;
-  } else if (interests.includes('Technologie')) {
-    query1 = 'gadget technologique moderne';
-    reasoning1 = `Cadeau tech pour ${personData.name}`;
-  }
-  
-  // Suggestion 2: Basée sur l'événement
-  let query2 = 'cadeau anniversaire original';
-  let reasoning2 = `Cadeau d'anniversaire pour ${personData.name}`;
-  
-  if (eventType === 'wedding') {
-    query2 = 'cadeau mariage couple';
-    reasoning2 = `Cadeau de mariage pour ${personData.name}`;
-  } else if (eventType === 'christmas') {
-    query2 = 'cadeau noel famille';
-    reasoning2 = `Cadeau de Noël pour ${personData.name}`;
-  }
-  
-  // Suggestion 3: Basée sur les notes ou âge
-  let query3 = 'cadeau personnel utile';
-  let reasoning3 = `Cadeau pratique pour ${personData.name}`;
-  
-  if (notes.toLowerCase().includes('nature')) {
-    query3 = 'produit écologique naturel';
-    reasoning3 = `Produit écologique pour ${personData.name} qui aime la nature`;
-  } else if (notes.toLowerCase().includes('voyage')) {
-    query3 = 'accessoire voyage pratique';
-    reasoning3 = `Accessoire de voyage pour ${personData.name}`;
-  } else if (personData.age_years > 50) {
-    query3 = 'cadeau bien-être relaxation';
-    reasoning3 = `Cadeau bien-être pour ${personData.name}`;
+  // Collecter les suggestions pertinentes
+  for (const interest of interests) {
+    if (smartSuggestions[interest]) {
+      selectedSuggestions.push(...smartSuggestions[interest]);
+    }
   }
 
-  const fallbackSuggestions = [
-    {
-      title: query1.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-      price: Math.round(budget * 0.8),
-      confidence: 0.7,
-      reasoning: reasoning1,
-      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
-      searchQueries: [query1],
+  // Si pas d'intérêts correspondants, utiliser les suggestions par défaut
+  if (selectedSuggestions.length === 0) {
+    selectedSuggestions = defaultSuggestions;
+  }
+
+  // Mélanger et sélectionner 3 suggestions
+  const shuffled = selectedSuggestions.sort(() => 0.5 - Math.random());
+  const finalSuggestions = shuffled.slice(0, 3);
+
+  // Générer les suggestions finales avec prix réalistes
+  const suggestions = finalSuggestions.map((suggestion, index) => {
+    const basePrice = Math.round(budget * suggestion.price);
+    const finalPrice = Math.max(basePrice, 10); // Prix minimum de 10€
+    
+    const searchQuery = suggestion.title.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
+    const encodedQuery = encodeURIComponent(searchQuery);
+    const priceRange = `${Math.round(finalPrice * 0.7)*100}-${Math.round(finalPrice * 1.3)*100}`;
+    
+    return {
+      title: suggestion.title,
+      description: suggestion.description,
+      estimatedPrice: finalPrice,
+      confidence: 0.8 - (index * 0.05), // Légère variation de confiance
+      reasoning: `${suggestion.description}. Parfait pour ${personData.name} qui apprécie ${interests.join(', ').toLowerCase() || 'les beaux objets'}.`,
+      category: 'Cadeau personnalisé',
+      alternatives: [
+        `Recherche précise: ${searchQuery}`,
+        `Variante: ${searchQuery.split(' ')[0]} premium`
+      ],
+      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${priceRange}`)],
+      priceInfo: {
+        displayPrice: `${finalPrice}€`,
+        source: 'estimated',
+        originalEstimate: finalPrice,
+        amazonPrice: finalPrice
+      },
       amazonData: {
         asin: null,
-        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
-        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query1)}`),
+        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${priceRange}`),
+        addToCartUrl: null,
+        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}`),
         matchType: 'search'
       }
-    },
-    {
-      title: query2.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-      price: Math.round(budget * 0.9),
-      confidence: 0.8,
-      reasoning: reasoning2,
-      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
-      searchQueries: [query2],
-      amazonData: {
-        asin: null,
-        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
-        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query2)}`),
-        matchType: 'search'
-      }
-    },
-    {
-      title: query3.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-      price: budget,
-      confidence: 0.75,
-      reasoning: reasoning3,
-      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`)],
-      searchQueries: [query3],
-      amazonData: {
-        asin: null,
-        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}&rh=p_36%3A${Math.round(budget*0.5)*100}-${budget*100}`),
-        searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(query3)}`),
-        matchType: 'search'
-      }
-    }
-  ];
+    };
+  });
+
+  console.log('✅ Suggestions fallback générées:', suggestions.map(s => ({ 
+    title: s.title, 
+    price: s.estimatedPrice 
+  })));
 
   return new Response(JSON.stringify({
     success: true,
-    suggestions: fallbackSuggestions,
+    suggestions,
     metadata: {
-      totalSuggestions: 3,
+      totalSuggestions: suggestions.length,
       fallbackMode: true,
-      reason: 'APIs externes indisponibles - suggestions génériques générées'
+      reason: 'APIs externes indisponibles - suggestions intelligentes générées'
     }
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
