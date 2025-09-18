@@ -289,6 +289,23 @@ function diversifyProducts(products: any[], maxProducts: number) {
   return uniqueProducts.slice(0, maxProducts);
 }
 
+// Helper functions for affiliate links and ASIN validation
+const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') || '';
+const partnerTagActive = (Deno.env.get('AMZ_PARTNER_TAG_ACTIVE') || 'false').toLowerCase() === 'true';
+
+function appendQuery(url: string, key: string, value: string) {
+  const u = new URL(url);
+  if (value) u.searchParams.set(key, value);
+  return u.toString();
+}
+
+function withAffiliate(url: string) {
+  return (partnerTagActive && partnerTag) ? appendQuery(url, 'tag', partnerTag) : url;
+}
+
+const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a || '');
+const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
 serve(async (req) => {
   console.log('🚀 Function started successfully');
   console.log('Request method:', req.method);
@@ -421,23 +438,6 @@ serve(async (req) => {
     // Initialize Supabase client with service role key (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
-
-    // Helper functions for affiliate links and ASIN validation
-    const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') || '';
-    const partnerTagActive = (Deno.env.get('AMZ_PARTNER_TAG_ACTIVE') || 'false').toLowerCase() === 'true';
-
-    function appendQuery(url: string, key: string, value: string) {
-      const u = new URL(url);
-      if (value) u.searchParams.set(key, value);
-      return u.toString();
-    }
-
-    function withAffiliate(url: string) {
-      return (partnerTagActive && partnerTag) ? appendQuery(url, 'tag', partnerTag) : url;
-    }
-
-    const isValidAsin = (a?: string) => !!a && /^[A-Z0-9]{10}$/.test(a || '');
-    const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
     // 5. Check authentication and AI usage limits
     console.log('🔒 Checking authentication and usage limits...');
@@ -592,7 +592,6 @@ serve(async (req) => {
     // 🎯 Étape 2: Indexation des produits pour retrouver les liens directs
     const allPool = [...availableProducts, ...selectedProducts];
     const byAsin = new Map(allPool.filter(p => p.asin).map(p => [p.asin, p]));
-    const normalizeTitle = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
     const byTitle = new Map(allPool.map(p => [normalizeTitle(p.title || ''), p]));
     
     // Build enhanced context with personal notes priority
