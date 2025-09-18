@@ -184,6 +184,10 @@ async function searchAmazonProductsRainforest(
           displayDescription: item.snippet || null
         };
       })
+      .filter(item => {
+        // Ne garder que les produits avec lien /dp/ OU ASIN valide
+        return (item.link && item.link.includes('/dp/')) || isValidAsin(item.asin);
+      })
       .slice(0, 5); // Max 5 produits par requête
     
     console.log(`📦 RainforestAPI - Products found for "${query}": ${products.length}`);
@@ -251,6 +255,10 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
                 displayDescription: item.snippet || item.description || null
               };
             })
+            .filter(item => {
+              // Ne garder que les produits avec lien /dp/ OU ASIN valide
+              return (item.link && item.link.includes('/dp/')) || isValidAsin(item.asin);
+            })
             .slice(0, 5);
           
           console.log(`✅ SerpAPI - ${products.length} produits trouvés pour "${query}"`);
@@ -309,13 +317,33 @@ function withAffiliate(url: string) {
 
 // Helpers robustes pour ASIN
 const toAsin = (a?: string) => (a || '').toUpperCase().trim();
-const ASIN_RE = /\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i;
+const ASIN_RES = [
+  /\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /\/gp\/product\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /[?&]ASIN=([A-Z0-9]{10})(?:[&#]|$)/i,
+];
 const isValidAsin = (a?: string) => /^[A-Z0-9]{10}$/.test(toAsin(a));
 
 function extractAsinFromUrl(url?: string) {
   if (!url) return null;
-  const m = url.match(ASIN_RE);
-  return m ? toAsin(m[1]) : null;
+  for (const re of ASIN_RES) {
+    const m = url.match(re);
+    if (m) return toAsin(m[1]);
+  }
+  return null;
+}
+
+// Vérification optionnelle des liens DP côté serveur
+const VERIFY_DP = (Deno.env.get('VERIFY_DP') || 'false').toLowerCase() === 'true';
+
+async function dpLooksValid(url: string, ms = 800) {
+  const c = new AbortController(); 
+  const t = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: c.signal });
+    return r.status >= 200 && r.status < 400;
+  } catch { return false; } 
+  finally { clearTimeout(t); }
 }
 const normalizeTitle = (s: string) =>
   s
@@ -620,15 +648,25 @@ serve(async (req) => {
     
     console.log(`📦 Total produits disponibles: ${availableProducts.length}`);
     
+    // ⚠️ Filtre global : aucun produit sans dp ni ASIN valide ne passe dans le pool
+    const sanitized = availableProducts.filter(p =>
+      (p.link && p.link.includes('/dp/')) || isValidAsin(p.asin)
+    );
+    console.log(`🧹 Produits après nettoyage: ${sanitized.length}`);
+    
     // Limiter drastiquement les produits pour éviter limite tokens
-    const selectedProducts = diversifyProducts(availableProducts, 4);
+    const selectedProducts = diversifyProducts(sanitized, 4);
     if (selectedProducts.length === 0) {
       console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
     }
 
     // 🎯 Étape 2: Indexation des produits pour retrouver les liens directs
     const allPool = [...availableProducts, ...selectedProducts];
-    const byAsin = new Map(allPool.filter(p => p.asin).map(p => [p.asin, p]));
+    const byAsin = new Map(
+      allPool
+        .filter(p => isValidAsin(p.asin))
+        .map(p => [toAsin(p.asin), p])
+    );
     const byTitle = new Map(allPool.map(p => [normalizeTitle(p.title || ''), p]));
     
     // Build enhanced context with personal notes priority
@@ -1040,22 +1078,31 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         };
         
         // Fonction améliorée de résolution des liens Amazon uniquement depuis le pool
-        const resolveAmazonLinksFromPool = (asin: string, byAsin: Map<string, any>, title: string) => {
+        const resolveAmazonLinksFromPool = async (asin: string, byAsin: Map<string, any>, title: string) => {
           const product = byAsin.get(toAsin(asin));
           
           // 1) Si on a un lien source déjà en /dp/, on le garde
           let base = product?.link && product.link.includes('/dp/') ? product.link : null;
           
-          // 2) Sinon on forge /dp/{asin} (asin déjà validé du pool)
-          if (!base && isValidAsin(asin)) {
+          // 2) Sinon on forge /dp/{asin} SEULEMENT si le produit est dans byAsin (ASIN validé)
+          if (!base && product && isValidAsin(asin)) {
             base = `https://www.amazon.fr/dp/${toAsin(asin)}`;
           }
           
-          // 3) Fallback recherche si jamais
+          // 3) Vérification optionnelle côté serveur
+          if (VERIFY_DP && base) {
+            const ok = await dpLooksValid(base);
+            if (!ok) {
+              console.log(`⚠️ Lien DP invalide détecté: ${base} → fallback search`);
+              base = null; // On jette le dp douteux → fallback search
+            }
+          }
+          
+          // 4) Fallback recherche si jamais
           const encodedTitle = encodeURIComponent(title.replace(/[^\w\s-]/g, ' ').trim());
           const search = `https://www.amazon.fr/s?k=${encodedTitle}`;
           
-          console.log(`🔗 Résolution pour "${title}": pool=true, direct=${!!base}, ASIN=${asin}`);
+          console.log(`🔗 Résolution pour "${title}": pool=${!!product}, direct=${!!base}, ASIN=${asin}`);
           
           return { 
             primary: base || search, 
@@ -1064,9 +1111,9 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           };
         };
 
-        // Créer une map des produits du pool avec ASIN normalisés
-        const byAsin = new Map(selectedProducts.map(p => [toAsin(p.asin), p]));
-        const amazonLinks = resolveAmazonLinksFromPool(suggestion.asin, byAsin, suggestion.title);
+        // Créer une map des produits du pool avec ASIN normalisés (seulement ASINs valides)
+        const byAsin = new Map(selectedProducts.filter(p => isValidAsin(p.asin)).map(p => [toAsin(p.asin), p]));
+        const amazonLinks = await resolveAmazonLinksFromPool(suggestion.asin, byAsin, suggestion.title);
         
         return {
           title: suggestion.title,
