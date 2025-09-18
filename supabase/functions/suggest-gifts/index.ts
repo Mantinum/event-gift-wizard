@@ -759,50 +759,40 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
         throw new Error(`Erreur parsing JSON: ${(jsonError as Error).message}`);
       }
       
-      const selections = Array.isArray(parsedResponse.selections) ? parsedResponse.selections : [];
-      console.log('🎯 Parsed selections count:', selections.length);
+      const directSuggestions = Array.isArray(parsedResponse.suggestions) ? parsedResponse.suggestions : [];
+      console.log('🎯 Parsed direct suggestions count:', directSuggestions.length);
       
-      // Validate that we have exactly 3 selections as per schema
-      if (selections.length !== 3) {
-        console.error('❌ Invalid number of selections:', selections.length);
+      // Validate that we have exactly 3 suggestions as per schema
+      if (directSuggestions.length !== 3) {
+        console.error('❌ Invalid number of suggestions:', directSuggestions.length);
         return new Response(JSON.stringify({
           success: false,
-          error: 'Nombre de sélections incorrect',
-          details: `Attendu: 3, reçu: ${selections.length}`
+          error: 'Nombre de suggestions incorrect',
+          details: `Attendu: 3, reçu: ${directSuggestions.length}`
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      // Convert selections to suggestions format for compatibility
-      suggestions = selections.map((selection: any) => {
-        // Cherche dans le PETIT set montré à l'IA
-        const selectedProduct = selectedProducts.find(p => p.asin === selection.selectedAsin);
-        
-        console.log('🔍 Debug produit sélectionné:', {
-          asinRecherche: selection.selectedAsin,
-          produitTrouve: !!selectedProduct,
-          displayDescription: selectedProduct?.displayDescription,
-          snippet: selectedProduct?.snippet,
-          description: selectedProduct?.description
+      // Convert direct AI suggestions to final format with enhanced Amazon links
+      suggestions = directSuggestions.map((suggestion: any) => {
+        console.log('🔍 Processing suggestion:', {
+          title: suggestion.title,
+          asin: suggestion.asin,
+          price: suggestion.price
         });
         
-        // Generate a contextual description based on product title and person profile
-        const generateDescription = (title: string, person: any, eventType: string, productData?: any) => {
-          console.log('🔍 Génération description:', { 
+        // Generate enhanced description based on product title and person profile
+        const generateEnhancedDescription = (title: string, reasoning: string, person: any) => {
+          console.log('🔍 Génération description enrichie:', { 
             title, 
-            productData: productData ? {
-              displayDescription: productData.displayDescription,
-              snippet: productData.snippet,  
-              description: productData.description
-            } : null
+            reasoning: reasoning?.substring(0, 100)
           });
           
-          // PRIORITÉ 1: Si on a la vraie description du produit Amazon, l'utiliser
-          const realDescription = productData?.displayDescription || productData?.snippet || productData?.description;
-          if (realDescription && realDescription.trim() && realDescription.trim() !== title && realDescription.length > 20) {
-            console.log('✅ Utilisation description Amazon:', realDescription.trim());
-            return realDescription.trim();
+          // PRIORITÉ 1: Utiliser le raisonnement de l'IA s'il est pertinent
+          if (reasoning && reasoning.length > 20 && !reasoning.includes('sélectionné pour') && !reasoning.toLowerCase().includes('generic')) {
+            console.log('✅ Utilisation raisonnement IA:', reasoning);
+            return reasoning;
           }
           
           const interests = person.interests || [];
@@ -919,36 +909,64 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
           return `Un produit de qualité sélectionné pour ${name}. Ce cadeau saura lui apporter satisfaction grâce à son utilité et son design soigné.`;
         };
         
+        // Créer des liens Amazon directs et spécifiques
+        const createAmazonLinks = (title: string, asin: string) => {
+          const partnerTag = Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21';
+          
+          // Créer plusieurs types de liens pour maximiser les chances de trouver le produit
+          const encodedTitle = encodeURIComponent(title.replace(/[^\w\s-]/g, '').trim());
+          
+          // 1. Lien direct avec ASIN (si c'est un vrai ASIN)
+          const directLink = `https://www.amazon.fr/dp/${asin}?tag=${partnerTag}`;
+          
+          // 2. Lien de recherche précise avec tous les mots-clés
+          const preciseSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&ref=sr_nr_p_85_1&fst=as%3Aoff&rh=p_85%3A2470955031&qid=1577836800&rnid=2470954031&tag=${partnerTag}`;
+          
+          // 3. Lien de recherche par marque si détectable
+          const titleWords = title.split(' ');
+          const possibleBrand = titleWords[0];
+          const brandSearchLink = `https://www.amazon.fr/s?k=${encodedTitle}&rh=p_89%3A${encodeURIComponent(possibleBrand)}&tag=${partnerTag}`;
+          
+          return {
+            primary: directLink,
+            search: preciseSearchLink,
+            brand: brandSearchLink,
+            fallback: `https://www.amazon.fr/s?k=${encodedTitle}&tag=${partnerTag}`
+          };
+        };
+
+        const amazonLinks = createAmazonLinks(suggestion.title, suggestion.asin);
+        
         return {
-          title: selection.selectedTitle,
-          description: generateDescription(selection.selectedTitle, personData, eventType, selectedProduct),
-          estimatedPrice: selection.selectedPrice,
-          confidence: selection.confidence,
-          reasoning: `Sélectionné pour ${personData.name} en fonction de son profil et budget.`,
+          title: suggestion.title,
+          description: generateEnhancedDescription(suggestion.title, suggestion.reasoning, personData),
+          estimatedPrice: suggestion.price,
+          confidence: suggestion.confidence,
+          reasoning: suggestion.reasoning || `Produit sélectionné pour ${personData.name} selon son profil.`,
           category: 'Cadeau personnalisé',
-          alternatives: [`Recherche Amazon: ${selection.selectedTitle}`],
-          purchaseLinks: selectedProduct
-            ? [selectedProduct.link]
-            : [`https://www.amazon.fr/s?k=${encodeURIComponent(selection.selectedTitle)}&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`],
+          alternatives: [
+            `Recherche précise: ${suggestion.title}`,
+            `Recherche par marque: ${suggestion.title.split(' ')[0]}`
+          ],
+          purchaseLinks: [amazonLinks.primary], // Utiliser le lien direct en priorité
           priceInfo: {
-            displayPrice: selection.selectedPrice,
-            source: 'amazon_price',
-            originalEstimate: selection.selectedPrice,
-            amazonPrice: selection.selectedPrice
+            displayPrice: suggestion.price,
+            source: 'ai_estimate',
+            originalEstimate: suggestion.price,
+            amazonPrice: suggestion.price
           },
-          amazonData: selectedProduct ? {
-            asin: selectedProduct.asin,
-            rating: selectedProduct.rating,
-            reviewCount: selectedProduct.reviewCount,
-            actualPrice: selectedProduct.price,
-            imageUrl: selectedProduct.imageUrl,
-            productUrl: selectedProduct.link,
-            matchType: 'exact',
-            description: selectedProduct.displayDescription // Ajouter la description Amazon
-          } : {
-            asin: selection.selectedAsin,
-            productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(selection.selectedTitle)}&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`,
-            matchType: 'search'
+          amazonData: {
+            asin: suggestion.asin,
+            productUrl: amazonLinks.primary,
+            addToCartUrl: `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${Deno.env.get('AMZ_PARTNER_TAG') ?? 'cadofy-21'}`,
+            searchUrl: amazonLinks.search,
+            matchType: 'ai_generated',
+            description: suggestion.reasoning,
+            alternativeUrls: [
+              amazonLinks.search,
+              amazonLinks.brand,
+              amazonLinks.fallback
+            ]
           }
         };
       });
