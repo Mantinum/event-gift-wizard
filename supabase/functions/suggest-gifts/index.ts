@@ -168,20 +168,25 @@ async function searchAmazonProductsRainforest(
 ): Promise<any[]> {
   try {
     console.log(`🌧️ RainforestAPI - Recherche Amazon: "${query}" (${minPrice}€-${maxPrice}€)`);
+    console.log(`🔑 RainforestAPI Key length: ${rainforestApiKey.length} chars`);
     
     const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}&min_price=${minPrice}&max_price=${maxPrice}`;
+    console.log(`📡 RainforestAPI Request URL: ${searchUrl.replace(rainforestApiKey, 'HIDDEN')}`);
     
     const response = await withTimeoutFetch(searchUrl, {}, 6000);
+    console.log(`📡 RainforestAPI Response: ${response.status} ${response.statusText}`);
     
     if (!response.ok) {
-      console.error(`❌ RainforestAPI error: ${response.status} - ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`❌ RainforestAPI HTTP error: ${response.status} - ${errorText}`);
       return [];
     }
 
     const data = await response.json();
+    console.log(`📊 RainforestAPI Response data keys:`, Object.keys(data));
     
     if (data.request_info?.success === false) {
-      console.error('❌ RainforestAPI error:', data.request_info?.message);
+      console.error('❌ RainforestAPI API error:', data.request_info?.message);
       return [];
     }
 
@@ -253,6 +258,7 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
   if (serpApiKey) {
     try {
       console.log(`🔍 Recherche Amazon (SerpAPI): "${query}" (${minPrice}€-${maxPrice}€)`);
+      console.log(`🔑 SerpAPI Key length: ${serpApiKey.length} chars`);
       
       const params = new URLSearchParams({
         engine: 'amazon',
@@ -264,13 +270,24 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
         api_key: serpApiKey,
       });
       
-      const response = await withTimeoutFetch(`https://serpapi.com/search.json?${params}`, {}, 6000);
+      const searchUrl = `https://serpapi.com/search.json?${params}`;
+      console.log(`📡 SerpAPI Request URL: ${searchUrl.replace(serpApiKey, 'HIDDEN')}`);
+      
+      const response = await withTimeoutFetch(searchUrl, {}, 6000);
+      console.log(`📡 SerpAPI Response: ${response.status} ${response.statusText}`);
       
       if (response.ok) {
         const data = await response.json();
+        console.log(`📊 SerpAPI Response data keys:`, Object.keys(data));
+        
+        if (data.error) {
+          console.error('❌ SerpAPI API Error:', data.error);
+          throw new Error(`SerpAPI Error: ${data.error}`);
+        }
         
         if (!data.error) {
           const results = data.organic_results || [];
+          console.log(`📦 SerpAPI Raw results count: ${results.length}`);
           
           products = results
             .filter((item: any) => item.asin) // Garder seulement ceux avec ASIN
@@ -288,25 +305,34 @@ async function searchAmazonProducts(query: string, serpApiKey: string | undefine
           
           console.log(`✅ SerpAPI - ${products.length} produits trouvés pour "${query}"`);
           
+          console.log(`✅ SerpAPI - ${products.length} produits normalisés pour "${query}"`);
+          
           if (products.length > 0) {
             return products;
+          } else {
+            console.warn(`⚠️ SerpAPI - 0 produits après normalisation pour "${query}"`);
           }
-        } else {
-          console.warn(`⚠️ SerpAPI error: ${data.error}, trying RainforestAPI...`);
         }
       } else {
-        console.warn(`⚠️ SerpAPI HTTP error: ${response.status}, trying RainforestAPI...`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error(`❌ SerpAPI HTTP error: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.warn(`⚠️ SerpAPI exception: ${error}, trying RainforestAPI...`);
+      console.error(`❌ SerpAPI exception for "${query}":`, error);
+      console.error(`   Error type: ${error?.name}`);
+      console.error(`   Error message: ${error?.message}`);
     }
   }
   
   // Fallback vers RainforestAPI si SerpAPI a échoué ou n'est pas disponible
   if (rainforestApiKey && products.length === 0) {
+    console.log(`🌧️ Tentative RainforestAPI pour "${query}" après échec SerpAPI`);
     products = await searchAmazonProductsRainforest(query, minPrice, maxPrice, rainforestApiKey);
+  } else if (!rainforestApiKey && products.length === 0) {
+    console.warn(`⚠️ RainforestAPI non disponible et SerpAPI a échoué pour "${query}"`);
   }
   
+  console.log(`🎯 Final products count for "${query}": ${products.length}`);
   return products;
 }
 
@@ -485,9 +511,9 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
     console.log('🔑 Environment check:');
-    console.log('- OpenAI Key available:', !!openAIKey);
-    console.log('- SerpApi Key available:', !!serpApiKey);
-    console.log('- RainforestAPI Key available:', !!rainforestApiKey);
+    console.log('- OpenAI Key available:', !!openAIKey, openAIKey ? `(${openAIKey.length} chars)` : '');
+    console.log('- SerpApi Key available:', !!serpApiKey, serpApiKey ? `(${serpApiKey.length} chars)` : '');
+    console.log('- RainforestAPI Key available:', !!rainforestApiKey, rainforestApiKey ? `(${rainforestApiKey.length} chars)` : '');
     console.log('- Supabase URL available:', !!supabaseUrl);
     console.log('- Supabase Key available:', !!supabaseKey);
     
@@ -501,14 +527,11 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Log API availability but don't fail - allow fallback
     if (!serpApiKey && !rainforestApiKey) {
-      console.log('❌ Missing both SerpApi and RainforestAPI keys');
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Configuration manquante: au moins une clé API de recherche (SerpApi ou RainforestAPI) est requise'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+      console.warn('⚠️ Aucune clé API de recherche disponible - mode fallback uniquement');
+      console.warn('   - SERPAPI_API_KEY:', serpApiKey ? 'SET' : 'MISSING');
+      console.warn('   - RAINFOREST_API_KEY:', rainforestApiKey ? 'SET' : 'MISSING');
     }
 
     if (!supabaseUrl || !supabaseKey) {
@@ -1444,83 +1467,154 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     }
   }
   
-  // Si vraiment aucune API ne fonctionne, générer des suggestions génériques très simples
-  console.log('⚠️ Aucune API disponible - génération de suggestions génériques');
+  // Si vraiment aucune API ne fonctionne, générer des suggestions génériques mais intelligentes
+  console.log('⚠️ Aucune API disponible - génération de suggestions spécifiques basées sur le profil');
   
   const interests = personData.interests || [];
   const age = personData.age_years || 30;
+  const name = personData.name || 'cette personne';
   
-  // Suggestions génériques basées sur le profil
-  const genericSuggestions = [];
+  // Suggestions intelligentes basées sur le profil et l'événement
+  const smartSuggestions = [];
   
+  // Suggestions basées sur les intérêts avec des titres spécifiques
   if (interests.includes('Sport')) {
-    genericSuggestions.push({
-      title: 'Accessoire Sport',
-      description: 'Un accessoire pratique pour les activités sportives',
-      category: 'Sport'
+    smartSuggestions.push({
+      title: age > 50 ? 'Tapis de Yoga ou Matériel Fitness Doux' : 'Équipement Sport et Fitness',
+      description: `Un équipement sportif adapté à ${name}, parfait pour maintenir sa forme et sa santé.`,
+      category: 'Sport & Fitness',
+      keywords: 'tapis yoga accessoire sport fitness équipement'
     });
   }
   
   if (interests.includes('Tech')) {
-    genericSuggestions.push({
-      title: 'Gadget Technologique',
-      description: 'Un accessoire tech moderne et utile',
-      category: 'Technologie'
+    smartSuggestions.push({
+      title: budget > 100 ? 'Gadget Tech Premium' : 'Accessoire High-Tech Pratique',
+      description: `Un gadget technologique innovant qui facilitera le quotidien de ${name}.`,
+      category: 'Technologie',
+      keywords: 'accessoire tech gadget connecté smartphone'
     });
   }
   
   if (interests.includes('Lecture')) {
-    genericSuggestions.push({
-      title: 'Livre ou Accessoire Lecture',
-      description: 'Un livre intéressant ou un accessoire pour la lecture',
-      category: 'Culture'
+    smartSuggestions.push({
+      title: 'Livre Bestseller ou Accessoire Lecture',
+      description: `Un livre captivant ou un accessoire pour améliorer l'expérience de lecture de ${name}.`,
+      category: 'Culture & Lecture',
+      keywords: 'livre bestseller lampe lecture marque-page'
     });
   }
   
-  // Suggestions par défaut si pas d'intérêts spécifiques
-  if (genericSuggestions.length === 0) {
-    genericSuggestions.push(
+  if (interests.includes('Cuisine')) {
+    smartSuggestions.push({
+      title: budget > 80 ? 'Ustensile de Cuisine Professionnel' : 'Accessoire Cuisine Pratique',
+      description: `Un ustensile de qualité pour enrichir les talents culinaires de ${name}.`,
+      category: 'Cuisine & Gastronomie',
+      keywords: 'ustensile cuisine couteau planche balance'
+    });
+  }
+  
+  if (interests.includes('Jardinage')) {
+    smartSuggestions.push({
+      title: 'Kit Jardinage ou Plante d\'Intérieur',
+      description: `Des outils ou plantes pour nourrir la passion jardinage de ${name}.`,
+      category: 'Jardinage & Nature',
+      keywords: 'kit jardinage plante outils jardin'
+    });
+  }
+  
+  if (interests.includes('Art') || interests.includes('Artisanat')) {
+    smartSuggestions.push({
+      title: 'Kit Créatif ou Matériel Artistique',
+      description: `Du matériel artistique de qualité pour exprimer la créativité de ${name}.`,
+      category: 'Art & Créativité',
+      keywords: 'kit créatif pinceaux carnet art'
+    });
+  }
+  
+  // Suggestions basées sur l'âge si pas assez d'intérêts
+  if (smartSuggestions.length < 2) {
+    if (age > 60) {
+      smartSuggestions.push({
+        title: 'Produit Bien-être et Confort',
+        description: `Un produit pensé pour le confort et le bien-être de ${name}.`,
+        category: 'Bien-être',
+        keywords: 'bien-être confort relaxation senior'
+      });
+    } else if (age > 30) {
+      smartSuggestions.push({
+        title: 'Accessoire Maison et Décoration',
+        description: `Un objet élégant pour embellir l'intérieur de ${name}.`,
+        category: 'Maison & Décoration',
+        keywords: 'décoration maison accessoire design'
+      });
+    } else {
+      smartSuggestions.push({
+        title: 'Cadeau Tendance et Moderne',
+        description: `Un cadeau dans l'air du temps qui plaira à ${name}.`,
+        category: 'Tendance',
+        keywords: 'cadeau moderne tendance jeune'
+      });
+    }
+  }
+  
+  // Suggestions basées sur l'événement
+  if (eventType === 'birthday') {
+    smartSuggestions.push({
+      title: `Cadeau d'Anniversaire Personnalisé`,
+      description: `Un cadeau spécialement choisi pour célébrer l'anniversaire de ${name}.`,
+      category: 'Anniversaire',
+      keywords: 'cadeau anniversaire personnalisé célébration'
+    });
+  } else if (eventType === 'wedding') {
+    smartSuggestions.push({
+      title: 'Cadeau de Mariage Élégant',
+      description: `Un présent raffiné pour célébrer cette occasion spéciale avec ${name}.`,
+      category: 'Mariage',
+      keywords: 'cadeau mariage élégant décoration couple'
+    });
+  }
+  
+  // Compléter avec des suggestions universelles si nécessaire
+  if (smartSuggestions.length < 3) {
+    const universalSuggestions = [
       {
-        title: 'Cadeau Personnalisé',
-        description: 'Un cadeau thoughtful et personnel',
-        category: 'Général'
+        title: 'Coffret Cadeau Gourmand',
+        description: `Une sélection de produits gourmands pour faire plaisir à ${name}.`,
+        category: 'Gastronomie',
+        keywords: 'coffret gourmand produits terroir'
       },
       {
-        title: 'Accessoire Pratique',
-        description: 'Un objet utile pour le quotidien',
-        category: 'Pratique'
+        title: 'Bougie Parfumée de Luxe',
+        description: `Une bougie artisanale aux senteurs raffinées pour ${name}.`,
+        category: 'Bien-être',
+        keywords: 'bougie parfumée luxe ambiance'
       },
       {
-        title: 'Produit de Bien-être',
-        description: 'Quelque chose pour le confort et le bien-être',
-        category: 'Bien-être'
+        title: 'Plante d\'Intérieur Décorative',
+        description: `Une belle plante pour apporter de la vie dans l'espace de ${name}.`,
+        category: 'Nature',
+        keywords: 'plante intérieur décorative nature'
       }
-    );
+    ];
+    
+    smartSuggestions.push(...universalSuggestions.slice(0, 3 - smartSuggestions.length));
   }
   
-  // Compléter jusqu'à 3 suggestions si nécessaire
-  while (genericSuggestions.length < 3) {
-    genericSuggestions.push({
-      title: 'Idée Cadeau Original',
-      description: 'Une surprise originale et plaisante',
-      category: 'Surprise'
-    });
-  }
-  
-  // Créer les suggestions finales avec liens de recherche
-  const finalSuggestions = genericSuggestions.slice(0, 3).map((suggestion, index) => {
+  // Créer les suggestions finales avec liens de recherche optimisés
+  const finalSuggestions = smartSuggestions.slice(0, 3).map((suggestion, index) => {
     const targetPrice = Math.round(budget * (0.6 + Math.random() * 0.3)); // Entre 60% et 90% du budget
-    const searchQuery = `${suggestion.title} cadeau ${personData.name}`.replace(/[^\w\s]/g, ' ').trim();
-    const searchUrl = withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`);
+    const searchQuery = `${suggestion.keywords} cadeau -déguisement -costume`.replace(/[^\w\s-]/g, ' ').trim();
+    const searchUrl = withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}&rh=p_36%3A${Math.round(budget*0.3)}00-${budget}00`);
     
     return {
       title: suggestion.title,
       description: suggestion.description,
       estimatedPrice: targetPrice,
-      confidence: 0.5 - (index * 0.1), // Confiance faible car générique
-      reasoning: `Suggestion générique pour ${personData.name} basée sur son profil. Recherchez pour trouver l'option parfaite.`,
+      confidence: 0.7 - (index * 0.1), // Confiance raisonnable car basé sur profil
+      reasoning: `${suggestion.description} Cette suggestion est basée sur le profil de ${name} et recherchera les meilleures options disponibles.`,
       category: suggestion.category,
-      alternatives: [`Recherche: ${suggestion.title.toLowerCase()}`],
+      alternatives: [`Recherche optimisée: ${suggestion.keywords.split(' ').slice(0, 3).join(' ')}`],
       purchaseLinks: [searchUrl],
       priceInfo: {
         displayPrice: targetPrice,
@@ -1533,12 +1627,16 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
         productUrl: searchUrl,
         addToCartUrl: null,
         searchUrl: searchUrl,
-        matchType: 'generic_search'
+        matchType: 'smart_search'
       }
     };
   });
 
-  console.log('⚠️ Suggestions génériques générées (APIs indisponibles)');
+  console.log('✅ Suggestions intelligentes générées (mode fallback):', finalSuggestions.map(s => ({ 
+    title: s.title, 
+    price: s.estimatedPrice,
+    category: s.category 
+  })));
 
   return new Response(JSON.stringify({
     success: true,
@@ -1547,7 +1645,7 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
     metadata: {
       totalSuggestions: finalSuggestions.length,
       fallbackMode: true,
-      reason: 'APIs indisponibles - suggestions génériques avec liens de recherche'
+      reason: 'APIs indisponibles - suggestions intelligentes avec recherches optimisées'
     }
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
