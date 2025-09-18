@@ -1219,20 +1219,6 @@ JSON: {"selections":[{ "selectedTitle": "...", "selectedPrice": 0, "selectedAsin
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
-  } catch (error) {
-    console.error('❌ ERROR in edge function:', error);
-    console.error('Error name:', error?.name);
-    console.error('Error message:', error?.message);
-    console.error('Error stack:', error?.stack);
-    
-    return new Response(JSON.stringify({
-      success: false,
-      error: 'Erreur lors du traitement de la requête',
-      details: error?.message || 'Unknown error',
-      timestamp: new Date().toISOString()
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
   }
 });
 
