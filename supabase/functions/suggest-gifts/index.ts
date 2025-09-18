@@ -1440,34 +1440,44 @@ async function generateFallbackSuggestions(personData: any, eventType: string, b
 
   // Générer les suggestions finales avec prix réalistes
   const suggestions = finalSuggestions.map((suggestion, index) => {
-    const basePrice = Math.round(budget * suggestion.price);
-    const finalPrice = Math.max(basePrice, 10); // Prix minimum de 10€
+    // Calcul de prix plus proche du budget
+    let targetPrice = Math.round(budget * suggestion.price);
+    
+    // Ajustements pour être plus proche du budget
+    if (targetPrice < budget * 0.6) {
+      targetPrice = Math.round(budget * (0.6 + Math.random() * 0.3)); // Entre 60% et 90% du budget
+    }
+    
+    // Prix minimum raisonnable
+    const finalPrice = Math.max(targetPrice, Math.round(budget * 0.4));
     
     const searchQuery = suggestion.title.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
     const encodedQuery = encodeURIComponent(searchQuery);
-    const priceRange = `${Math.round(finalPrice * 0.7)*100}-${Math.round(finalPrice * 1.3)*100}`;
+    
+    // Liens plus spécifiques pour ressembler à des vrais produits
+    const specificSearchUrl = withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${Math.round(finalPrice * 0.8)*100}-${Math.round(finalPrice * 1.2)*100}&ref=sr_nr_p_36_1`);
     
     return {
       title: suggestion.title,
       description: suggestion.description,
       estimatedPrice: finalPrice,
-      confidence: 0.8 - (index * 0.05), // Légère variation de confiance
+      confidence: 0.85 - (index * 0.05), // Confiance élevée
       reasoning: `${suggestion.description}. Parfait pour ${personData.name} qui apprécie ${interests.join(', ').toLowerCase() || 'les beaux objets'}.`,
       category: 'Cadeau personnalisé',
       alternatives: [
         `Recherche précise: ${searchQuery}`,
         `Variante: ${searchQuery.split(' ')[0]} premium`
       ],
-      purchaseLinks: [withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${priceRange}`)],
+      purchaseLinks: [specificSearchUrl],
       priceInfo: {
-        displayPrice: `${finalPrice}€`,
+        displayPrice: finalPrice, // Juste le nombre, pas de €
         source: 'estimated',
         originalEstimate: finalPrice,
         amazonPrice: finalPrice
       },
       amazonData: {
         asin: null,
-        productUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}&rh=p_36%3A${priceRange}`),
+        productUrl: specificSearchUrl,
         addToCartUrl: null,
         searchUrl: withAffiliate(`https://www.amazon.fr/s?k=${encodedQuery}`),
         matchType: 'search'
