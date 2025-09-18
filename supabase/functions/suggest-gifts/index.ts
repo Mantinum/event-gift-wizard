@@ -127,66 +127,132 @@ function generateTargetedSearchQueries(personData: any, eventType: string, budge
   return finalQueries;
 }
 
-async function searchAmazonProducts(query: string, serpApiKey: string, minPrice: number, maxPrice: number) {
-  const params = new URLSearchParams({
-    engine: 'amazon',
-    amazon_domain: 'amazon.fr',
-    language: 'fr_FR',
-    k: query,
-    low_price: minPrice.toString(),
-    high_price: maxPrice.toString(),
-    api_key: serpApiKey,
-  });
-  
+// Recherche de produits Amazon avec RainforestAPI
+async function searchAmazonProductsRainforest(
+  query: string, 
+  minPrice: number, 
+  maxPrice: number, 
+  rainforestApiKey: string
+): Promise<any[]> {
   try {
-    const response = await fetch(`https://serpapi.com/search.json?${params}`);
-    if (!response.ok) return [];
+    console.log(`🌧️ RainforestAPI - Recherche Amazon: "${query}" (${minPrice}€-${maxPrice}€)`);
     
+    const searchUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}&min_price=${minPrice}&max_price=${maxPrice}`;
+    
+    const response = await fetch(searchUrl);
+    
+    if (!response.ok) {
+      console.error(`❌ RainforestAPI error: ${response.status} - ${response.statusText}`);
+      return [];
+    }
+
     const data = await response.json();
-    const results = data.organic_results || [];
     
-      const products = results
-        .filter((item: any) => {
-          if (!item.asin) return false;
-          // Garder l'item si pas de prix (on l'utilisera sans contraindre le budget sur SerpApi)
-          if (!item.price) return true;
-          const price = parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.'));
-          return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
-        })
-      .map((item: any) => {
-        console.log('🔍 Description produit brute:', {
-          title: item.title,
-          snippet: item.snippet,
-          description: item.description
-        });
-        
-        return {
-          title: item.title,
-          price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
-          asin: item.asin,
-          rating: item.rating,
-          reviewCount: item.reviews_count,
-          imageUrl: item.thumbnail,
-          link: item.link,
-          snippet: item.snippet,
-          description: item.description,
-          displayDescription: item.snippet || item.description || null // Récupérer la vraie description Amazon
-        };
+    if (data.request_info?.success === false) {
+      console.error('❌ RainforestAPI error:', data.request_info?.message);
+      return [];
+    }
+
+    const products = (data.search_results || [])
+      .filter((item: any) => {
+        if (!item.asin) return false;
+        // Filter by price if available
+        if (!item.price) return true;
+        const price = parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.'));
+        return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
       })
+      .map((item: any) => ({
+        title: item.title,
+        price: parseFloat(String(item.price?.value || item.price || '0').replace(/[^\d.,]/g, '').replace(',', '.')),
+        asin: item.asin,
+        rating: item.rating,
+        reviewCount: item.reviews_count,
+        imageUrl: item.image,
+        link: item.link,
+        snippet: item.snippet,
+        description: item.snippet,
+        displayDescription: item.snippet || null
+      }))
       .slice(0, 5); // Max 5 produits par requête
-      
-    console.log(`✅ ${products.length} produits trouvés pour "${query}"`);
-    console.log('🔍 Exemple de produit récupéré:', products[0] ? {
-      title: products[0].title,
-      displayDescription: products[0].displayDescription,
-      snippet: products[0].snippet,
-      description: products[0].description
-    } : 'Aucun produit');
+    
+    console.log(`📦 RainforestAPI - Products found for "${query}": ${products.length}`);
     return products;
   } catch (error) {
-    console.error('Erreur recherche SerpApi:', error);
+    console.error(`❌ Erreur RainforestAPI lors de la recherche Amazon pour "${query}":`, error);
     return [];
   }
+}
+
+// Recherche de produits Amazon avec SerpApi et fallback RainforestAPI
+async function searchAmazonProducts(query: string, serpApiKey: string | undefined, minPrice: number, maxPrice: number, rainforestApiKey?: string) {
+  let products: any[] = [];
+  
+  // Essayer SerpAPI en premier si disponible
+  if (serpApiKey) {
+    try {
+      console.log(`🔍 Recherche Amazon (SerpAPI): "${query}" (${minPrice}€-${maxPrice}€)`);
+      
+      const params = new URLSearchParams({
+        engine: 'amazon',
+        amazon_domain: 'amazon.fr',
+        language: 'fr_FR',
+        k: query,
+        low_price: minPrice.toString(),
+        high_price: maxPrice.toString(),
+        api_key: serpApiKey,
+      });
+      
+      const response = await fetch(`https://serpapi.com/search.json?${params}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (!data.error) {
+          const results = data.organic_results || [];
+          
+          products = results
+            .filter((item: any) => {
+              if (!item.asin) return false;
+              if (!item.price) return true;
+              const price = parseFloat(String(item.price).replace(/[^\d,]/g, '').replace(',', '.'));
+              return Number.isFinite(price) ? (price >= minPrice && price <= maxPrice) : true;
+            })
+            .map((item: any) => ({
+              title: item.title,
+              price: parseFloat(String(item.price || '0').replace(/[^\d,]/g, '').replace(',', '.')),
+              asin: item.asin,
+              rating: item.rating,
+              reviewCount: item.reviews_count,
+              imageUrl: item.thumbnail,
+              link: item.link,
+              snippet: item.snippet,
+              description: item.description,
+              displayDescription: item.snippet || item.description || null
+            }))
+            .slice(0, 5);
+          
+          console.log(`✅ SerpAPI - ${products.length} produits trouvés pour "${query}"`);
+          
+          if (products.length > 0) {
+            return products;
+          }
+        } else {
+          console.warn(`⚠️ SerpAPI error: ${data.error}, trying RainforestAPI...`);
+        }
+      } else {
+        console.warn(`⚠️ SerpAPI HTTP error: ${response.status}, trying RainforestAPI...`);
+      }
+    } catch (error) {
+      console.warn(`⚠️ SerpAPI exception: ${error}, trying RainforestAPI...`);
+    }
+  }
+  
+  // Fallback vers RainforestAPI si SerpAPI a échoué ou n'est pas disponible
+  if (rainforestApiKey && products.length === 0) {
+    products = await searchAmazonProductsRainforest(query, minPrice, maxPrice, rainforestApiKey);
+  }
+  
+  return products;
 }
 
 function diversifyProducts(products: any[], maxProducts: number) {
@@ -281,12 +347,14 @@ serve(async (req) => {
     // 4. Check environment variables
     const openAIKey = Deno.env.get('OPENAI_API_KEY');
     const serpApiKey = Deno.env.get('SERPAPI_API_KEY');
+    const rainforestApiKey = Deno.env.get('RAINFOREST_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
     
     console.log('🔑 Environment check:');
     console.log('- OpenAI Key available:', !!openAIKey);
     console.log('- SerpApi Key available:', !!serpApiKey);
+    console.log('- RainforestAPI Key available:', !!rainforestApiKey);
     console.log('- Supabase URL available:', !!supabaseUrl);
     console.log('- Supabase Key available:', !!supabaseKey);
     
@@ -300,11 +368,11 @@ serve(async (req) => {
       });
     }
 
-    if (!serpApiKey) {
-      console.log('❌ Missing SerpApi API key');
+    if (!serpApiKey && !rainforestApiKey) {
+      console.log('❌ Missing both SerpApi and RainforestAPI keys');
       return new Response(JSON.stringify({
         success: false,
-        error: 'Configuration manquante: clé SerpApi non configurée'
+        error: 'Configuration manquante: au moins une clé API de recherche (SerpApi ou RainforestAPI) est requise'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -463,11 +531,10 @@ serve(async (req) => {
     // Chercher des produits réels sur Amazon pour chaque requête
     const availableProducts = [];
     
-    if (serpApiKey) {
+    if (serpApiKey || rainforestApiKey) {
       for (const query of searchQueries.slice(0, 6)) { // Limiter à 6 requêtes max
         try {
-          console.log(`🔍 Recherche Amazon: "${query}" (${minBudget}€-${maxBudget}€)`);
-          const results = await searchAmazonProducts(query, serpApiKey, minBudget, maxBudget);
+          const results = await searchAmazonProducts(query, serpApiKey, minBudget, maxBudget, rainforestApiKey);
           
           if (results && results.length > 0) {
             availableProducts.push(...results.slice(0, 3)); // Max 3 produits par requête
@@ -484,7 +551,7 @@ serve(async (req) => {
     // Limiter drastiquement les produits pour éviter limite tokens
   const selectedProducts = diversifyProducts(availableProducts, 4);
   if (selectedProducts.length === 0) {
-    console.warn('⚠️ Aucun produit SerpApi : on fera des liens de recherche Amazon taggés');
+    console.warn('⚠️ Aucun produit trouvé via les APIs de recherche : on fera des liens de recherche Amazon taggés');
   }
     
     // Build enhanced context with personal notes priority
