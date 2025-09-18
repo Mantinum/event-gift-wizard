@@ -1,11 +1,12 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Vary': 'Origin',
 };
 
 // Nouvelles fonctions utilitaires pour l'approche basée sur les vrais produits Amazon
@@ -381,6 +382,14 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Health check for debugging
+  if (req.method === 'GET') {
+    console.log('✅ Health check request');
+    return new Response(JSON.stringify({ ok: true, timestamp: new Date().toISOString() }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+
   // 1. Force POST method
   if (req.method !== 'POST') {
     console.log('❌ Method not allowed:', req.method);
@@ -501,7 +510,9 @@ serve(async (req) => {
     }
 
     // Initialize Supabase client with service role key (bypasses RLS)
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false }
+    });
     console.log('📋 Request data:', { personId, eventType, budget, additionalContext });
 
     // 5. Check authentication and AI usage limits
@@ -527,7 +538,8 @@ serve(async (req) => {
         headers: {
           Authorization: authHeader
         }
-      }
+      },
+      auth: { persistSession: false }
     });
 
     // Get authenticated user
