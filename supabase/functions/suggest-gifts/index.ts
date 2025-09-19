@@ -72,14 +72,8 @@ async function generateGiftIdeasWithGPT(personData: any, eventType: string, budg
     ? `Notes: "${personData.notes}"`
     : `Âge: ${personData.age_years || "?"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
 
-  // ASIN Amazon réels populaires par catégorie (vérifiés et fonctionnels)
-  const realAsins = {
-    sport: ["B08N5WRWNW", "B07FZ8S74R", "B09JQSYQGZ", "B08HLZD9DF", "B0756CYWWD"],
-    tech: ["B08F5P4GYF", "B09G9FPHY6", "B08Z382JNZ", "B087QLRRK8", "B08XB2FL7G"], 
-    lifestyle: ["B09KXKPJVY", "B08GKQHSZ4", "B09M7HJHQT", "B08YN7D8WX", "B09NPQSM4L"],
-    beauty: ["B085QBXP8M", "B08K2QBXF7", "B09C5XRTY4", "B07W8YN1QS", "B08DLHR9PV"],
-    home: ["B08QZXP7BN", "B09F3R8XKZ", "B07YHBQM5K", "B08CXVT9NL", "B09T4K8FWS"]
-  };
+  // Au lieu d'utiliser des ASIN qui peuvent ne plus être valides,
+  // nous utiliserons une approche de recherche Amazon pour générer des liens fiables
 
   const prompt = `Génère exactement 3 idées cadeaux parfaites pour ${personData.name}.
 
@@ -139,16 +133,15 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
     const parsed = JSON.parse(content);
     const suggestions = parsed.suggestions || [];
 
-    // Assigner des ASIN réels aléatoires basés sur la catégorie
+    // Générer des URLs de recherche fiables plutôt que des ASIN potentiellement invalides
     const enrichedSuggestions = suggestions.map((suggestion: any) => {
-      const category = suggestion.category || 'lifestyle';
-      const categoryAsins = realAsins[category as keyof typeof realAsins] || realAsins.lifestyle;
-      const randomAsin = categoryAsins[Math.floor(Math.random() * categoryAsins.length)];
+      const searchKeywords = suggestion.searchKeywords || suggestion.title;
+      const cleanKeywords = searchKeywords.replace(/[^\w\s-]/g, ' ').trim();
       
       return {
         ...suggestion,
-        asin: randomAsin,
-        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.searchKeywords || suggestion.title)}`
+        amazonUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(cleanKeywords)}&ref=sr_st_relevancerank`,
+        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(cleanKeywords)}`
       };
     });
 
@@ -156,34 +149,34 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
     return enrichedSuggestions.slice(0, 3);
   } catch (error) {
     console.error("Erreur génération GPT:", error);
-    // Fallback avec ASIN réels
+    // Fallback avec recherches fiables
     return [
       {
         title: "Coffret cadeau personnalisé",
         description: `Un coffret soigneusement sélectionné pour ${personData.name}`,
         estimatedPrice: Math.min(budget, 35),
-        asin: realAsins.lifestyle[0],
         category: "lifestyle",
         reasoning: `Cadeau polyvalent adapté à ${personData.name}`,
-        searchUrl: `https://www.amazon.fr/s?k=coffret+cadeau`
+        amazonUrl: `https://www.amazon.fr/s?k=coffret+cadeau+personnalise&ref=sr_st_relevancerank`,
+        searchKeywords: "coffret cadeau personnalisé"
       },
       {
         title: "Accessoire premium de qualité", 
         description: `Un accessoire pratique et élégant pour le quotidien`,
         estimatedPrice: Math.min(budget, 25),
-        asin: realAsins.home[0],
         category: "home",
         reasoning: "Produit utile et apprécié au quotidien",
-        searchUrl: `https://www.amazon.fr/s?k=accessoire+premium`
+        amazonUrl: `https://www.amazon.fr/s?k=accessoire+premium+qualite&ref=sr_st_relevancerank`,
+        searchKeywords: "accessoire premium qualité"
       },
       {
         title: "Article tendance original",
         description: `Un produit original qui fera plaisir à coup sûr`,
         estimatedPrice: Math.min(budget, 20),
-        asin: realAsins.tech[0],
         category: "tech", 
         reasoning: "Cadeau original et surprenant",
-        searchUrl: `https://www.amazon.fr/s?k=article+tendance`
+        amazonUrl: `https://www.amazon.fr/s?k=article+tendance+original&ref=sr_st_relevancerank`,
+        searchKeywords: "article tendance original"
       }
     ];
   }
@@ -303,17 +296,18 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
   const enrichedSuggestions = [];
   
   for (const suggestion of gptSuggestions) {
-    // Utiliser l'ASIN réel et créer des liens de fallback robustes
+    // Créer des liens de recherche fiables plutôt que des ASIN potentiellement cassés
+    const searchKeywords = suggestion.searchKeywords || suggestion.title;
+    const cleanKeywords = searchKeywords.replace(/[^\w\s-]/g, ' ').trim();
+    const amazonSearchUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(cleanKeywords)}&ref=sr_st_relevancerank`;
+    
     let enrichedSuggestion = {
       ...suggestion,
       amazonData: {
-        asin: suggestion.asin,
-        productUrl: withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`),
-        searchUrl: suggestion.searchUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.searchKeywords || suggestion.title)}`,
-        addToCartUrl: partnerTagActive && partnerTag 
-          ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
-          : null,
-        matchType: "real_asin_assigned"
+        searchUrl: amazonSearchUrl,
+        productUrl: suggestion.amazonUrl || amazonSearchUrl,
+        addToCartUrl: null, // Pas possible sans ASIN spécifique
+        matchType: "search_based"
       }
     };
     
@@ -361,8 +355,8 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             reviewCount: realProduct.reviewCount,
             imageUrl: realProduct.imageUrl,
             productUrl: withAffiliate(realProduct.link), // Lien direct vers la fiche produit réelle
-            searchUrl: suggestion.searchUrl,
-            addToCartUrl: partnerTagActive && partnerTag 
+            searchUrl: amazonSearchUrl,
+            addToCartUrl: partnerTagActive && partnerTag && realProduct.asin
               ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
               : null,
             matchType: "api_matched_product"
@@ -471,8 +465,8 @@ Deno.serve(async (req) => {
       category: "Produit Amazon",
       alternatives: [],
       purchaseLinks: [
-        // Utiliser productUrl en priorité, puis searchUrl en fallback
-        suggestion.amazonData?.productUrl || suggestion.amazonData?.searchUrl || withAffiliate(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`)
+        // Utiliser searchUrl fiable pour éviter les liens cassés
+        suggestion.amazonData?.searchUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
@@ -481,13 +475,10 @@ Deno.serve(async (req) => {
         amazonPrice: suggestion.amazonData?.matchType === "api_matched_product" ? suggestion.estimatedPrice : null
       },
       amazonData: suggestion.amazonData || {
-        asin: suggestion.asin,
-        productUrl: withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`),
-        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`,
-        addToCartUrl: partnerTagActive && partnerTag 
-          ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
-          : null,
-        matchType: "real_asin_assigned"
+        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
+        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
+        addToCartUrl: null,
+        matchType: "search_fallback"
       }
     }));
 
