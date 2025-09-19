@@ -41,9 +41,23 @@ function withAffiliate(url: string) {
 }
 
 const toAsin = (a?: string) => (a || "").toUpperCase().trim();
+
+function toSearchKeywords(raw: string) {
+  if (!raw) return "";
+  // 1) enlève seulement les diacritiques (é→e) sans casser les mots
+  let s = raw.normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  // 2) garde lettres/chiffres/espaces/-
+  s = s.replace(/[^\p{L}\p{N}\s-]/gu, " ");
+  // 3) espaces propres
+  return s.replace(/\s+/g, " ").trim();
+}
+
 const ASIN_RES = [
   /\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i,
   /\/gp\/product\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /\/gp\/aw\/d\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /\/gp\/offer-listing\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /\/exec\/obidos\/ASIN\/([A-Z0-9]{10})(?:[/?]|$)/i,
   /[?&]ASIN=([A-Z0-9]{10})(?:[&#]|$)/i,
 ];
 const isValidAsin = (a?: string) => /^[A-Z0-9]{10}$/.test(toAsin(a));
@@ -136,7 +150,7 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
     // Générer des URLs de recherche fiables plutôt que des ASIN potentiellement invalides
     const enrichedSuggestions = suggestions.map((suggestion: any) => {
       const searchKeywords = suggestion.searchKeywords || suggestion.title;
-      const cleanKeywords = searchKeywords.replace(/[^\w\s-]/g, ' ').trim();
+      const cleanKeywords = toSearchKeywords(searchKeywords);
       
       return {
         ...suggestion,
@@ -218,6 +232,7 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
 
     console.log(`✅ SerpAPI: ${allResults.length} résultats bruts`);
 
+    const seen = new Set<string>();
     const products = allResults
       .map((item: any) => ({
         title: item.title || "",
@@ -230,6 +245,13 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
         imageUrl: item.thumbnail || item.image || null,
       }))
       .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
+      .filter(p => {
+        if (p.asin && isValidAsin(p.asin)) {
+          if (seen.has(p.asin)) return false;
+          seen.add(p.asin);
+        }
+        return true;
+      })
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
       .slice(0, 5);
 
@@ -264,6 +286,7 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
     const results = data.search_results || [];
     console.log(`✅ Rainforest: ${results.length} résultats bruts`);
 
+    const seen = new Set<string>();
     const products = results
       .map((item: any) => ({
         title: item.title || "",
@@ -276,6 +299,13 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
         imageUrl: item.image || null,
       }))
       .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
+      .filter(p => {
+        if (p.asin && isValidAsin(p.asin)) {
+          if (seen.has(p.asin)) return false;
+          seen.add(p.asin);
+        }
+        return true;
+      })
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
       .slice(0, 5);
 
@@ -311,36 +341,41 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       }
     };
     
-    // Essayer d'enrichir avec des données Amazon spécifiques (optionnel)
-    if (serpApiKey || rainforestApiKey) {
-      const searchQuery = (suggestion.searchKeywords || suggestion.title).toLowerCase().replace(/[^\w\s]/g, '').slice(0, 50);
-      console.log(`🔍 Tentative d'enrichissement spécifique pour: "${searchQuery}"`);
-      
-      let foundProducts: any[] = [];
-      
-      // Tentative avec SerpAPI si disponible
-      if (serpApiKey) {
-        try {
-          foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, 5, suggestion.estimatedPrice * 3);
-          if (foundProducts.length > 0) {
-            console.log(`✅ Produit spécifique trouvé via SerpAPI: ${foundProducts[0].title}`);
+      // Essayer d'enrichir avec des données Amazon spécifiques (optionnel)
+      if (serpApiKey || rainforestApiKey) {
+        const searchQuery = toSearchKeywords((suggestion.searchKeywords || suggestion.title)).toLowerCase();
+        console.log(`🔍 Tentative d'enrichissement spécifique pour: "${searchQuery}"`);
+        
+        let foundProducts: any[] = [];
+        
+        // Gestion prix souples
+        const est = Number.isFinite(suggestion.estimatedPrice) && suggestion.estimatedPrice > 0 ? suggestion.estimatedPrice : 30;
+        const minP = Math.max(5, Math.floor(est * 0.4));
+        const maxP = Math.max(minP + 10, Math.floor(est * 3.5));
+        
+        // Tentative avec SerpAPI si disponible
+        if (serpApiKey) {
+          try {
+            foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, minP, maxP);
+            if (foundProducts.length > 0) {
+              console.log(`✅ Produit spécifique trouvé via SerpAPI: ${foundProducts[0].title}`);
+            }
+          } catch (error) {
+            console.log(`⚠️ SerpAPI non disponible pour: ${searchQuery}`);
           }
-        } catch (error) {
-          console.log(`⚠️ SerpAPI non disponible pour: ${searchQuery}`);
         }
-      }
-      
-      // Tentative avec RainforestAPI si pas de résultats et disponible
-      if (rainforestApiKey && foundProducts.length === 0) {
-        try {
-          foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, 5, suggestion.estimatedPrice * 3);
-          if (foundProducts.length > 0) {
-            console.log(`✅ Produit spécifique trouvé via RainforestAPI: ${foundProducts[0].title}`);
+        
+        // Tentative avec RainforestAPI si pas de résultats et disponible
+        if (rainforestApiKey && foundProducts.length === 0) {
+          try {
+            foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, minP, maxP);
+            if (foundProducts.length > 0) {
+              console.log(`✅ Produit spécifique trouvé via RainforestAPI: ${foundProducts[0].title}`);
+            }
+          } catch (error) {
+            console.log(`⚠️ RainforestAPI non disponible pour: ${searchQuery}`);
           }
-        } catch (error) {
-          console.log(`⚠️ RainforestAPI non disponible pour: ${searchQuery}`);
         }
-      }
       
       // Si on a trouvé des produits Amazon spécifiques, utiliser le premier
       if (foundProducts.length > 0) {
@@ -352,10 +387,10 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
         
         if (realProduct.asin && isValidAsin(realProduct.asin)) {
           // Si on a un ASIN valide, créer un lien direct vers le produit
-          productUrl = `https://www.amazon.fr/dp/${realProduct.asin}`;
+          productUrl = withAffiliate(`https://www.amazon.fr/dp/${toAsin(realProduct.asin)}`);
         } else if (realProduct.originalLink || realProduct.link) {
           // Sinon utiliser le lien de l'API
-          productUrl = realProduct.originalLink || realProduct.link;
+          productUrl = withAffiliate(realProduct.originalLink || realProduct.link);
         }
         
         enrichedSuggestion = {
@@ -481,8 +516,11 @@ Deno.serve(async (req) => {
       alternatives: [],
       purchaseLinks: [
         // Utiliser productUrl en priorité pour les liens directs, sinon searchUrl
-        suggestion.amazonData?.productUrl || suggestion.amazonData?.searchUrl || 
-        `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`
+        withAffiliate(
+          suggestion.amazonData?.productUrl
+          || suggestion.amazonData?.searchUrl
+          || `https://www.amazon.fr/s?k=${encodeURIComponent(toSearchKeywords(suggestion.title))}&ref=sr_st_relevancerank`
+        )
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
@@ -491,8 +529,8 @@ Deno.serve(async (req) => {
         amazonPrice: suggestion.amazonData?.matchType === "direct_product_link" ? suggestion.estimatedPrice : null
       },
       amazonData: suggestion.amazonData || {
-        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
-        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
+        searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(toSearchKeywords(suggestion.title))}&ref=sr_st_relevancerank`,
+        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(toSearchKeywords(suggestion.title))}&ref=sr_st_relevancerank`,
         addToCartUrl: null,
         matchType: "search"
       }
