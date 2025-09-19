@@ -229,7 +229,7 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: n
     const seen = new Set<string>();
     let products = all
       .map((item: any) => {
-        const asin = extractAsinFromUrl(item.link) || toAsin(item.asin);
+        const asin = extractAsinFromUrl(item.link) || toAsin(item.asin || item.asin_id || item.product_id);
         const rawPrice = String(item.price?.value ?? item.price ?? "0");
         return {
           title: item.title || "",
@@ -337,6 +337,23 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
 }
 
 /* =========================
+   ASIN RESOLVER VIA URL
+========================= */
+async function rainforestResolveAsinByUrl(url: string, rainforestApiKey?: string): Promise<string|null> {
+  if (!rainforestApiKey || !url) return null;
+  try {
+    const api = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=product&url=${encodeURIComponent(url)}`;
+    const res = await withTimeoutFetch(api, {}, 15000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const asin = toAsin(data?.product?.asin || data?.asin || "");
+    return isValidAsin(asin) ? asin : null;
+  } catch {
+    return null;
+  }
+}
+
+/* =========================
    ENHANCED PRODUCT SEARCH
 ========================= */
 async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, rainforestApiKey?: string) {
@@ -396,16 +413,34 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
           }
         }
       
-      // Si on a trouvé des produits Amazon spécifiques, utiliser le premier
+      // Si on a trouvé des produits Amazon spécifiques, tenter de compléter l'ASIN s'il manque
       if (foundProducts.length > 0) {
+        // Essaie de backfiller l'ASIN via URL → Rainforest (sur les 3 premiers max)
+        for (let i = 0; i < Math.min(foundProducts.length, 3); i++) {
+          const p = foundProducts[i];
+          if (!isValidAsin(p.asin)) {
+            // 1) ré-extraction depuis le lien (au cas où)
+            const fromLink = extractAsinFromUrl(p.link || p.originalLink);
+            if (isValidAsin(fromLink)) {
+              p.asin = fromLink;
+              continue;
+            }
+            // 2) appel Rainforest product-by-URL pour récupérer l'ASIN
+            const fetched = await rainforestResolveAsinByUrl(p.link || p.originalLink, rainforestApiKey);
+            if (isValidAsin(fetched)) {
+              p.asin = fetched;
+            }
+          }
+        }
+
+        // Sélection: uniquement un produit avec ASIN (sinon on garde la recherche)
         const withAsin = foundProducts.find(p => isValidAsin(p.asin));
-        const viaLinkAsin = foundProducts.find(p => extractAsinFromUrl(p.link || p.originalLink));
-        const realProduct = withAsin || viaLinkAsin;
-        if (!realProduct) {
-          console.log("↩︎ Aucun ASIN exploitable, fallback search");
+        if (!withAsin) {
+          console.log("↩︎ Aucun ASIN exploitable après backfill, fallback search");
           enrichedSuggestions.push(enrichedSuggestion);
           continue;
         }
+        const realProduct = withAsin;
 
         // Si on a trouvé un ASIN via le 2e passage, renseigne-le
         if (!realProduct.asin) {
