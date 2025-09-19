@@ -213,7 +213,7 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
   console.log(`🔍 Recherche SerpAPI: ${query} (${minPrice}-${maxPrice}€)`);
 
   try {
-    const res = await withTimeoutFetch(url, {}, 10000);
+    const res = await withTimeoutFetch(url, {}, 20000);
     if (!res.ok) {
       console.error(`❌ SerpAPI HTTP error ${res.status}`);
       return [];
@@ -233,18 +233,26 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
     console.log(`✅ SerpAPI: ${allResults.length} résultats bruts`);
 
     const seen = new Set<string>();
+    const withAsinCount = allResults.filter((it:any) => isValidAsin(extractAsinFromUrl(it.link)||toAsin(it.asin))).length;
+    console.log(`ℹ️ Candidats avec ASIN avant filtre: ${withAsinCount}`);
+
     let products = allResults
-      .map((item: any) => ({
-        title: item.title || "",
-        asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
-        link: item.link, // Utiliser le lien original de l'API
-        originalLink: item.link,
-        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-        rating: item.rating || null,
-        reviewCount: item.reviews_count || null,
-        imageUrl: item.thumbnail || item.image || null,
-      }))
-      .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
+      .map((item: any) => {
+        const asin = extractAsinFromUrl(item.link) || toAsin(item.asin);
+        const rawPrice = String(item.price?.value ?? item.price ?? "0");
+        return {
+          title: item.title || "",
+          asin,
+          // si l'API ne donne pas de lien, mais qu'on a un ASIN, fabrique le dp
+          link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
+          originalLink: item.link || null,
+          price: parseFloat(rawPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+          rating: item.rating ?? null,
+          reviewCount: item.reviews_count ?? null,
+          imageUrl: item.thumbnail || item.image || null,
+        };
+      })
+      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes('amazon'))))
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
@@ -285,7 +293,7 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
   console.log(`🔍 Recherche Rainforest: ${query} (${minPrice}-${maxPrice}€)`);
 
   try {
-    const res = await withTimeoutFetch(url, {}, 10000);
+    const res = await withTimeoutFetch(url, {}, 20000);
     if (!res.ok) {
       console.error(`❌ Rainforest HTTP error ${res.status}`);
       return [];
@@ -301,18 +309,26 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
     console.log(`✅ Rainforest: ${results.length} résultats bruts`);
 
     const seen = new Set<string>();
+    const withAsinCount = results.filter((it:any) => isValidAsin(toAsin(it.asin))).length;
+    console.log(`ℹ️ Candidats avec ASIN avant filtre: ${withAsinCount}`);
+
     let products = results
-      .map((item: any) => ({
-        title: item.title || "",
-        asin: toAsin(item.asin),
-        link: item.link, // Utiliser le lien original de l'API
-        originalLink: item.link,
-        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-        rating: item.rating || null,
-        reviewCount: item.reviews_count || null,
-        imageUrl: item.image || null,
-      }))
-      .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
+      .map((item: any) => {
+        const asin = toAsin(item.asin);
+        const rawPrice = String(item.price?.value ?? item.price ?? "0");
+        return {
+          title: item.title || "",
+          asin,
+          // si l'API ne donne pas de lien, mais qu'on a un ASIN, fabrique le dp
+          link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
+          originalLink: item.link || null,
+          price: parseFloat(rawPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+          rating: item.rating ?? null,
+          reviewCount: item.reviews_count ?? null,
+          imageUrl: item.image || null,
+        };
+      })
+      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes('amazon'))))
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
