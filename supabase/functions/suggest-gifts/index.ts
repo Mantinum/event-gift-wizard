@@ -65,48 +65,100 @@ function extractAsinFromUrl(url?: string) {
 }
 
 /* =========================
-   SEARCH QUERIES GENERATION
+   GPT GIFT GENERATION
 ========================= */
-function generateSearchQueries(personData: any, eventType: string, budget: number): string[] {
-  const interests: string[] = personData.interests || [];
-  const notes = (personData.notes || "").toLowerCase();
-  const age = personData.age_years || 0;
-  const queries: string[] = [];
+async function generateGiftIdeasWithGPT(personData: any, eventType: string, budget: number, openAIKey: string) {
+  const personalInfo = personData.notes 
+    ? `Notes: "${personData.notes}"`
+    : `Âge: ${personData.age_years || "?"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
 
-  // Requêtes basées sur les intérêts
-  if (interests.includes("Sport")) {
-    queries.push("tapis yoga premium", "bouteille eau isotherme", "accessoire fitness");
+  const prompt = `Génère exactement 3 idées cadeaux parfaites pour ${personData.name}.
+
+${personalInfo}
+Événement: ${eventType}
+Budget max: ${budget}€
+
+INSTRUCTIONS:
+- Génère 3 produits concrets et spécifiques (noms de marques, modèles précis)
+- Varie les catégories de produits
+- Respecte le budget et les goûts de la personne
+- Pour chaque produit, imagine un prix réaliste dans le budget
+- Crée des noms de produits Amazon réalistes avec des descriptions détaillées
+- Génère des ASIN fictifs mais réalistes (format: [A-Z0-9]{10})
+
+Renvoie UNIQUEMENT un JSON avec ce format exact:
+{
+  "suggestions": [
+    {
+      "title": "Nom précis du produit avec marque",
+      "description": "Description détaillée expliquant pourquoi c'est parfait pour cette personne",
+      "estimatedPrice": prix_en_euros_entier,
+      "asin": "ASIN_FICTIF_REALISTE",
+      "reasoning": "Explication personnalisée basée sur ses intérêts"
+    }
+  ]
+}`;
+
+  try {
+    const response = await withTimeoutFetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openAIKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "Tu es un expert en idées cadeaux personnalisées. Tu renvoies UNIQUEMENT du JSON valide." },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 1200,
+        temperature: 0.7,
+        response_format: { type: "json_object" }
+      }),
+    }, 15000);
+
+    if (!response.ok) {
+      console.error("Erreur OpenAI génération:", response.status);
+      throw new Error("Erreur API OpenAI");
+    }
+
+    const aiData = await response.json();
+    let content = aiData.choices?.[0]?.message?.content?.trim() || "";
+    content = content.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+
+    const parsed = JSON.parse(content);
+    const suggestions = parsed.suggestions || [];
+
+    console.log(`GPT a généré ${suggestions.length} idées cadeaux`);
+    return suggestions.slice(0, 3);
+  } catch (error) {
+    console.error("Erreur génération GPT:", error);
+    // Fallback si GPT échoue
+    return [
+      {
+        title: "Coffret cadeau personnalisé",
+        description: `Un coffret soigneusement sélectionné pour ${personData.name}`,
+        estimatedPrice: Math.min(budget, 35),
+        asin: "B08XYZABC0",
+        reasoning: `Cadeau polyvalent adapté à ${personData.name}`
+      },
+      {
+        title: "Accessoire premium de qualité",
+        description: `Un accessoire pratique et élégant pour le quotidien`,
+        estimatedPrice: Math.min(budget, 25),
+        asin: "B09DEFGHI1",
+        reasoning: "Produit utile et apprécié au quotidien"
+      },
+      {
+        title: "Article tendance original",
+        description: `Un produit original qui fera plaisir à coup sûr`,
+        estimatedPrice: Math.min(budget, 20),
+        asin: "B07JKLMNO2",
+        reasoning: "Cadeau original et surprenant"
+      }
+    ];
   }
-  if (interests.includes("Tech")) {
-    queries.push("chargeur sans fil", "écouteurs bluetooth", "accessoire smartphone");
-  }
-  if (interests.includes("Cuisine")) {
-    queries.push("ustensile cuisine premium", "accessoire cuisine", "gadget culinaire");
-  }
-  if (interests.includes("Lecture")) {
-    queries.push("lampe lecture", "support livre", "accessoire lecture");
-  }
-
-  // Requêtes basées sur les notes
-  if (notes.includes("musique")) queries.push("accessoire musique", "casque audio");
-  if (notes.includes("nature")) queries.push("produit écologique", "accessoire randonnée");
-  if (notes.includes("voyage")) queries.push("accessoire voyage", "organisateur bagage");
-
-  // Requêtes par âge
-  if (age > 60) queries.push("cadeau senior pratique");
-  else if (age > 30) queries.push("cadeau adulte élégant");
-  else if (age > 15) queries.push("cadeau jeune tendance");
-
-  // Requêtes par type d'événement
-  if (eventType === "birthday") queries.push("cadeau anniversaire original");
-  if (eventType === "wedding") queries.push("cadeau mariage utile");
-
-  // Fallback si pas d'intérêts spécifiques
-  if (queries.length === 0) {
-    queries.push("cadeau original", "accessoire pratique", "objet utile");
-  }
-
-  return queries.slice(0, 5); // Max 5 requêtes
 }
 
 /* =========================
@@ -124,312 +176,168 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
   });
 
   const url = `https://serpapi.com/search.json?${params}`;
-  console.log(`Recherche SerpAPI: ${query} (${minPrice}-${maxPrice}€)`);
+  console.log(`🔍 Recherche SerpAPI: ${query} (${minPrice}-${maxPrice}€)`);
 
   try {
     const res = await withTimeoutFetch(url, {}, 10000);
     if (!res.ok) {
-      console.error("SerpAPI HTTP error", res.status);
+      console.error(`❌ SerpAPI HTTP error ${res.status}`);
       return [];
     }
 
     const data = await res.json();
     if (data.error) {
-      console.error("SerpAPI API error:", data.error);
+      console.error("❌ SerpAPI API error:", data.error);
       return [];
     }
 
-    // Combiner product_results et organic_results
     const allResults = [
       ...(data.product_results || []),
       ...(data.organic_results || []),
     ];
 
-    console.log(`SerpAPI retourné ${allResults.length} résultats pour "${query}"`);
+    console.log(`✅ SerpAPI: ${allResults.length} résultats bruts`);
 
-    // Normaliser tous les résultats
-    const normalizedResults = allResults.map((item: any) => ({
-      title: item.title || "",
-      asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
-      originalLink: item.link,
-      price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-      rating: item.rating || null,
-      reviewCount: item.reviews_count || null,
-      imageUrl: item.thumbnail || item.image || null,
-      snippet: item.snippet || item.description || "",
-    }));
-
-    console.log(`Après normalisation: ${normalizedResults.length} produits`);
-
-    // Filtrage progressif avec logs
-    const withValidTitle = normalizedResults.filter(p => p.title.length > 5);
-    console.log(`Avec titre valide: ${withValidTitle.length}`);
-
-    const withAsin = withValidTitle.filter(p => isValidAsin(p.asin));
-    console.log(`Avec ASIN valide: ${withAsin.length}`);
-
-    const priceFiltered = withAsin.filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice));
-    console.log(`Dans la plage de prix ${minPrice}-${maxPrice}€: ${priceFiltered.length}`);
-
-    // Construire le lien direct /dp/ASIN pour tous les produits avec ASIN valide
-    const products = priceFiltered
-      .map((p: any) => ({
-        ...p,
-        link: `https://www.amazon.fr/dp/${p.asin}`,
+    const products = allResults
+      .map((item: any) => ({
+        title: item.title || "",
+        asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
+        link: item.link,
+        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+        rating: item.rating || null,
+        reviewCount: item.reviews_count || null,
+        imageUrl: item.thumbnail || item.image || null,
       }))
-      .slice(0, 10);
+      .filter(p => p.title.length > 5 && isValidAsin(p.asin))
+      .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
+      .map(p => ({ ...p, link: `https://www.amazon.fr/dp/${p.asin}` }))
+      .slice(0, 5);
 
-    console.log(`${products.length} produits valides après filtrage`);
+    console.log(`✅ SerpAPI: ${products.length} produits valides filtrés`);
     return products;
   } catch (error) {
-    console.error("Erreur SerpAPI:", error);
+    console.error("❌ Erreur SerpAPI:", error);
     return [];
   }
 }
 
 /* =========================
-   RAINFOREST API SEARCH
+   RAINFOREST SEARCH
 ========================= */
 async function searchWithRainforest(query: string, rainforestApiKey: string, minPrice: number, maxPrice: number) {
   const url = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}`;
-  console.log(`Recherche Rainforest: ${query} (${minPrice}-${maxPrice}€)`);
+  console.log(`🔍 Recherche Rainforest: ${query} (${minPrice}-${maxPrice}€)`);
 
   try {
     const res = await withTimeoutFetch(url, {}, 10000);
     if (!res.ok) {
-      console.error("Rainforest HTTP error", res.status);
+      console.error(`❌ Rainforest HTTP error ${res.status}`);
       return [];
     }
 
     const data = await res.json();
     if (data.request_info?.success === false) {
-      console.error("Rainforest API error:", data.request_info?.message);
+      console.error("❌ Rainforest API error:", data.request_info?.message);
       return [];
     }
 
     const results = data.search_results || [];
-    console.log(`Rainforest retourné ${results.length} résultats pour "${query}"`);
+    console.log(`✅ Rainforest: ${results.length} résultats bruts`);
 
-    // Normaliser tous les résultats
-    const normalizedResults = results.map((item: any) => ({
-      title: item.title || "",
-      asin: toAsin(item.asin),
-      originalLink: item.link,
-      price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-      rating: item.rating || null,
-      reviewCount: item.reviews_count || null,
-      imageUrl: item.image || null,
-      snippet: item.snippet || "",
-    }));
-
-    console.log(`Après normalisation: ${normalizedResults.length} produits`);
-
-    // Filtrage progressif avec logs
-    const withValidTitle = normalizedResults.filter(p => p.title.length > 5);
-    console.log(`Avec titre valide: ${withValidTitle.length}`);
-
-    const withAsin = withValidTitle.filter(p => isValidAsin(p.asin));
-    console.log(`Avec ASIN valide: ${withAsin.length}`);
-
-    const priceFiltered = withAsin.filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice));
-    console.log(`Dans la plage de prix ${minPrice}-${maxPrice}€: ${priceFiltered.length}`);
-
-    const products = priceFiltered
-      .map((p: any) => ({
-        ...p,
-        link: `https://www.amazon.fr/dp/${p.asin}`,
+    const products = results
+      .map((item: any) => ({
+        title: item.title || "",
+        asin: toAsin(item.asin),
+        link: item.link,
+        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+        rating: item.rating || null,
+        reviewCount: item.reviews_count || null,
+        imageUrl: item.image || null,
       }))
-      .slice(0, 10);
+      .filter(p => p.title.length > 5 && isValidAsin(p.asin))
+      .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
+      .map(p => ({ ...p, link: `https://www.amazon.fr/dp/${p.asin}` }))
+      .slice(0, 5);
 
-    console.log(`${products.length} produits valides après filtrage`);
+    console.log(`✅ Rainforest: ${products.length} produits valides filtrés`);
     return products;
   } catch (error) {
-    console.error("Erreur Rainforest:", error);
+    console.error("❌ Erreur Rainforest:", error);
     return [];
   }
 }
 
 /* =========================
-   MAIN SEARCH FUNCTION
+   ENHANCED PRODUCT SEARCH
 ========================= */
-async function searchAmazonProducts(queries: string[], serpApiKey?: string, rainforestApiKey?: string, minPrice = 10, maxPrice = 100) {
-  let allProducts: any[] = [];
-
-  // Essayer SerpAPI en premier
-  if (serpApiKey) {
-    console.log("Utilisation de SerpAPI");
-    for (const query of queries) {
-      const products = await searchWithSerpApi(query, serpApiKey, minPrice, maxPrice);
-      allProducts.push(...products);
-      
-      // Si on a assez de produits, on s'arrête
-      if (allProducts.length >= 15) break;
-    }
-  }
-
-  // Si pas assez de résultats, essayer Rainforest
-  if (allProducts.length < 10 && rainforestApiKey) {
-    console.log("Fallback vers Rainforest API");
-    for (const query of queries) {
-      const products = await searchWithRainforest(query, rainforestApiKey, minPrice, maxPrice);
-      allProducts.push(...products);
-      
-      if (allProducts.length >= 15) break;
-    }
-  }
-
-  // Dédupliquer par ASIN et trier par qualité
-  const uniqueProducts = allProducts
-    .filter((p, i, self) => i === self.findIndex(q => q.asin === p.asin))
-    .sort((a, b) => {
-      const scoreA = (a.rating || 3) * Math.log(a.reviewCount || 1) + (a.price ? 1 : 0);
-      const scoreB = (b.rating || 3) * Math.log(b.reviewCount || 1) + (b.price ? 1 : 0);
-      return scoreB - scoreA;
-    });
-
-  console.log(`${uniqueProducts.length} produits uniques trouvés`);
-  return uniqueProducts;
-}
-
-/* =========================
-   AI SELECTION
-========================= */
-async function selectBestProducts(products: any[], personData: any, eventType: string, budget: number, openAIKey: string) {
-  if (products.length === 0) return [];
-
-  const personalInfo = personData.notes 
-    ? `Notes: "${personData.notes}"`
-    : `Âge: ${personData.age_years || "?"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
-
-  const prompt = `Sélectionne exactement 3 produits Amazon parfaits pour ${personData.name}.
-
-${personalInfo}
-Événement: ${eventType}
-Budget: ${budget}€
-
-PRODUITS DISPONIBLES:
-${products.slice(0, 15).map((p, i) => 
-  `${i + 1}. ${p.title} - ${p.price || "Prix non disponible"}€ (ASIN: ${p.asin})`
-).join("\n")}
-
-INSTRUCTIONS:
-- Choisis EXACTEMENT 3 produits de la liste ci-dessus
-- Varie les types de produits
-- Respecte le budget et les goûts de la personne
-- Renvoie un JSON avec le format exact suivant`;
-
-  try {
-    const response = await withTimeoutFetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openAIKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `Tu renvoies UNIQUEMENT un JSON valide avec ce format exact:
-{
-  "selections": [
-    {
-      "asin": "<ASIN exact de la liste>",
-      "reasoning": "<Pourquoi ce produit est parfait pour cette personne>"
-    }
-  ]
-}
-IMPORTANT: N'invente aucun ASIN, utilise seulement ceux de la liste.`
-          },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 800,
-        temperature: 0.3,
-        response_format: { type: "json_object" }
-      }),
-    }, 10000);
-
-    if (!response.ok) {
-      console.error("Erreur OpenAI:", response.status);
-      return products.slice(0, 3); // Fallback: premiers produits
-    }
-
-    const aiData = await response.json();
-    let content = aiData.choices?.[0]?.message?.content?.trim() || "";
-    content = content.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-
-    const parsed = JSON.parse(content);
-    const selections = parsed.selections || [];
-
-    console.log(`IA a sélectionné ${selections.length} produits`);
-
-    // Mapper les sélections IA aux vrais produits
-    const selectedProducts = selections
-      .map((sel: any) => {
-        const product = products.find(p => p.asin === toAsin(sel.asin));
-        if (product) {
-          return {
-            ...product,
-            aiReasoning: sel.reasoning || `Produit sélectionné pour ${personData.name}`
-          };
-        }
-        return null;
-      })
-      .filter(Boolean)
-      .slice(0, 3);
-
-    // Si pas assez de sélections IA, compléter avec les meilleurs produits
-    while (selectedProducts.length < 3 && products.length > selectedProducts.length) {
-      const usedAsins = new Set(selectedProducts.map(p => p.asin));
-      const nextProduct = products.find(p => !usedAsins.has(p.asin));
-      if (nextProduct) {
-        selectedProducts.push({
-          ...nextProduct,
-          aiReasoning: `Produit recommandé pour ${personData.name}`
-        });
-      } else {
-        break;
+async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, rainforestApiKey?: string) {
+  console.log(`🔍 Enrichissement de ${gptSuggestions.length} suggestions GPT`);
+  
+  const enrichedSuggestions = [];
+  
+  for (const suggestion of gptSuggestions) {
+    let enrichedSuggestion = { ...suggestion };
+    
+    // Essayer de chercher le produit réel sur Amazon
+    const searchQuery = suggestion.title.toLowerCase().replace(/[^\w\s]/g, '').slice(0, 50);
+    console.log(`🔍 Recherche Amazon pour: "${searchQuery}"`);
+    
+    let foundProducts: any[] = [];
+    
+    // Tentative avec SerpAPI
+    if (serpApiKey && foundProducts.length === 0) {
+      try {
+        foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, 5, suggestion.estimatedPrice * 2);
+      } catch (error) {
+        console.error("❌ Erreur SerpAPI pour", searchQuery, error);
       }
     }
-
-    return selectedProducts;
-  } catch (error) {
-    console.error("Erreur sélection IA:", error);
-    return products.slice(0, 3); // Fallback: premiers produits
-  }
-}
-
-/* =========================
-   FORMAT SUGGESTIONS
-========================= */
-function formatSuggestions(selectedProducts: any[], personData: any) {
-  return selectedProducts.map((product: any) => ({
-    title: product.title,
-    description: product.aiReasoning || `Produit recommandé pour ${personData.name}`,
-    estimatedPrice: Math.round(product.price || 30),
-    confidence: 0.9,
-    reasoning: product.aiReasoning || `Sélectionné pour ${personData.name}`,
-    category: "Produit Amazon",
-    alternatives: [],
-    purchaseLinks: [withAffiliate(product.link)],
-    priceInfo: {
-      displayPrice: Math.round(product.price || 30),
-      source: "amazon_api",
-      amazonPrice: product.price
-    },
-    amazonData: {
-      asin: product.asin,
-      productUrl: withAffiliate(product.link),
-      addToCartUrl: partnerTagActive && partnerTag 
-        ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${product.asin}&Quantity.1=1&tag=${partnerTag}`
-        : null,
-      searchUrl: withAffiliate(product.link),
-      matchType: "direct",
-      rating: product.rating,
-      reviewCount: product.reviewCount,
-      imageUrl: product.imageUrl
+    
+    // Tentative avec RainforestAPI si pas de résultats
+    if (rainforestApiKey && foundProducts.length === 0) {
+      try {
+        foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, 5, suggestion.estimatedPrice * 2);
+      } catch (error) {
+        console.error("❌ Erreur RainforestAPI pour", searchQuery, error);
+      }
     }
-  }));
+    
+    // Si on a trouvé des produits Amazon réels, utiliser le premier
+    if (foundProducts.length > 0) {
+      const realProduct = foundProducts[0];
+      console.log(`✅ Produit réel trouvé: ${realProduct.title} (${realProduct.asin})`);
+      
+      enrichedSuggestion = {
+        ...suggestion,
+        title: realProduct.title,
+        estimatedPrice: Math.round(realProduct.price || suggestion.estimatedPrice),
+        amazonData: {
+          asin: realProduct.asin,
+          rating: realProduct.rating,
+          reviewCount: realProduct.reviewCount,
+          imageUrl: realProduct.imageUrl,
+          productUrl: withAffiliate(realProduct.link),
+          addToCartUrl: partnerTagActive && partnerTag 
+            ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
+            : null,
+          matchType: "enhanced"
+        }
+      };
+    } else {
+      // Pas de produit réel trouvé, garder la suggestion GPT avec lien générique
+      console.log(`❌ Aucun produit réel trouvé pour: ${searchQuery}`);
+      enrichedSuggestion.amazonData = {
+        asin: suggestion.asin,
+        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
+        matchType: "generic_search"
+      };
+    }
+    
+    enrichedSuggestions.push(enrichedSuggestion);
+  }
+  
+  console.log(`✅ ${enrichedSuggestions.length} suggestions enrichies`);
+  return enrichedSuggestions;
 }
 
 /* =========================
@@ -448,7 +356,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: false, error: "Paramètres manquants ou invalides" }, 400);
     }
 
-    console.log(`Génération d'idées cadeaux pour personne ${personId}, événement: ${eventType}, budget: ${budget}€`);
+    console.log(`🎁 Génération d'idées cadeaux pour personne ${personId}, événement: ${eventType}, budget: ${budget}€`);
 
     // Variables d'environnement
     const openAIKey = Deno.env.get("OPENAI_API_KEY");
@@ -460,7 +368,6 @@ Deno.serve(async (req) => {
 
     if (!openAIKey) return jsonResponse({ success: false, error: "Clé OpenAI manquante" }, 500);
     if (!supabaseUrl || !supabaseAnon || !supabaseService) return jsonResponse({ success: false, error: "Configuration Supabase incomplète" }, 500);
-    if (!serpApiKey && !rainforestApiKey) return jsonResponse({ success: false, error: "Aucune API de recherche disponible" }, 500);
 
     // Authentification
     const authHeader = req.headers.get("authorization");
@@ -489,89 +396,69 @@ Deno.serve(async (req) => {
     }
 
     // Récupération des données de la personne
-    const { data: personData, error: personError } = await supabase.from("persons").select("*").eq("id", personId).maybeSingle();
-    if (personError) return jsonResponse({ success: false, error: "Erreur base de données", details: personError.message }, 500);
-    if (!personData) return jsonResponse({ success: false, error: "Personne non trouvée" }, 404);
+    const { data: personData, error: personError } = await supabase
+      .from("persons")
+      .select("id, name, age_years, interests, notes, relationship")
+      .eq("id", personId)
+      .single();
 
-    console.log(`Données personne: ${personData.name}, intérêts: ${personData.interests?.join(", ") || "aucun"}`);
-
-    // Génération des requêtes de recherche
-    const queries = generateSearchQueries(personData, eventType, budget);
-    console.log(`Requêtes générées: ${queries.join(", ")}`);
-
-    // Plage de prix (plus souple)
-    const minPrice = Math.max(1, Math.round(budget * 0.1));
-    const maxPrice = Math.round(budget * 2);
-
-    console.log(`Recherche produits dans la plage ${minPrice}-${maxPrice}€`);
-
-    // Recherche des produits
-    const products = await searchAmazonProducts(queries, serpApiKey, rainforestApiKey, minPrice, maxPrice);
-
-    console.log(`Total produits trouvés: ${products.length}`);
-
-    if (products.length === 0) {
-      console.log("Aucun produit trouvé - Tentative avec plage de prix élargie");
-      // Tentative avec une plage beaucoup plus large
-      const wideProducts = await searchAmazonProducts(queries.slice(0, 2), serpApiKey, rainforestApiKey, 1, budget * 5);
-      
-      if (wideProducts.length === 0) {
-        console.log("Aucun produit trouvé même avec plage élargie");
-        return jsonResponse({
-          success: false,
-          error: "Aucun produit trouvé correspondant aux critères",
-          debug: { queries, minPrice, maxPrice, apis: { serpApi: !!serpApiKey, rainforest: !!rainforestApiKey } }
-        }, 200);
-      }
-      
-      console.log(`${wideProducts.length} produits trouvés avec plage élargie`);
-      const selectedProducts = await selectBestProducts(wideProducts, personData, eventType, budget, openAIKey);
-      
-      if (selectedProducts.length > 0) {
-        const suggestions = formatSuggestions(selectedProducts, personData);
-        return jsonResponse({
-          success: true,
-          suggestions,
-          personName: personData.name,
-          eventType,
-          budget,
-          budgetRespected: true,
-          debug: { fallbackUsed: true, totalProductsFound: wideProducts.length }
-        });
-      }
+    if (personError || !personData) {
+      return jsonResponse({ success: false, error: "Personne non trouvée" }, 404);
     }
 
-    // Sélection des 3 meilleurs produits par l'IA
-    const selectedProducts = await selectBestProducts(products, personData, eventType, budget, openAIKey);
+    console.log(`👤 Données personne: ${personData.name}, intérêts: ${(personData.interests || []).join(", ")}`);
 
-    if (selectedProducts.length === 0) {
-      return jsonResponse({
-        success: false,
-        error: "Erreur lors de la sélection des produits"
+    // Étape 1: Génération d'idées cadeaux par GPT
+    console.log("🤖 Génération d'idées cadeaux par GPT...");
+    const gptSuggestions = await generateGiftIdeasWithGPT(personData, eventType, budget, openAIKey);
+    
+    if (gptSuggestions.length === 0) {
+      return jsonResponse({ 
+        success: false, 
+        error: "Impossible de générer des idées cadeaux" 
       }, 500);
     }
 
-    // Formatage des suggestions finales
-    const suggestions = formatSuggestions(selectedProducts, personData);
+    // Étape 2: Enrichissement avec données Amazon réelles (optionnel)
+    console.log("🔍 Enrichissement avec données Amazon...");
+    const enrichedSuggestions = await enrichWithAmazonData(gptSuggestions, serpApiKey, rainforestApiKey);
 
-    console.log(`${suggestions.length} suggestions finales générées`);
+    // Formatage final des suggestions
+    const finalSuggestions = enrichedSuggestions.map((suggestion: any) => ({
+      title: suggestion.title,
+      description: suggestion.description,
+      estimatedPrice: suggestion.estimatedPrice,
+      confidence: 0.9,
+      reasoning: suggestion.reasoning,
+      category: "Produit Amazon",
+      alternatives: [],
+      purchaseLinks: [
+        suggestion.amazonData?.productUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`
+      ],
+      priceInfo: {
+        displayPrice: suggestion.estimatedPrice,
+        source: suggestion.amazonData?.matchType === "enhanced" ? "amazon_api" : "ai_estimate",
+        originalEstimate: suggestion.estimatedPrice,
+        amazonPrice: suggestion.amazonData?.matchType === "enhanced" ? suggestion.estimatedPrice : null
+      },
+      amazonData: suggestion.amazonData || {
+        asin: suggestion.asin,
+        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`,
+        matchType: "generic_search"
+      }
+    }));
 
+    console.log(`✅ ${finalSuggestions.length} suggestions finales générées`);
+    
     return jsonResponse({
       success: true,
-      suggestions,
+      suggestions: finalSuggestions,
       personName: personData.name,
-      eventType,
-      budget,
-      budgetRespected: true,
-      debug: {
-        totalProductsFound: products.length,
-        selectedCount: selectedProducts.length,
-        queriesUsed: queries
-      }
+      message: `${finalSuggestions.length} idées cadeaux générées pour ${personData.name}`
     });
 
   } catch (error: any) {
-    console.error("Erreur générale:", error);
+    console.error("❌ Erreur générale:", error);
     return jsonResponse({
       success: false,
       error: "Erreur interne du serveur",
