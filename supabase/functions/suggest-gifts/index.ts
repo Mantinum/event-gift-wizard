@@ -206,54 +206,34 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
    SERPAPI SEARCH
 ========================= */
 async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: number, maxPrice?: number) {
-  const base = {
-    engine: "amazon",
-    amazon_domain: "amazon.fr",
-    gl: "fr",
-    hl: "fr",
-    k: query,
-    api_key: serpApiKey,
-  } as Record<string,string>;
-  if (typeof minPrice === "number") base.low_price = String(minPrice);
-  if (typeof maxPrice === "number") base.high_price = String(maxPrice);
+  const mkUrl = (q: string, withPrice: boolean) => {
+    const base: Record<string, string> = {
+      engine: "amazon",
+      amazon_domain: "amazon.fr",
+      gl: "fr",
+      hl: "fr",
+      k: q,
+      api_key: serpApiKey,
+    };
+    if (withPrice && typeof minPrice === "number") base.low_price = String(minPrice);
+    if (withPrice && typeof maxPrice === "number") base.high_price = String(maxPrice);
+    return `https://serpapi.com/search.json?${new URLSearchParams(base)}`;
+  };
 
-  const params = new URLSearchParams(base);
-
-  const url = `https://serpapi.com/search.json?${params}`;
-  console.log(`🔍 Recherche SerpAPI: ${query} (${minPrice}-${maxPrice}€)`);
-
-  try {
+  const run = async (q: string, withPrice: boolean) => {
+    const url = mkUrl(q, withPrice);
     const res = await withTimeoutFetch(url, {}, 20000);
-    if (!res.ok) {
-      console.error(`❌ SerpAPI HTTP error ${res.status}`);
-      return [];
-    }
-
+    if (!res.ok) return [];
     const data = await res.json();
-    if (data.error) {
-      console.error("❌ SerpAPI API error:", data.error);
-      return [];
-    }
-
-    const allResults = [
-      ...(data.product_results || []),
-      ...(data.organic_results || []),
-    ];
-
-    console.log(`✅ SerpAPI: ${allResults.length} résultats bruts`);
-
+    const all = [...(data.product_results || []), ...(data.organic_results || [])];
     const seen = new Set<string>();
-    const withAsinCount = allResults.filter((it:any) => isValidAsin(extractAsinFromUrl(it.link)||toAsin(it.asin))).length;
-    console.log(`ℹ️ Candidats avec ASIN avant filtre: ${withAsinCount}`);
-
-    let products = allResults
+    let products = all
       .map((item: any) => {
         const asin = extractAsinFromUrl(item.link) || toAsin(item.asin);
         const rawPrice = String(item.price?.value ?? item.price ?? "0");
         return {
           title: item.title || "",
           asin,
-          // si l'API ne donne pas de lien, mais qu'on a un ASIN, fabrique le dp
           link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
           originalLink: item.link || null,
           price: parseFloat(rawPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || null,
@@ -262,114 +242,52 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: n
           imageUrl: item.thumbnail || item.image || null,
         };
       })
-      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes('amazon'))))
+      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
           seen.add(p.asin);
         }
         return true;
-      })
-      .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .slice(0, 20);
+      });
 
-    // 1) tri: ASIN d'abord, puis meilleure note/nb avis si dispo
+    // ASIN en premier, puis meilleure note / nb avis
     products.sort((a: any, b: any) => {
-      const aa = isValidAsin(a.asin) ? 1 : 0;
-      const bb = isValidAsin(b.asin) ? 1 : 0;
-      if (bb !== aa) return bb - aa; // ASIN en premier
+      const aa = isValidAsin(a.asin) ? 1 : 0, bb = isValidAsin(b.asin) ? 1 : 0;
+      if (bb !== aa) return bb - aa;
       const ar = a.rating ?? 0, br = b.rating ?? 0;
-      const ac = a.reviewCount ?? 0, bc = b.reviewCount ?? 0;
       if (br !== ar) return br - ar;
-      return bc - ac;
+      return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
     });
 
-    // 2) compresse à 5 items utiles
-    products = products.slice(0, 5);
+    return products.slice(0, 5);
+  };
 
-    // PASS 2 : si aucun ASIN trouvé, retenter avec requête compacte sans filtre prix
-    const hasAsin = products.some(p => isValidAsin(p.asin));
-    if (!hasAsin) {
-      const compact = toCompactQuery(query);
-      console.log(`↻ SerpApi PASS2 compact="${compact}" (no price filters)`);
-      const params2 = new URLSearchParams({
-        engine: "amazon",
-        amazon_domain: "amazon.fr",
-        gl: "fr",
-        hl: "fr",
-        k: compact,
-        api_key: serpApiKey,
-      });
-      const url2 = `https://serpapi.com/search.json?${params2}`;
-      const res2 = await withTimeoutFetch(url2, {}, 20000);
-      if (res2.ok) {
-        const data2 = await res2.json();
-        const all2 = [...(data2.product_results||[]), ...(data2.organic_results||[])];
-        const seen2 = new Set<string>();
-        let p2 = all2.map((item:any) => {
-          const asin = extractAsinFromUrl(item.link) || toAsin(item.asin);
-          return {
-            title: item.title || "",
-            asin,
-            link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
-            originalLink: item.link || null,
-            price: parseFloat(String(item.price?.value ?? item.price ?? "0").replace(/[^\d.,]/g,"").replace(",", ".")) || null,
-            rating: item.rating ?? null,
-            reviewCount: item.reviews_count ?? null,
-            imageUrl: item.thumbnail || item.image || null,
-          };
-        })
-        .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
-        .filter(p => { if (p.asin && isValidAsin(p.asin)) { if (seen2.has(p.asin)) return false; seen2.add(p.asin); } return true; });
+  // PASS 1 : requête complète + bornes de prix
+  let products = await run(query, true);
 
-        p2.sort((a:any,b:any)=>{
-          const aa = isValidAsin(a.asin)?1:0, bb = isValidAsin(b.asin)?1:0;
-          if (bb!==aa) return bb-aa;
-          const ar=a.rating??0, br=b.rating??0; if (br!==ar) return br-ar;
-          return (b.reviewCount??0)-(a.reviewCount??0);
-        });
-        products = p2.slice(0,5);
-      }
-    }
-
-    console.log(`✅ SerpAPI: ${products.length} produits valides filtrés`);
-    return products;
-  } catch (error) {
-    console.error("❌ Erreur SerpAPI:", error);
-    return [];
+  // Si aucun ASIN, PASS 2 : requête compacte SANS prix
+  if (!products.some(p => isValidAsin(p.asin))) {
+    const compact = toCompactQuery(query);
+    console.log(`↻ SerpApi PASS2 compact="${compact}"`);
+    products = await run(compact, false);
   }
+
+  return products;
 }
 
 /* =========================
    RAINFOREST SEARCH
 ========================= */
 async function searchWithRainforest(query: string, rainforestApiKey: string, minPrice?: number, maxPrice?: number) {
-  const baseUrl = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(query)}`;
-  const url = typeof minPrice === "number" && typeof maxPrice === "number" 
-    ? `${baseUrl}&min_price=${minPrice}&max_price=${maxPrice}`
-    : baseUrl;
-  console.log(`🔍 Recherche Rainforest: ${query} (${minPrice ?? 'no min'}-${maxPrice ?? 'no max'}€)`);
-
-  try {
+  const run = async (q: string) => {
+    const url = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(q)}`;
     const res = await withTimeoutFetch(url, {}, 20000);
-    if (!res.ok) {
-      console.error(`❌ Rainforest HTTP error ${res.status}`);
-      return [];
-    }
-
+    if (!res.ok) return [];
     const data = await res.json();
-    if (data.request_info?.success === false) {
-      console.error("❌ Rainforest API error:", data.request_info?.message);
-      return [];
-    }
-
+    if (data.request_info?.success === false) return [];
     const results = data.search_results || [];
-    console.log(`✅ Rainforest: ${results.length} résultats bruts`);
-
     const seen = new Set<string>();
-    const withAsinCount = results.filter((it:any) => isValidAsin(toAsin(it.asin))).length;
-    console.log(`ℹ️ Candidats avec ASIN avant filtre: ${withAsinCount}`);
-
     let products = results
       .map((item: any) => {
         const asin = toAsin(item.asin);
@@ -377,7 +295,6 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
         return {
           title: item.title || "",
           asin,
-          // si l'API ne donne pas de lien, mais qu'on a un ASIN, fabrique le dp
           link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
           originalLink: item.link || null,
           price: parseFloat(rawPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || null,
@@ -386,74 +303,37 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
           imageUrl: item.image || null,
         };
       })
-      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes('amazon'))))
+      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
           seen.add(p.asin);
         }
         return true;
-      })
-      .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .slice(0, 20);
+      });
 
-    // 1) tri: ASIN d'abord, puis meilleure note/nb avis si dispo
     products.sort((a: any, b: any) => {
-      const aa = isValidAsin(a.asin) ? 1 : 0;
-      const bb = isValidAsin(b.asin) ? 1 : 0;
-      if (bb !== aa) return bb - aa; // ASIN en premier
+      const aa = isValidAsin(a.asin) ? 1 : 0, bb = isValidAsin(b.asin) ? 1 : 0;
+      if (bb !== aa) return bb - aa;
       const ar = a.rating ?? 0, br = b.rating ?? 0;
-      const ac = a.reviewCount ?? 0, bc = b.reviewCount ?? 0;
       if (br !== ar) return br - ar;
-      return bc - ac;
+      return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
     });
 
-    // 2) compresse à 5 items utiles
-    products = products.slice(0, 5);
+    return products.slice(0, 5);
+  };
 
-    // PASS 2 : si aucun ASIN trouvé, retenter avec requête compacte sans filtre prix
-    const hasAsin = products.some(p => isValidAsin(p.asin));
-    if (!hasAsin) {
-      const compact = toCompactQuery(query);
-      console.log(`↻ Rainforest PASS2 compact="${compact}" (no price filters)`);
-      const url2 = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(compact)}`;
-      const res2 = await withTimeoutFetch(url2, {}, 20000);
-      if (res2.ok) {
-        const data2 = await res2.json();
-        const results2 = data2.search_results || [];
-        const seen2 = new Set<string>();
-        let p2 = results2.map((item:any)=>{
-          const asin = toAsin(item.asin);
-          return {
-            title: item.title || "",
-            asin,
-            link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
-            originalLink: item.link || null,
-            price: parseFloat(String(item.price?.value ?? item.price ?? "0").replace(/[^\d.,]/g,"").replace(",", ".")) || null,
-            rating: item.rating ?? null,
-            reviewCount: item.reviews_count ?? null,
-            imageUrl: item.image || null,
-          };
-        })
-        .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
-        .filter(p => { if (p.asin && isValidAsin(p.asin)) { if (seen2.has(p.asin)) return false; seen2.add(p.asin); } return true; });
+  // PASS 1 : requête complète
+  let products = await run(query);
 
-        p2.sort((a:any,b:any)=>{
-          const aa = isValidAsin(a.asin)?1:0, bb = isValidAsin(b.asin)?1:0;
-          if (bb!==aa) return bb-aa;
-          const ar=a.rating??0, br=b.rating??0; if (br!==ar) return br-ar;
-          return (b.reviewCount??0)-(a.reviewCount??0);
-        });
-        products = p2.slice(0,5);
-      }
-    }
-
-    console.log(`✅ Rainforest: ${products.length} produits valides filtrés`);
-    return products;
-  } catch (error) {
-    console.error("❌ Erreur Rainforest:", error);
-    return [];
+  // Si aucun ASIN, PASS 2 : requête compacte
+  if (!products.some(p => isValidAsin(p.asin))) {
+    const compact = toCompactQuery(query);
+    console.log(`↻ Rainforest PASS2 compact="${compact}"`);
+    products = await run(compact);
   }
+
+  return products;
 }
 
 /* =========================
@@ -520,12 +400,11 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       if (foundProducts.length > 0) {
         const withAsin = foundProducts.find(p => isValidAsin(p.asin));
         const viaLinkAsin = foundProducts.find(p => extractAsinFromUrl(p.link || p.originalLink));
-        // si aucun ASIN => on considère l'enrichissement comme non concluant (on garde le search)
         const realProduct = withAsin || viaLinkAsin;
-        if (!realProduct) { 
-          console.log("↩︎ Aucun ASIN exploitable, fallback search"); 
-          enrichedSuggestions.push(enrichedSuggestion); 
-          continue; 
+        if (!realProduct) {
+          console.log("↩︎ Aucun ASIN exploitable, fallback search");
+          enrichedSuggestions.push(enrichedSuggestion);
+          continue;
         }
 
         // Si on a trouvé un ASIN via le 2e passage, renseigne-le
