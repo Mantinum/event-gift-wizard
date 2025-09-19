@@ -72,28 +72,37 @@ async function generateGiftIdeasWithGPT(personData: any, eventType: string, budg
     ? `Notes: "${personData.notes}"`
     : `Âge: ${personData.age_years || "?"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
 
+  // Exemples d'ASIN Amazon valides pour inspiration
+  const asinExamples = [
+    "B08N5WRWNW", "B07FZ8S74R", "B09JQSYQGZ", "B08HLZD9DF", "B0756CYWWD",
+    "B08F5P4GYF", "B09G9FPHY6", "B08Z382JNZ", "B087QLRRK8", "B08XB2FL7G",
+    "B09KXKPJVY", "B08GKQHSZ4", "B09M7HJHQT", "B08YN7D8WX", "B09NPQSM4L"
+  ];
+
   const prompt = `Génère exactement 3 idées cadeaux parfaites pour ${personData.name}.
 
 ${personalInfo}
 Événement: ${eventType}
 Budget max: ${budget}€
 
-INSTRUCTIONS:
-- Génère 3 produits concrets et spécifiques (noms de marques, modèles précis)
-- Varie les catégories de produits
-- Respecte le budget et les goûts de la personne
-- Pour chaque produit, imagine un prix réaliste dans le budget
-- Crée des noms de produits Amazon réalistes avec des descriptions détaillées
-- Génère des ASIN fictifs mais réalistes (format: [A-Z0-9]{10})
+INSTRUCTIONS IMPORTANTES:
+- Génère 3 produits concrets qui EXISTENT vraiment sur Amazon (marques connues, modèles réels)
+- Utilise des marques populaires comme Nike, Adidas, Apple, Samsung, Sony, Philips, etc.
+- Varie les catégories de produits selon ses intérêts
+- Respecte absolument le budget et les goûts de la personne
+- Pour les ASIN, utilise ce format exact: B + 8 à 9 caractères alphanumériques (ex: B08N5WRWNW)
+- Crée des ASIN crédibles qui ressemblent à de vrais ASIN Amazon
+
+EXEMPLES D'ASIN VALIDES: ${asinExamples.slice(0, 5).join(", ")}
 
 Renvoie UNIQUEMENT un JSON avec ce format exact:
 {
   "suggestions": [
     {
-      "title": "Nom précis du produit avec marque",
+      "title": "Nom précis du produit avec marque (ex: Nike Air Force 1 '07 Blanc)",
       "description": "Description détaillée expliquant pourquoi c'est parfait pour cette personne",
       "estimatedPrice": prix_en_euros_entier,
-      "asin": "ASIN_FICTIF_REALISTE",
+      "asin": "B08XXXXXXX",
       "reasoning": "Explication personnalisée basée sur ses intérêts"
     }
   ]
@@ -276,67 +285,76 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
   const enrichedSuggestions = [];
   
   for (const suggestion of gptSuggestions) {
-    let enrichedSuggestion = { ...suggestion };
+    // Par défaut, utiliser l'ASIN généré par GPT pour créer un lien direct
+    let enrichedSuggestion = {
+      ...suggestion,
+      amazonData: {
+        asin: suggestion.asin,
+        productUrl: withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`),
+        addToCartUrl: partnerTagActive && partnerTag 
+          ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
+          : null,
+        matchType: "gpt_generated"
+      }
+    };
     
-    // Essayer de chercher le produit réel sur Amazon
+    // Essayer d'enrichir avec des données Amazon réelles (optionnel)
     const searchQuery = suggestion.title.toLowerCase().replace(/[^\w\s]/g, '').slice(0, 50);
-    console.log(`🔍 Recherche Amazon pour: "${searchQuery}"`);
+    console.log(`🔍 Tentative d'enrichissement pour: "${searchQuery}"`);
     
     let foundProducts: any[] = [];
     
-    // Tentative avec SerpAPI
-    if (serpApiKey && foundProducts.length === 0) {
+    // Tentative avec SerpAPI si disponible
+    if (serpApiKey) {
       try {
-        foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, 5, suggestion.estimatedPrice * 2);
+        foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, 5, suggestion.estimatedPrice * 3);
+        if (foundProducts.length > 0) {
+          console.log(`✅ Produit réel trouvé via SerpAPI: ${foundProducts[0].title}`);
+        }
       } catch (error) {
-        console.error("❌ Erreur SerpAPI pour", searchQuery, error);
+        console.log(`⚠️ SerpAPI non disponible pour: ${searchQuery}`);
       }
     }
     
-    // Tentative avec RainforestAPI si pas de résultats
+    // Tentative avec RainforestAPI si pas de résultats et disponible
     if (rainforestApiKey && foundProducts.length === 0) {
       try {
-        foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, 5, suggestion.estimatedPrice * 2);
+        foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, 5, suggestion.estimatedPrice * 3);
+        if (foundProducts.length > 0) {
+          console.log(`✅ Produit réel trouvé via RainforestAPI: ${foundProducts[0].title}`);
+        }
       } catch (error) {
-        console.error("❌ Erreur RainforestAPI pour", searchQuery, error);
+        console.log(`⚠️ RainforestAPI non disponible pour: ${searchQuery}`);
       }
     }
     
     // Si on a trouvé des produits Amazon réels, utiliser le premier
     if (foundProducts.length > 0) {
       const realProduct = foundProducts[0];
-      console.log(`✅ Produit réel trouvé: ${realProduct.title} (${realProduct.asin})`);
-      
       enrichedSuggestion = {
         ...suggestion,
-        title: realProduct.title,
+        title: realProduct.title, // Utiliser le titre réel du produit
         estimatedPrice: Math.round(realProduct.price || suggestion.estimatedPrice),
         amazonData: {
           asin: realProduct.asin,
           rating: realProduct.rating,
           reviewCount: realProduct.reviewCount,
           imageUrl: realProduct.imageUrl,
-          productUrl: withAffiliate(realProduct.link),
+          productUrl: withAffiliate(realProduct.link), // Lien direct vers la fiche produit
           addToCartUrl: partnerTagActive && partnerTag 
             ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
             : null,
-          matchType: "enhanced"
+          matchType: "api_enhanced"
         }
       };
     } else {
-      // Pas de produit réel trouvé, garder la suggestion GPT avec lien générique
-      console.log(`❌ Aucun produit réel trouvé pour: ${searchQuery}`);
-      enrichedSuggestion.amazonData = {
-        asin: suggestion.asin,
-        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(searchQuery)}`,
-        matchType: "generic_search"
-      };
+      console.log(`ℹ️ Utilisation du produit GPT généré pour: ${searchQuery}`);
     }
     
     enrichedSuggestions.push(enrichedSuggestion);
   }
   
-  console.log(`✅ ${enrichedSuggestions.length} suggestions enrichies`);
+  console.log(`✅ ${enrichedSuggestions.length} suggestions enrichies avec liens directs`);
   return enrichedSuggestions;
 }
 
@@ -433,18 +451,21 @@ Deno.serve(async (req) => {
       category: "Produit Amazon",
       alternatives: [],
       purchaseLinks: [
-        suggestion.amazonData?.productUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`
+        suggestion.amazonData?.productUrl || withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`)
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
-        source: suggestion.amazonData?.matchType === "enhanced" ? "amazon_api" : "ai_estimate",
+        source: suggestion.amazonData?.matchType === "api_enhanced" ? "amazon_api" : "ai_estimate",
         originalEstimate: suggestion.estimatedPrice,
-        amazonPrice: suggestion.amazonData?.matchType === "enhanced" ? suggestion.estimatedPrice : null
+        amazonPrice: suggestion.amazonData?.matchType === "api_enhanced" ? suggestion.estimatedPrice : null
       },
       amazonData: suggestion.amazonData || {
         asin: suggestion.asin,
-        productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`,
-        matchType: "generic_search"
+        productUrl: withAffiliate(`https://www.amazon.fr/dp/${suggestion.asin}`),
+        addToCartUrl: partnerTagActive && partnerTag 
+          ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${suggestion.asin}&Quantity.1=1&tag=${partnerTag}`
+          : null,
+        matchType: "gpt_generated"
       }
     }));
 
