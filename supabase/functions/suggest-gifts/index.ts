@@ -347,6 +347,17 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
         const realProduct = foundProducts[0];
         console.log(`✅ Produit trouvé: "${realProduct.title}" - Lien: ${realProduct.link}`);
         
+        // Construire le lien direct vers le produit
+        let productUrl = amazonSearchUrl; // fallback par défaut
+        
+        if (realProduct.asin && isValidAsin(realProduct.asin)) {
+          // Si on a un ASIN valide, créer un lien direct vers le produit
+          productUrl = `https://www.amazon.fr/dp/${realProduct.asin}`;
+        } else if (realProduct.originalLink || realProduct.link) {
+          // Sinon utiliser le lien de l'API
+          productUrl = realProduct.originalLink || realProduct.link;
+        }
+        
         enrichedSuggestion = {
           ...suggestion,
           title: realProduct.title, // Utiliser le titre réel du produit
@@ -356,12 +367,12 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             rating: realProduct.rating,
             reviewCount: realProduct.reviewCount,
             imageUrl: realProduct.imageUrl,
-            productUrl: withAffiliate(realProduct.originalLink || realProduct.link), // Lien original de l'API
+            productUrl: withAffiliate(productUrl), // Lien direct vers le produit ou fallback
             searchUrl: amazonSearchUrl,
-            addToCartUrl: realProduct.asin && partnerTagActive && partnerTag
+            addToCartUrl: realProduct.asin && isValidAsin(realProduct.asin) && partnerTagActive && partnerTag
               ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
               : null,
-            matchType: "api_matched_product"
+            matchType: realProduct.asin && isValidAsin(realProduct.asin) ? "direct_product_link" : "api_link"
           }
         };
       } else {
