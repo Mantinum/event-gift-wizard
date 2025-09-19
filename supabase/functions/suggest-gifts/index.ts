@@ -69,20 +69,41 @@ const ASIN_RES = [
 ];
 const isValidAsin = (a?: string) => /^[A-Z0-9]{10}$/.test(toAsin(a));
 
-function extractAsinFromUrl(url?: string) {
-  if (!url) return null;
+function extractAsinFromUrl(u?: string | null): string | null {
+  if (!u) return null;
   try {
-    const u = new URL(url);
-    if (u.pathname.includes("/slredirect/") || u.pathname.includes("/gp/redirect")) {
-      const target = u.searchParams.get("url");
-      if (target) url = decodeURIComponent(target);
-    }
-  } catch { /* ignore */ }
-  for (const re of ASIN_RES) {
-    const m = url!.match(re);
-    if (m) return toAsin(m[1]);
+    const url = new URL(u);
+    const path = url.pathname || "";
+    // 1) Patterns classiques / variés
+    const m =
+      path.match(/\/(?:dp|gp\/product|gp\/aw\/d|aw\/d|dp\/product|product-reviews|exec\/obidos\/ASIN)\/([A-Z0-9]{10})(?:[/?-]|$)/i) ||
+      // certains liens ont des segments " -/dp/ASIN "
+      path.match(/\/-\/dp\/([A-Z0-9]{10})(?:[/?-]|$)/i);
+    if (m && isValidAsin(m[1])) return m[1].toUpperCase();
+
+    // 2) Paramètre ?asin=XXXX
+    const qAsin = url.searchParams.get("asin");
+    if (isValidAsin(qAsin)) return qAsin!.toUpperCase();
+
+    // 3) Dernière chance : décoder et extraire un token 10 chars maj alphanum dans le path
+    const path2 = decodeURIComponent(path);
+    const m2 = path2.match(/(?:^|[\/-])([A-Z0-9]{10})(?:[\/?_-]|$)/i);
+    if (m2 && isValidAsin(m2[1])) return m2[1].toUpperCase();
+  } catch {
+    // ignore
   }
   return null;
+}
+
+function isAmazonSearchUrl(link?: string | null): boolean {
+  if (!link) return false;
+  try {
+    const u = new URL(link);
+    if (!/amazon\./i.test(u.hostname)) return false;
+    return u.pathname.startsWith("/s") && (u.searchParams.has("k") || u.search.includes("k="));
+  } catch {
+    return false;
+  }
 }
 
 /* =========================
@@ -353,6 +374,29 @@ async function rainforestResolveAsinByUrl(url: string, rainforestApiKey?: string
   }
 }
 
+async function rainforestResolveFirstAsinFromSearchUrl(searchUrl: string, rainforestApiKey?: string): Promise<string | null> {
+  if (!rainforestApiKey || !searchUrl) return null;
+  try {
+    const u = new URL(searchUrl);
+    if (!/amazon\./i.test(u.hostname)) return null;
+    const q = u.searchParams.get("k");
+    if (!q) return null;
+
+    const api = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(q)}&sort=featured`;
+    const res = await withTimeoutFetch(api, {}, 15000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const asin = toAsin(
+      data?.search_results?.[0]?.asin ||
+      data?.search_results?.find((r: any) => r?.asin)?.asin ||
+      ""
+    );
+    return isValidAsin(asin) ? asin : null;
+  } catch {
+    return null;
+  }
+}
+
 /* =========================
    ENHANCED PRODUCT SEARCH
 ========================= */
@@ -415,6 +459,9 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       
       // Si on a trouvé des produits Amazon spécifiques, tenter de compléter l'ASIN s'il manque
       if (foundProducts.length > 0) {
+        // Filtrer les URLs de recherche du pool produit
+        foundProducts = foundProducts.filter(p => !isAmazonSearchUrl(p.link || p.originalLink));
+        
         // Essaie de backfiller l'ASIN via URL → Rainforest (sur les 3 premiers max)
         for (let i = 0; i < Math.min(foundProducts.length, 3); i++) {
           const p = foundProducts[i];
@@ -429,6 +476,22 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             const fetched = await rainforestResolveAsinByUrl(p.link || p.originalLink, rainforestApiKey);
             if (isValidAsin(fetched)) {
               p.asin = fetched;
+            }
+          }
+        }
+
+        // Plan B : si toujours aucun ASIN, tente de convertir l'URL de recherche -> premier produit (Rainforest search)
+        if (!foundProducts.some(p => isValidAsin(p.asin)) && rainforestApiKey) {
+          const searchUrl = enrichedSuggestion?.purchaseLinks?.[0]?.url || enrichedSuggestion?.searchUrl;
+          if (isAmazonSearchUrl(searchUrl)) {
+            const firstAsin = await rainforestResolveFirstAsinFromSearchUrl(searchUrl, rainforestApiKey);
+            if (isValidAsin(firstAsin)) {
+              foundProducts.unshift({
+                title: enrichedSuggestion?.title || undefined,
+                asin: firstAsin,
+                link: `https://www.amazon.fr/dp/${firstAsin}`,
+                source: "rainforest-search",
+              } as any);
             }
           }
         }
