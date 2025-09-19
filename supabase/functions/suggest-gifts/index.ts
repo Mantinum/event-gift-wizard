@@ -147,32 +147,37 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
 
     console.log(`SerpAPI retourné ${allResults.length} résultats pour "${query}"`);
 
-    // Normaliser et filtrer pour garder seulement les liens directs
-    const products = allResults
-      .map((item: any) => ({
-        title: item.title || "",
-        asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
-        link: item.link,
-        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-        rating: item.rating || null,
-        reviewCount: item.reviews_count || null,
-        imageUrl: item.thumbnail || item.image || null,
-        snippet: item.snippet || item.description || "",
-      }))
-      .filter((p: any) => {
-        // Garder seulement les produits avec ASIN valide ET lien direct
-        const hasValidAsin = isValidAsin(p.asin);
-        const hasDirectLink = p.link && (p.link.includes("/dp/") || p.link.includes("/gp/product/"));
-        const priceInRange = !p.price || (p.price >= minPrice && p.price <= maxPrice);
-        
-        return hasValidAsin && hasDirectLink && priceInRange && p.title.length > 0;
-      })
+    // Normaliser tous les résultats
+    const normalizedResults = allResults.map((item: any) => ({
+      title: item.title || "",
+      asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
+      originalLink: item.link,
+      price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+      rating: item.rating || null,
+      reviewCount: item.reviews_count || null,
+      imageUrl: item.thumbnail || item.image || null,
+      snippet: item.snippet || item.description || "",
+    }));
+
+    console.log(`Après normalisation: ${normalizedResults.length} produits`);
+
+    // Filtrage progressif avec logs
+    const withValidTitle = normalizedResults.filter(p => p.title.length > 5);
+    console.log(`Avec titre valide: ${withValidTitle.length}`);
+
+    const withAsin = withValidTitle.filter(p => isValidAsin(p.asin));
+    console.log(`Avec ASIN valide: ${withAsin.length}`);
+
+    const priceFiltered = withAsin.filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice));
+    console.log(`Dans la plage de prix ${minPrice}-${maxPrice}€: ${priceFiltered.length}`);
+
+    // Construire le lien direct /dp/ASIN pour tous les produits avec ASIN valide
+    const products = priceFiltered
       .map((p: any) => ({
         ...p,
-        // S'assurer que le lien est au format /dp/ASIN
         link: `https://www.amazon.fr/dp/${p.asin}`,
       }))
-      .slice(0, 10); // Max 10 par requête
+      .slice(0, 10);
 
     console.log(`${products.length} produits valides après filtrage`);
     return products;
@@ -205,24 +210,31 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
     const results = data.search_results || [];
     console.log(`Rainforest retourné ${results.length} résultats pour "${query}"`);
 
-    const products = results
-      .map((item: any) => ({
-        title: item.title || "",
-        asin: toAsin(item.asin),
-        link: item.link,
-        price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
-        rating: item.rating || null,
-        reviewCount: item.reviews_count || null,
-        imageUrl: item.image || null,
-        snippet: item.snippet || "",
-      }))
-      .filter((p: any) => {
-        const hasValidAsin = isValidAsin(p.asin);
-        const hasDirectLink = p.link && (p.link.includes("/dp/") || p.link.includes("/gp/product/"));
-        const priceInRange = !p.price || (p.price >= minPrice && p.price <= maxPrice);
-        
-        return hasValidAsin && hasDirectLink && priceInRange && p.title.length > 0;
-      })
+    // Normaliser tous les résultats
+    const normalizedResults = results.map((item: any) => ({
+      title: item.title || "",
+      asin: toAsin(item.asin),
+      originalLink: item.link,
+      price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
+      rating: item.rating || null,
+      reviewCount: item.reviews_count || null,
+      imageUrl: item.image || null,
+      snippet: item.snippet || "",
+    }));
+
+    console.log(`Après normalisation: ${normalizedResults.length} produits`);
+
+    // Filtrage progressif avec logs
+    const withValidTitle = normalizedResults.filter(p => p.title.length > 5);
+    console.log(`Avec titre valide: ${withValidTitle.length}`);
+
+    const withAsin = withValidTitle.filter(p => isValidAsin(p.asin));
+    console.log(`Avec ASIN valide: ${withAsin.length}`);
+
+    const priceFiltered = withAsin.filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice));
+    console.log(`Dans la plage de prix ${minPrice}-${maxPrice}€: ${priceFiltered.length}`);
+
+    const products = priceFiltered
       .map((p: any) => ({
         ...p,
         link: `https://www.amazon.fr/dp/${p.asin}`,
@@ -388,6 +400,39 @@ IMPORTANT: N'invente aucun ASIN, utilise seulement ceux de la liste.`
 }
 
 /* =========================
+   FORMAT SUGGESTIONS
+========================= */
+function formatSuggestions(selectedProducts: any[], personData: any) {
+  return selectedProducts.map((product: any) => ({
+    title: product.title,
+    description: product.aiReasoning || `Produit recommandé pour ${personData.name}`,
+    estimatedPrice: Math.round(product.price || 30),
+    confidence: 0.9,
+    reasoning: product.aiReasoning || `Sélectionné pour ${personData.name}`,
+    category: "Produit Amazon",
+    alternatives: [],
+    purchaseLinks: [withAffiliate(product.link)],
+    priceInfo: {
+      displayPrice: Math.round(product.price || 30),
+      source: "amazon_api",
+      amazonPrice: product.price
+    },
+    amazonData: {
+      asin: product.asin,
+      productUrl: withAffiliate(product.link),
+      addToCartUrl: partnerTagActive && partnerTag 
+        ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${product.asin}&Quantity.1=1&tag=${partnerTag}`
+        : null,
+      searchUrl: withAffiliate(product.link),
+      matchType: "direct",
+      rating: product.rating,
+      reviewCount: product.reviewCount,
+      imageUrl: product.imageUrl
+    }
+  }));
+}
+
+/* =========================
    EDGE FUNCTION
 ========================= */
 Deno.serve(async (req) => {
@@ -455,21 +500,45 @@ Deno.serve(async (req) => {
     console.log(`Requêtes générées: ${queries.join(", ")}`);
 
     // Plage de prix (plus souple)
-    const minPrice = Math.max(5, Math.round(budget * 0.2));
-    const maxPrice = Math.round(budget * 1.2);
+    const minPrice = Math.max(1, Math.round(budget * 0.1));
+    const maxPrice = Math.round(budget * 2);
 
     console.log(`Recherche produits dans la plage ${minPrice}-${maxPrice}€`);
 
     // Recherche des produits
     const products = await searchAmazonProducts(queries, serpApiKey, rainforestApiKey, minPrice, maxPrice);
 
+    console.log(`Total produits trouvés: ${products.length}`);
+
     if (products.length === 0) {
-      console.log("Aucun produit trouvé");
-      return jsonResponse({
-        success: false,
-        error: "Aucun produit trouvé correspondant aux critères",
-        debug: { queries, minPrice, maxPrice }
-      }, 200);
+      console.log("Aucun produit trouvé - Tentative avec plage de prix élargie");
+      // Tentative avec une plage beaucoup plus large
+      const wideProducts = await searchAmazonProducts(queries.slice(0, 2), serpApiKey, rainforestApiKey, 1, budget * 5);
+      
+      if (wideProducts.length === 0) {
+        console.log("Aucun produit trouvé même avec plage élargie");
+        return jsonResponse({
+          success: false,
+          error: "Aucun produit trouvé correspondant aux critères",
+          debug: { queries, minPrice, maxPrice, apis: { serpApi: !!serpApiKey, rainforest: !!rainforestApiKey } }
+        }, 200);
+      }
+      
+      console.log(`${wideProducts.length} produits trouvés avec plage élargie`);
+      const selectedProducts = await selectBestProducts(wideProducts, personData, eventType, budget, openAIKey);
+      
+      if (selectedProducts.length > 0) {
+        const suggestions = formatSuggestions(selectedProducts, personData);
+        return jsonResponse({
+          success: true,
+          suggestions,
+          personName: personData.name,
+          eventType,
+          budget,
+          budgetRespected: true,
+          debug: { fallbackUsed: true, totalProductsFound: wideProducts.length }
+        });
+      }
     }
 
     // Sélection des 3 meilleurs produits par l'IA
@@ -483,33 +552,7 @@ Deno.serve(async (req) => {
     }
 
     // Formatage des suggestions finales
-    const suggestions = selectedProducts.map((product: any) => ({
-      title: product.title,
-      description: product.aiReasoning || `Produit recommandé pour ${personData.name}`,
-      estimatedPrice: Math.round(product.price || budget * 0.7),
-      confidence: 0.9,
-      reasoning: product.aiReasoning || `Sélectionné pour ${personData.name}`,
-      category: "Produit Amazon",
-      alternatives: [],
-      purchaseLinks: [withAffiliate(product.link)],
-      priceInfo: {
-        displayPrice: Math.round(product.price || budget * 0.7),
-        source: "amazon_api",
-        amazonPrice: product.price
-      },
-      amazonData: {
-        asin: product.asin,
-        productUrl: withAffiliate(product.link),
-        addToCartUrl: partnerTagActive && partnerTag 
-          ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${product.asin}&Quantity.1=1&tag=${partnerTag}`
-          : null,
-        searchUrl: withAffiliate(product.link),
-        matchType: "direct",
-        rating: product.rating,
-        reviewCount: product.reviewCount,
-        imageUrl: product.imageUrl
-      }
-    }));
+    const suggestions = formatSuggestions(selectedProducts, personData);
 
     console.log(`${suggestions.length} suggestions finales générées`);
 
