@@ -159,7 +159,7 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
       };
     });
 
-    console.log(`GPT a généré ${enrichedSuggestions.length} idées cadeaux avec ASIN réels`);
+    console.log(`Idées cadeaux générées par GPT: ${enrichedSuggestions.length} (ASIN ajoutés lors de l'enrichissement)`);
     return enrichedSuggestions.slice(0, 3);
   } catch (error) {
     console.error("Erreur génération GPT:", error);
@@ -328,7 +328,7 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
   for (const suggestion of gptSuggestions) {
     // Créer des liens de recherche fiables plutôt que des ASIN potentiellement cassés
     const searchKeywords = suggestion.searchKeywords || suggestion.title;
-    const cleanKeywords = searchKeywords.replace(/[^\w\s-]/g, ' ').trim();
+    const cleanKeywords = toSearchKeywords(searchKeywords);
     const amazonSearchUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(cleanKeywords)}&ref=sr_st_relevancerank`;
     
     let enrichedSuggestion = {
@@ -337,7 +337,7 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
         searchUrl: amazonSearchUrl,
         productUrl: suggestion.amazonUrl || amazonSearchUrl,
         addToCartUrl: null, // Pas possible sans ASIN spécifique
-        matchType: "search_based"
+        matchType: "search"
       }
     };
     
@@ -407,7 +407,7 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             addToCartUrl: realProduct.asin && isValidAsin(realProduct.asin) && partnerTagActive && partnerTag
               ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
               : null,
-            matchType: realProduct.asin && isValidAsin(realProduct.asin) ? "direct_product_link" : "api_link"
+            matchType: realProduct.asin && isValidAsin(realProduct.asin) ? "exact" : "api_link"
           }
         };
       } else {
@@ -524,9 +524,9 @@ Deno.serve(async (req) => {
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
-        source: suggestion.amazonData?.matchType === "direct_product_link" ? "amazon_price" : "ai_estimate",
+        source: suggestion.amazonData?.matchType === "exact" ? "amazon_price" : "ai_estimate",
         originalEstimate: suggestion.estimatedPrice,
-        amazonPrice: suggestion.amazonData?.matchType === "direct_product_link" ? suggestion.estimatedPrice : null
+        amazonPrice: suggestion.amazonData?.matchType === "exact" ? suggestion.estimatedPrice : null
       },
       amazonData: suggestion.amazonData || {
         searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(toSearchKeywords(suggestion.title))}&ref=sr_st_relevancerank`,
