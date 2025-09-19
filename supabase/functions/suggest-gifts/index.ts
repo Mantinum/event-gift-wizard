@@ -480,20 +480,21 @@ Deno.serve(async (req) => {
       category: "Produit Amazon",
       alternatives: [],
       purchaseLinks: [
-        // Utiliser searchUrl fiable pour éviter les liens cassés
-        suggestion.amazonData?.searchUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`
+        // Utiliser productUrl en priorité pour les liens directs, sinon searchUrl
+        suggestion.amazonData?.productUrl || suggestion.amazonData?.searchUrl || 
+        `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
-        source: suggestion.amazonData?.matchType === "api_matched_product" ? "amazon_api" : "ai_estimate",
+        source: suggestion.amazonData?.matchType === "direct_product_link" ? "amazon_price" : "ai_estimate",
         originalEstimate: suggestion.estimatedPrice,
-        amazonPrice: suggestion.amazonData?.matchType === "api_matched_product" ? suggestion.estimatedPrice : null
+        amazonPrice: suggestion.amazonData?.matchType === "direct_product_link" ? suggestion.estimatedPrice : null
       },
       amazonData: suggestion.amazonData || {
         searchUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
         productUrl: `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}&ref=sr_st_relevancerank`,
         addToCartUrl: null,
-        matchType: "search_fallback"
+        matchType: "search"
       }
     }));
 
