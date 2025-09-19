@@ -188,69 +188,6 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
     ];
   }
 }
-
-  try {
-    const response = await withTimeoutFetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${openAIKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "Tu es un expert en idées cadeaux personnalisées. Tu renvoies UNIQUEMENT du JSON valide." },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 1200,
-        temperature: 0.7,
-        response_format: { type: "json_object" }
-      }),
-    }, 15000);
-
-    if (!response.ok) {
-      console.error("Erreur OpenAI génération:", response.status);
-      throw new Error("Erreur API OpenAI");
-    }
-
-    const aiData = await response.json();
-    let content = aiData.choices?.[0]?.message?.content?.trim() || "";
-    content = content.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-
-    const parsed = JSON.parse(content);
-    const suggestions = parsed.suggestions || [];
-
-    console.log(`GPT a généré ${suggestions.length} idées cadeaux`);
-    return suggestions.slice(0, 3);
-  } catch (error) {
-    console.error("Erreur génération GPT:", error);
-    // Fallback si GPT échoue
-    return [
-      {
-        title: "Coffret cadeau personnalisé",
-        description: `Un coffret soigneusement sélectionné pour ${personData.name}`,
-        estimatedPrice: Math.min(budget, 35),
-        asin: "B08XYZABC0",
-        reasoning: `Cadeau polyvalent adapté à ${personData.name}`
-      },
-      {
-        title: "Accessoire premium de qualité",
-        description: `Un accessoire pratique et élégant pour le quotidien`,
-        estimatedPrice: Math.min(budget, 25),
-        asin: "B09DEFGHI1",
-        reasoning: "Produit utile et apprécié au quotidien"
-      },
-      {
-        title: "Article tendance original",
-        description: `Un produit original qui fera plaisir à coup sûr`,
-        estimatedPrice: Math.min(budget, 20),
-        asin: "B07JKLMNO2",
-        reasoning: "Cadeau original et surprenant"
-      }
-    ];
-  }
-}
-
 /* =========================
    SERPAPI SEARCH
 ========================= */
