@@ -222,15 +222,15 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
       .map((item: any) => ({
         title: item.title || "",
         asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
-        link: item.link,
+        link: item.link, // Utiliser le lien original de l'API
+        originalLink: item.link,
         price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
         rating: item.rating || null,
         reviewCount: item.reviews_count || null,
         imageUrl: item.thumbnail || item.image || null,
       }))
-      .filter(p => p.title.length > 5 && isValidAsin(p.asin))
+      .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .map(p => ({ ...p, link: `https://www.amazon.fr/dp/${p.asin}` }))
       .slice(0, 5);
 
     console.log(`✅ SerpAPI: ${products.length} produits valides filtrés`);
@@ -268,15 +268,15 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
       .map((item: any) => ({
         title: item.title || "",
         asin: toAsin(item.asin),
-        link: item.link,
+        link: item.link, // Utiliser le lien original de l'API
+        originalLink: item.link,
         price: parseFloat(String(item.price?.value || item.price || "0").replace(/[^\d.,]/g, "").replace(",", ".")) || null,
         rating: item.rating || null,
         reviewCount: item.reviews_count || null,
         imageUrl: item.image || null,
       }))
-      .filter(p => p.title.length > 5 && isValidAsin(p.asin))
+      .filter(p => p.title.length > 5 && p.link && p.link.includes('amazon'))
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .map(p => ({ ...p, link: `https://www.amazon.fr/dp/${p.asin}` }))
       .slice(0, 5);
 
     console.log(`✅ Rainforest: ${products.length} produits valides filtrés`);
@@ -345,6 +345,8 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       // Si on a trouvé des produits Amazon spécifiques, utiliser le premier
       if (foundProducts.length > 0) {
         const realProduct = foundProducts[0];
+        console.log(`✅ Produit trouvé: "${realProduct.title}" - Lien: ${realProduct.link}`);
+        
         enrichedSuggestion = {
           ...suggestion,
           title: realProduct.title, // Utiliser le titre réel du produit
@@ -354,14 +356,16 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             rating: realProduct.rating,
             reviewCount: realProduct.reviewCount,
             imageUrl: realProduct.imageUrl,
-            productUrl: withAffiliate(realProduct.link), // Lien direct vers la fiche produit réelle
+            productUrl: withAffiliate(realProduct.originalLink || realProduct.link), // Lien original de l'API
             searchUrl: amazonSearchUrl,
-            addToCartUrl: partnerTagActive && partnerTag && realProduct.asin
+            addToCartUrl: realProduct.asin && partnerTagActive && partnerTag
               ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
               : null,
             matchType: "api_matched_product"
           }
         };
+      } else {
+        console.log(`⚠️ Aucun produit spécifique trouvé pour: "${searchQuery}"`);
       }
     }
     
