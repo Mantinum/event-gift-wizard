@@ -233,7 +233,7 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
     console.log(`✅ SerpAPI: ${allResults.length} résultats bruts`);
 
     const seen = new Set<string>();
-    const products = allResults
+    let products = allResults
       .map((item: any) => ({
         title: item.title || "",
         asin: extractAsinFromUrl(item.link) || toAsin(item.asin),
@@ -253,7 +253,21 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice: nu
         return true;
       })
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .slice(0, 5);
+      .slice(0, 20);
+
+    // 1) tri: ASIN d'abord, puis meilleure note/nb avis si dispo
+    products.sort((a: any, b: any) => {
+      const aa = isValidAsin(a.asin) ? 1 : 0;
+      const bb = isValidAsin(b.asin) ? 1 : 0;
+      if (bb !== aa) return bb - aa; // ASIN en premier
+      const ar = a.rating ?? 0, br = b.rating ?? 0;
+      const ac = a.reviewCount ?? 0, bc = b.reviewCount ?? 0;
+      if (br !== ar) return br - ar;
+      return bc - ac;
+    });
+
+    // 2) compresse à 5 items utiles
+    products = products.slice(0, 5);
 
     console.log(`✅ SerpAPI: ${products.length} produits valides filtrés`);
     return products;
@@ -287,7 +301,7 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
     console.log(`✅ Rainforest: ${results.length} résultats bruts`);
 
     const seen = new Set<string>();
-    const products = results
+    let products = results
       .map((item: any) => ({
         title: item.title || "",
         asin: toAsin(item.asin),
@@ -307,7 +321,21 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
         return true;
       })
       .filter(p => !p.price || (p.price >= minPrice && p.price <= maxPrice))
-      .slice(0, 5);
+      .slice(0, 20);
+
+    // 1) tri: ASIN d'abord, puis meilleure note/nb avis si dispo
+    products.sort((a: any, b: any) => {
+      const aa = isValidAsin(a.asin) ? 1 : 0;
+      const bb = isValidAsin(b.asin) ? 1 : 0;
+      if (bb !== aa) return bb - aa; // ASIN en premier
+      const ar = a.rating ?? 0, br = b.rating ?? 0;
+      const ac = a.reviewCount ?? 0, bc = b.reviewCount ?? 0;
+      if (br !== ar) return br - ar;
+      return bc - ac;
+    });
+
+    // 2) compresse à 5 items utiles
+    products = products.slice(0, 5);
 
     console.log(`✅ Rainforest: ${products.length} produits valides filtrés`);
     return products;
@@ -379,7 +407,16 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       
       // Si on a trouvé des produits Amazon spécifiques, utiliser le premier
       if (foundProducts.length > 0) {
-        const realProduct = foundProducts[0];
+        const withAsin = foundProducts.find(p => isValidAsin(p.asin));
+        const viaLinkAsin = foundProducts.find(p => extractAsinFromUrl(p.link || p.originalLink));
+        const realProduct = withAsin || viaLinkAsin || foundProducts[0];
+
+        // Si on a trouvé un ASIN via le 2e passage, renseigne-le
+        if (!realProduct.asin) {
+          const linkAsin = extractAsinFromUrl(realProduct.link || realProduct.originalLink);
+          if (linkAsin) realProduct.asin = linkAsin;
+        }
+        
         console.log(`✅ Produit trouvé: "${realProduct.title}" - Lien: ${realProduct.link}`);
         
         // Construire le lien direct vers le produit
@@ -387,10 +424,10 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
         
         if (realProduct.asin && isValidAsin(realProduct.asin)) {
           // Si on a un ASIN valide, créer un lien direct vers le produit
-          productUrl = withAffiliate(`https://www.amazon.fr/dp/${toAsin(realProduct.asin)}`);
+          productUrl = `https://www.amazon.fr/dp/${toAsin(realProduct.asin)}`;
         } else if (realProduct.originalLink || realProduct.link) {
           // Sinon utiliser le lien de l'API
-          productUrl = withAffiliate(realProduct.originalLink || realProduct.link);
+          productUrl = realProduct.originalLink || realProduct.link;
         }
         
         enrichedSuggestion = {
