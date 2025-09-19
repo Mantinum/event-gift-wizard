@@ -309,7 +309,7 @@ function diversifyProducts(products: any[], maxProducts: number) {
 }
 
 /* =========================
-   EDGE FUNCTION
+   EDGE FUNCTION (Updated)
 ========================= */
 Deno.serve(async (req) => {
   try {
@@ -495,9 +495,9 @@ IMPORTANT: Choisis UNIQUEMENT parmi les produits ci-dessus. Renvoie un JSON stri
       return jsonResponse({ success: true, suggestions, personName: personData.name, eventType, budget, budgetRespected: true });
     }
 
-    const raw = Array.isArray(parsed?.suggestions) ? parsed.suggestions : Array.isArray(parsed?.selections) ? parsed.selections : [];
+    const rawSuggestions = Array.isArray(parsed?.suggestions) ? parsed.suggestions : Array.isArray(parsed?.selections) ? parsed.selections : [];
     const allowedAsins = new Set(selectedProducts.map((p) => toAsin(p.asin)));
-    const direct = raw.map((r: any) => ({
+    const direct = rawSuggestions.map((r: any) => ({
       title: r.title ?? r.selectedTitle ?? "",
       asin: toAsin(r.asin ?? r.selectedAsin ?? ""),
       price: r.price ?? r.selectedPrice ?? 0,
