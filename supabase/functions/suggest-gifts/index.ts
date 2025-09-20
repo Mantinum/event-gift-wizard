@@ -298,33 +298,51 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: n
 }
 
 /* =========================
-   RAINFOREST SEARCH
+   OXYLABS SEARCH
 ========================= */
-async function searchWithRainforest(query: string, rainforestApiKey: string, minPrice?: number, maxPrice?: number) {
-  const run = async (q: string) => {
-    const url = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(q)}`;
-    const res = await withTimeoutFetch(url, {}, 20000);
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (data.request_info?.success === false) return [];
-    const results = data.search_results || [];
+async function searchWithOxylabs(query: string, oxyUsername: string, oxyPassword: string, minPrice?: number, maxPrice?: number) {
+  const run = async (q: string, withPrice: boolean) => {
+    const payload = {
+      source: "amazon_search",
+      domain: "fr",
+      query: q,
+      pages: 1,
+      parse: true,
+      ...(withPrice && typeof minPrice === "number" && { price_min: minPrice }),
+      ...(withPrice && typeof maxPrice === "number" && { price_max: maxPrice })
+    };
+
+    const response = await withTimeoutFetch("https://realtime.oxylabs.io/v1/queries", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Basic ${btoa(`${oxyUsername}:${oxyPassword}`)}`
+      },
+      body: JSON.stringify(payload),
+    }, 25000);
+
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    const results = data?.results?.[0]?.content?.results?.organic || [];
+    
     const seen = new Set<string>();
     let products = results
       .map((item: any) => {
-        const asin = toAsin(item.asin);
+        const asin = extractAsinFromUrl(item.url) || toAsin(item.asin);
         const rawPrice = String(item.price?.value ?? item.price ?? "0");
         return {
           title: item.title || "",
           asin,
-          link: item.link || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
-          originalLink: item.link || null,
+          link: item.url || (isValidAsin(asin) ? `https://www.amazon.fr/dp/${asin}` : null),
+          originalLink: item.url || null,
           price: parseFloat(rawPrice.replace(/[^\d.,]/g, "").replace(",", ".")) || null,
           rating: item.rating ?? null,
           reviewCount: item.reviews_count ?? null,
           imageUrl: item.image || null,
         };
       })
-      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
+      .filter(p => p.title && p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
@@ -333,6 +351,7 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
         return true;
       });
 
+    // Priorité : ASIN valides d'abord, puis tri par rating et reviews
     products.sort((a: any, b: any) => {
       const aa = isValidAsin(a.asin) ? 1 : 0, bb = isValidAsin(b.asin) ? 1 : 0;
       if (bb !== aa) return bb - aa;
@@ -344,69 +363,28 @@ async function searchWithRainforest(query: string, rainforestApiKey: string, min
     return products.slice(0, 5);
   };
 
-  // PASS 1 : requête complète
-  let products = await run(query);
+  // PASS 1 : requête complète avec filtres de prix
+  let products = await run(query, true);
 
-  // Si aucun ASIN, PASS 2 : requête compacte
+  // Si aucun ASIN trouvé, PASS 2 : requête compacte sans filtres
   if (!products.some(p => isValidAsin(p.asin))) {
     const compact = toCompactQuery(query);
-    console.log(`↻ Rainforest PASS2 compact="${compact}"`);
-    products = await run(compact);
+    console.log(`↻ Oxylabs PASS2 compact="${compact}"`);
+    products = await run(compact, false);
   }
 
   return products;
 }
 
 /* =========================
-   ASIN RESOLVER VIA URL
-========================= */
-async function rainforestResolveAsinByUrl(url: string, rainforestApiKey?: string): Promise<string|null> {
-  if (!rainforestApiKey || !url) return null;
-  try {
-    const api = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=product&url=${encodeURIComponent(url)}`;
-    const res = await withTimeoutFetch(api, {}, 15000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const asin = toAsin(data?.product?.asin || data?.asin || "");
-    return isValidAsin(asin) ? asin : null;
-  } catch {
-    return null;
-  }
-}
-
-async function rainforestResolveFirstAsinFromSearchUrl(searchUrl: string, rainforestApiKey?: string): Promise<string | null> {
-  if (!rainforestApiKey || !searchUrl) return null;
-  try {
-    const u = new URL(searchUrl);
-    if (!/amazon\./i.test(u.hostname)) return null;
-    const q = u.searchParams.get("k");
-    if (!q) return null;
-
-    const api = `https://api.rainforestapi.com/request?api_key=${rainforestApiKey}&type=search&amazon_domain=amazon.fr&search_term=${encodeURIComponent(q)}&sort=featured`;
-    const res = await withTimeoutFetch(api, {}, 15000);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const asin = toAsin(
-      data?.search_results?.[0]?.asin ||
-      data?.search_results?.find((r: any) => r?.asin)?.asin ||
-      ""
-    );
-    return isValidAsin(asin) ? asin : null;
-  } catch {
-    return null;
-  }
-}
-
-/* =========================
    ENHANCED PRODUCT SEARCH
 ========================= */
-async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, rainforestApiKey?: string) {
+async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, oxyUsername?: string, oxyPassword?: string) {
   console.log(`🔍 Enrichissement de ${gptSuggestions.length} suggestions GPT`);
   
   const enrichedSuggestions = [];
   
   for (const suggestion of gptSuggestions) {
-    // Créer des liens de recherche fiables plutôt que des ASIN potentiellement cassés
     const searchKeywords = suggestion.searchKeywords || suggestion.title;
     const cleanKeywords = toSearchKeywords(searchKeywords);
     const amazonSearchUrl = `https://www.amazon.fr/s?k=${encodeURIComponent(cleanKeywords)}&ref=sr_st_relevancerank`;
@@ -416,131 +394,90 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
       amazonData: {
         searchUrl: amazonSearchUrl,
         productUrl: suggestion.amazonUrl || amazonSearchUrl,
-        addToCartUrl: null, // Pas possible sans ASIN spécifique
+        addToCartUrl: null,
         matchType: "search"
       }
     };
     
-      // Essayer d'enrichir avec des données Amazon spécifiques (optionnel)
-      if (serpApiKey || rainforestApiKey) {
-        const searchQuery = toSearchKeywords((suggestion.searchKeywords || suggestion.title)).toLowerCase();
-        console.log(`🔍 Tentative d'enrichissement spécifique pour: "${searchQuery}"`);
-        
-        let foundProducts: any[] = [];
-        
-        // Gestion prix souples
-        const est = Number.isFinite(suggestion.estimatedPrice) && suggestion.estimatedPrice > 0 ? suggestion.estimatedPrice : 30;
-        const minP = Math.max(5, Math.floor(est * 0.4));
-        const maxP = Math.max(minP + 10, Math.floor(est * 3.5));
-        
-        // Tentative avec SerpAPI si disponible
-        if (serpApiKey) {
-          try {
-            foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, minP, maxP);
-            if (foundProducts.length > 0) {
-              console.log(`✅ Produit spécifique trouvé via SerpAPI: ${foundProducts[0].title}`);
-            }
-          } catch (error) {
-            console.log(`⚠️ SerpAPI non disponible pour: ${searchQuery}`);
-          }
-        }
-        
-        // Tentative avec RainforestAPI si pas de résultats et disponible
-        if (rainforestApiKey && foundProducts.length === 0) {
-          try {
-            foundProducts = await searchWithRainforest(searchQuery, rainforestApiKey, minP, maxP);
-            if (foundProducts.length > 0) {
-              console.log(`✅ Produit spécifique trouvé via RainforestAPI: ${foundProducts[0].title}`);
-            }
-          } catch (error) {
-            console.log(`⚠️ RainforestAPI non disponible pour: ${searchQuery}`);
-          }
-        }
+    // Essayer d'enrichir avec des données Amazon spécifiques
+    if (serpApiKey || (oxyUsername && oxyPassword)) {
+      const searchQuery = toSearchKeywords((suggestion.searchKeywords || suggestion.title)).toLowerCase();
+      console.log(`🔍 Tentative d'enrichissement spécifique pour: "${searchQuery}"`);
       
-      // Si on a trouvé des produits Amazon spécifiques, tenter de compléter l'ASIN s'il manque
+      let foundProducts: any[] = [];
+      
+      // Gestion prix souples
+      const est = Number.isFinite(suggestion.estimatedPrice) && suggestion.estimatedPrice > 0 ? suggestion.estimatedPrice : 30;
+      const minP = Math.max(5, Math.floor(est * 0.4));
+      const maxP = Math.max(minP + 10, Math.floor(est * 3.5));
+      
+      // Tentative avec SerpAPI d'abord (coût plus bas)
+      if (serpApiKey) {
+        try {
+          foundProducts = await searchWithSerpApi(searchQuery, serpApiKey, minP, maxP);
+          if (foundProducts.length > 0) {
+            console.log(`✅ Produit spécifique trouvé via SerpAPI: ${foundProducts[0].title}`);
+          }
+        } catch (error) {
+          console.log(`⚠️ SerpAPI non disponible pour: ${searchQuery}`);
+        }
+      }
+      
+      // Fallback avec Oxylabs si pas de résultats SerpAPI
+      if (foundProducts.length === 0 && oxyUsername && oxyPassword) {
+        try {
+          foundProducts = await searchWithOxylabs(searchQuery, oxyUsername, oxyPassword, minP, maxP);
+          if (foundProducts.length > 0) {
+            console.log(`✅ Produit spécifique trouvé via Oxylabs: ${foundProducts[0].title}`);
+          }
+        } catch (error) {
+          console.log(`⚠️ Oxylabs non disponible pour: ${searchQuery}`);
+        }
+      }
+      
+      // Si on a trouvé des produits, utiliser le meilleur
       if (foundProducts.length > 0) {
-        // Filtrer les URLs de recherche du pool produit
-        foundProducts = foundProducts.filter(p => !isAmazonSearchUrl(p.link || p.originalLink));
+        // Filtrer les URLs de recherche et prendre le premier produit avec ASIN si possible
+        const validProducts = foundProducts.filter(p => !isAmazonSearchUrl(p.link || p.originalLink));
+        const bestProduct = validProducts.find(p => isValidAsin(p.asin)) || validProducts[0];
         
-        // Essaie de backfiller l'ASIN via URL → Rainforest (sur les 3 premiers max)
-        for (let i = 0; i < Math.min(foundProducts.length, 3); i++) {
-          const p = foundProducts[i];
-          if (!isValidAsin(p.asin)) {
-            // 1) ré-extraction depuis le lien (au cas où)
-            const fromLink = extractAsinFromUrl(p.link || p.originalLink);
-            if (isValidAsin(fromLink)) {
-              p.asin = fromLink;
-              continue;
-            }
-            // 2) appel Rainforest product-by-URL pour récupérer l'ASIN
-            const fetched = await rainforestResolveAsinByUrl(p.link || p.originalLink, rainforestApiKey);
-            if (isValidAsin(fetched)) {
-              p.asin = fetched;
+        if (bestProduct) {
+          // S'assurer que l'ASIN est extrait du lien si nécessaire
+          if (!isValidAsin(bestProduct.asin)) {
+            const linkAsin = extractAsinFromUrl(bestProduct.link || bestProduct.originalLink);
+            if (isValidAsin(linkAsin)) {
+              bestProduct.asin = linkAsin;
             }
           }
-        }
-
-        // Plan B : si toujours aucun ASIN, tente de convertir l'URL de recherche -> premier produit (Rainforest search)
-        if (!foundProducts.some(p => isValidAsin(p.asin)) && rainforestApiKey) {
-          const searchUrl = enrichedSuggestion?.purchaseLinks?.[0]?.url || enrichedSuggestion?.searchUrl;
-          if (isAmazonSearchUrl(searchUrl)) {
-            const firstAsin = await rainforestResolveFirstAsinFromSearchUrl(searchUrl, rainforestApiKey);
-            if (isValidAsin(firstAsin)) {
-              foundProducts.unshift({
-                title: enrichedSuggestion?.title || undefined,
-                asin: firstAsin,
-                link: `https://www.amazon.fr/dp/${firstAsin}`,
-                source: "rainforest-search",
-              } as any);
+          
+          console.log(`✅ Produit sélectionné: "${bestProduct.title}" - ASIN: ${bestProduct.asin || 'N/A'}`);
+          
+          // Construire le lien direct vers le produit
+          let productUrl = amazonSearchUrl;
+          if (bestProduct.asin && isValidAsin(bestProduct.asin)) {
+            productUrl = `https://www.amazon.fr/dp/${bestProduct.asin}`;
+          } else if (bestProduct.originalLink || bestProduct.link) {
+            productUrl = bestProduct.originalLink || bestProduct.link;
+          }
+          
+          enrichedSuggestion = {
+            ...suggestion,
+            title: bestProduct.title,
+            estimatedPrice: Math.round(bestProduct.price || suggestion.estimatedPrice),
+            amazonData: {
+              asin: bestProduct.asin,
+              rating: bestProduct.rating,
+              reviewCount: bestProduct.reviewCount,
+              imageUrl: bestProduct.imageUrl,
+              productUrl: withAffiliate(productUrl),
+              searchUrl: amazonSearchUrl,
+              addToCartUrl: bestProduct.asin && isValidAsin(bestProduct.asin) && partnerTagActive && partnerTag
+                ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${bestProduct.asin}&Quantity.1=1&tag=${partnerTag}`
+                : null,
+              matchType: bestProduct.asin && isValidAsin(bestProduct.asin) ? "exact" : "api_link"
             }
-          }
+          };
         }
-
-        // Sélection: uniquement un produit avec ASIN (sinon on garde la recherche)
-        const withAsin = foundProducts.find(p => isValidAsin(p.asin));
-        if (!withAsin) {
-          console.log("↩︎ Aucun ASIN exploitable après backfill, fallback search");
-          enrichedSuggestions.push(enrichedSuggestion);
-          continue;
-        }
-        const realProduct = withAsin;
-
-        // Si on a trouvé un ASIN via le 2e passage, renseigne-le
-        if (!realProduct.asin) {
-          const linkAsin = extractAsinFromUrl(realProduct.link || realProduct.originalLink);
-          if (linkAsin) realProduct.asin = linkAsin;
-        }
-        
-        console.log(`✅ Produit trouvé: "${realProduct.title}" - Lien: ${realProduct.link}`);
-        
-        // Construire le lien direct vers le produit
-        let productUrl = amazonSearchUrl; // fallback par défaut
-        
-        if (realProduct.asin && isValidAsin(realProduct.asin)) {
-          // Si on a un ASIN valide, créer un lien direct vers le produit
-          productUrl = `https://www.amazon.fr/dp/${toAsin(realProduct.asin)}`;
-        } else if (realProduct.originalLink || realProduct.link) {
-          // Sinon utiliser le lien de l'API
-          productUrl = realProduct.originalLink || realProduct.link;
-        }
-        
-        enrichedSuggestion = {
-          ...suggestion,
-          title: realProduct.title, // Utiliser le titre réel du produit
-          estimatedPrice: Math.round(realProduct.price || suggestion.estimatedPrice),
-          amazonData: {
-            asin: realProduct.asin,
-            rating: realProduct.rating,
-            reviewCount: realProduct.reviewCount,
-            imageUrl: realProduct.imageUrl,
-            productUrl: withAffiliate(productUrl), // Lien direct vers le produit ou fallback
-            searchUrl: amazonSearchUrl,
-            addToCartUrl: realProduct.asin && isValidAsin(realProduct.asin) && partnerTagActive && partnerTag
-              ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${realProduct.asin}&Quantity.1=1&tag=${partnerTag}`
-              : null,
-            matchType: realProduct.asin && isValidAsin(realProduct.asin) ? "exact" : "api_link"
-          }
-        };
       } else {
         console.log(`⚠️ Aucun produit spécifique trouvé pour: "${searchQuery}"`);
       }
@@ -574,7 +511,8 @@ Deno.serve(async (req) => {
     // Variables d'environnement
     const openAIKey = Deno.env.get("OPENAI_API_KEY");
     const serpApiKey = Deno.env.get("SERPAPI_API_KEY");
-    const rainforestApiKey = Deno.env.get("RAINFOREST_API_KEY");
+    const oxyUsername = Deno.env.get("OXYLABS_USERNAME");
+    const oxyPassword = Deno.env.get("OXYLABS_PASSWORD");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY");
     const supabaseService = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -634,7 +572,7 @@ Deno.serve(async (req) => {
 
     // Étape 2: Enrichissement avec données Amazon réelles (optionnel)
     console.log("🔍 Enrichissement avec données Amazon...");
-    const enrichedSuggestions = await enrichWithAmazonData(gptSuggestions, serpApiKey, rainforestApiKey);
+    const enrichedSuggestions = await enrichWithAmazonData(gptSuggestions, serpApiKey, oxyUsername, oxyPassword);
 
     // Formatage final des suggestions
     const finalSuggestions = enrichedSuggestions.map((suggestion: any) => ({
