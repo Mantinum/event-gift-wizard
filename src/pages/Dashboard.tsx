@@ -4,8 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Calendar from '@/components/Calendar';
-import Dashboard from '@/components/Dashboard';
-import { CustomizableDashboard } from '@/components/CustomizableDashboard';
+import { SimpleDashboard } from '@/components/SimpleDashboard';
 import PersonProfile from '@/components/PersonProfile';
 import PersonProfileModal from '@/components/PersonProfileModal';
 import PersonProfileViewModal from '@/components/PersonProfileViewModal';
@@ -177,35 +176,37 @@ const DashboardPage = () => {
         </div>
         <div className="relative z-10 container mx-auto px-4 py-12 text-center">
           <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-end gap-3 mb-4">
-              <AIUsageBadge />
+            <div className="flex items-center justify-end gap-2 mb-6">
               <ThemeToggle />
               <NotificationBell />
               {profile?.role === 'admin' && (
                 <Button
                   onClick={() => navigate('/admin')}
                   variant="outline" 
+                  size="sm"
                   className="bg-white/10 text-white border-white/20 hover:bg-white/20"
                 >
-                  <Shield className="w-4 h-4 mr-2" />
-                  Administration
+                  <Shield className="w-4 h-4 mr-1" />
+                  Admin
                 </Button>
               )}
               <Button
                 onClick={() => navigate('/account')}
                 variant="outline" 
+                size="sm"
                 className="bg-white/10 text-white border-white/20 hover:bg-white/20"
               >
-                <Settings className="w-4 h-4 mr-2" />
-                Mon compte
+                <Settings className="w-4 h-4 mr-1" />
+                Compte
               </Button>
               <Button
                 onClick={handleSignOut}
                 variant="outline" 
+                size="sm"
                 className="bg-white/10 text-white border-white/20 hover:bg-white/20"
               >
-                <LogOut className="w-4 h-4 mr-2" />
-                Déconnexion
+                <LogOut className="w-4 h-4 mr-1" />
+                Sortir
               </Button>
             </div>
             <h1 className="text-4xl md:text-6xl font-bold text-white mb-6 drop-shadow-lg">
@@ -256,7 +257,7 @@ const DashboardPage = () => {
                 Suivez vos prochains achats automatiques et vos événements à venir
               </p>
             </div>
-            <CustomizableDashboard 
+            <SimpleDashboard 
               events={events} 
               persons={persons} 
               onEditEvent={(event) => {
