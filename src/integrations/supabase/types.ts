@@ -41,6 +41,36 @@ export type Database = {
         }
         Relationships: []
       }
+      dashboard_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          notification_settings: Json | null
+          theme_preference: string | null
+          updated_at: string
+          user_id: string
+          widget_layout: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notification_settings?: Json | null
+          theme_preference?: string | null
+          updated_at?: string
+          user_id: string
+          widget_layout?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notification_settings?: Json | null
+          theme_preference?: string | null
+          updated_at?: string
+          user_id?: string
+          widget_layout?: Json
+        }
+        Relationships: []
+      }
       events: {
         Row: {
           budget: number
@@ -110,6 +140,8 @@ export type Database = {
           id: string
           is_read: boolean
           message: string
+          push_sent: boolean | null
+          scheduled_for: string | null
           title: string
           type: string
           updated_at: string
@@ -121,6 +153,8 @@ export type Database = {
           id?: string
           is_read?: boolean
           message: string
+          push_sent?: boolean | null
+          scheduled_for?: string | null
           title: string
           type?: string
           updated_at?: string
@@ -132,6 +166,8 @@ export type Database = {
           id?: string
           is_read?: boolean
           message?: string
+          push_sent?: boolean | null
+          scheduled_for?: string | null
           title?: string
           type?: string
           updated_at?: string

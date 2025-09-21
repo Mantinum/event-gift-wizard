@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Calendar from '@/components/Calendar';
 import Dashboard from '@/components/Dashboard';
+import { CustomizableDashboard } from '@/components/CustomizableDashboard';
 import PersonProfile from '@/components/PersonProfile';
 import PersonProfileModal from '@/components/PersonProfileModal';
 import PersonProfileViewModal from '@/components/PersonProfileViewModal';
@@ -255,7 +256,7 @@ const DashboardPage = () => {
                 Suivez vos prochains achats automatiques et vos événements à venir
               </p>
             </div>
-            <Dashboard 
+            <CustomizableDashboard 
               events={events} 
               persons={persons} 
               onEditEvent={(event) => {
