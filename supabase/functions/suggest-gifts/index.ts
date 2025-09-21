@@ -121,12 +121,17 @@ async function generateGiftIdeasWithGPT(personData: any, eventType: string, budg
 
 ${personalInfo}
 Événement: ${eventType}
-Budget max: ${budget}€
+Budget alloué: ${budget}€
 
-INSTRUCTIONS IMPORTANTES:
+INSTRUCTIONS CRITIQUES BUDGET:
+- UTILISE INTELLIGEMMENT LE BUDGET: Si le budget est de 100€, propose des cadeaux entre 70-100€, pas 10-20€
+- Varie les prix: 1 cadeau proche du budget max (80-100%), 1 cadeau milieu de gamme (60-80%), 1 cadeau accessible (40-60%)
+- Pour un budget de 50€+, évite les cadeaux < 30€ sauf si très spécifiques aux intérêts
+- Pour un budget de 100€+, évite les cadeaux < 50€ sauf si très spécifiques aux intérêts
+
+INSTRUCTIONS PRODUITS:
 - Génère 3 produits concrets avec marques et modèles réels (Nike, Adidas, Apple, Samsung, etc.)
 - Varie les catégories selon ses intérêts : Sport, Tech, Lifestyle, Beauty, Home
-- Respecte le budget et les goûts de la personne
 - NE GÉNÈRE PAS D'ASIN - laisse le champ "asin" vide, il sera rempli automatiquement
 - Focus sur des produits populaires et disponibles sur Amazon France
 
