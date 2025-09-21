@@ -8,8 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { Sparkles, Mail, Lock, User, MapPin, Info } from 'lucide-react';
+import { Sparkles, Mail, Lock, User, MapPin, Info, Shield, Clock } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { validatePassword, getPasswordStrength } from '@/utils/passwordValidation';
+import { SecurityLogger, RateLimiter } from '@/utils/securityHelpers';
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -21,6 +23,9 @@ const Auth = () => {
   const [lastName, setLastName] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [passwordStrength, setPasswordStrength] = useState<'weak' | 'medium' | 'strong'>('weak');
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const [remainingTime, setRemainingTime] = useState(0);
 
   // Check if user is already logged in
   useEffect(() => {
@@ -47,25 +52,45 @@ const Auth = () => {
     setLoading(true);
     setError(null);
 
+    // Check rate limiting
+    if (RateLimiter.isRateLimited(`login:${email}`, 5, 15 * 60 * 1000)) {
+      const remaining = RateLimiter.getRemainingTime(`login:${email}`);
+      setError(`Trop de tentatives de connexion. Réessayez dans ${Math.ceil(remaining / 60)} minutes.`);
+      setIsRateLimited(true);
+      setRemainingTime(remaining);
+      setLoading(false);
+      return;
+    }
+
     try {
+      SecurityLogger.logEvent({ event: 'login_attempt', email });
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
+        SecurityLogger.logEvent({ event: 'login_failure', email });
+        
         if (error.message.includes('Invalid login credentials')) {
           setError('Email ou mot de passe incorrect');
+        } else if (error.message.includes('Email not confirmed')) {
+          setError('Veuillez confirmer votre email avant de vous connecter');
         } else {
           setError(error.message);
         }
       } else {
+        SecurityLogger.logEvent({ event: 'login_success', email });
+        RateLimiter.reset(`login:${email}`); // Reset rate limit on successful login
+        
         toast({
           title: "Connexion réussie",
           description: "Bienvenue dans Cadofy.com !",
         });
       }
     } catch (err) {
+      SecurityLogger.logEvent({ event: 'login_failure', email });
       setError('Une erreur inattendue est survenue');
     } finally {
       setLoading(false);
@@ -83,13 +108,25 @@ const Auth = () => {
       return;
     }
 
-    if (password.length < 6) {
-      setError('Le mot de passe doit contenir au moins 6 caractères');
+    // Enhanced password validation
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.errors.join('. '));
+      setLoading(false);
+      return;
+    }
+
+    // Check rate limiting for signup attempts
+    if (RateLimiter.isRateLimited(`signup:${email}`, 3, 60 * 60 * 1000)) {
+      const remaining = RateLimiter.getRemainingTime(`signup:${email}`);
+      setError(`Trop de tentatives d'inscription. Réessayez dans ${Math.ceil(remaining / 60)} minutes.`);
       setLoading(false);
       return;
     }
 
     try {
+      SecurityLogger.logEvent({ event: 'signup_attempt', email });
+      
       const redirectUrl = `${window.location.origin}/`;
       
       const { error } = await supabase.auth.signUp({
@@ -106,29 +143,43 @@ const Auth = () => {
       });
 
       if (error) {
+        SecurityLogger.logEvent({ event: 'signup_failure', email });
+        
         if (error.message.includes('User already registered')) {
           setError('Un compte avec cet email existe déjà');
+        } else if (error.message.includes('Password should be at least')) {
+          setError('Le mot de passe ne respecte pas les critères de sécurité');
         } else {
           setError(error.message);
         }
       } else {
+        SecurityLogger.logEvent({ event: 'signup_success', email });
+        
         toast({
           title: "Inscription réussie",
           description: "Vérifiez votre email pour confirmer votre compte",
         });
-        // Switch to sign in tab
+        // Clear form
         setEmail('');
         setPassword('');
         setConfirmPassword('');
         setFirstName('');
         setLastName('');
         setAddress('');
+        setPasswordStrength('weak');
       }
     } catch (err) {
+      SecurityLogger.logEvent({ event: 'signup_failure', email });
       setError('Une erreur inattendue est survenue');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle password strength checking
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    setPasswordStrength(getPasswordStrength(value));
   };
 
   return (
@@ -313,7 +364,19 @@ const Auth = () => {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="signup-password">Mot de passe</Label>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="signup-password">Mot de passe</Label>
+                      <div className="flex items-center gap-1">
+                        <Shield className="h-3 w-3 text-muted-foreground" />
+                        <span className={`text-xs font-medium ${
+                          passwordStrength === 'strong' ? 'text-green-600' :
+                          passwordStrength === 'medium' ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {passwordStrength === 'strong' ? 'Fort' :
+                           passwordStrength === 'medium' ? 'Moyen' : 'Faible'}
+                        </span>
+                      </div>
+                    </div>
                     <div className="relative">
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
@@ -321,11 +384,19 @@ const Auth = () => {
                         type="password"
                         placeholder="••••••••"
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => handlePasswordChange(e.target.value)}
                         className="pl-10"
                         required
-                        minLength={6}
+                        minLength={8}
                       />
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>Le mot de passe doit contenir :</p>
+                      <ul className="list-disc list-inside space-y-0.5">
+                        <li>Au moins 8 caractères</li>
+                        <li>Une lettre majuscule et minuscule</li>
+                        <li>Un chiffre et un caractère spécial</li>
+                      </ul>
                     </div>
                   </div>
 
@@ -341,14 +412,19 @@ const Auth = () => {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className="pl-10"
                         required
-                        minLength={6}
+                        minLength={8}
                       />
                     </div>
                   </div>
 
                   {error && (
                     <Alert variant="destructive">
-                      <AlertDescription>{error}</AlertDescription>
+                      <AlertDescription>
+                        <div className="flex items-center gap-2">
+                          {isRateLimited && <Clock className="h-4 w-4" />}
+                          {error}
+                        </div>
+                      </AlertDescription>
                     </Alert>
                   )}
 
