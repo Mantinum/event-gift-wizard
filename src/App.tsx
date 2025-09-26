@@ -12,6 +12,10 @@ import Admin from "./pages/Admin";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
+import GiftFor from "./pages/GiftFor";
+import Birthday from "./pages/Birthday";
+import Preferences from "./pages/Preferences";
+import Suggestions from "./pages/Suggestions";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +33,10 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Landing />} />
+            <Route path="/gift-for" element={<GiftFor />} />
+            <Route path="/birthday" element={<Birthday />} />
+            <Route path="/preferences" element={<Preferences />} />
+            <Route path="/suggestions" element={<Suggestions />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/account" element={<Account />} />
