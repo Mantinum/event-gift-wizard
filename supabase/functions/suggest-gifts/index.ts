@@ -83,7 +83,7 @@ function extractAsinFromUrl(u?: string | null): string | null {
 
     // 2) Paramètre ?asin=XXXX
     const qAsin = url.searchParams.get("asin");
-    if (isValidAsin(qAsin)) return qAsin!.toUpperCase();
+    if (qAsin && isValidAsin(qAsin)) return qAsin.toUpperCase();
 
     // 3) Dernière chance : décoder et extraire un token 10 chars maj alphanum dans le path
     const path2 = decodeURIComponent(path);
@@ -347,8 +347,8 @@ async function searchWithOxylabs(query: string, oxyUsername: string, oxyPassword
           imageUrl: item.image || null,
         };
       })
-      .filter(p => p.title && p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
-      .filter(p => {
+      .filter((p: any) => p.title && p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
+      .filter((p: any) => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
           seen.add(p.asin);
@@ -372,7 +372,7 @@ async function searchWithOxylabs(query: string, oxyUsername: string, oxyPassword
   let products = await run(query, true);
 
   // Si aucun ASIN trouvé, PASS 2 : requête compacte sans filtres
-  if (!products.some(p => isValidAsin(p.asin))) {
+  if (!products.some((p: any) => isValidAsin(p.asin))) {
     const compact = toCompactQuery(query);
     console.log(`↻ Oxylabs PASS2 compact="${compact}"`);
     products = await run(compact, false);
@@ -450,7 +450,7 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
           // S'assurer que l'ASIN est extrait du lien si nécessaire
           if (!isValidAsin(bestProduct.asin)) {
             const linkAsin = extractAsinFromUrl(bestProduct.link || bestProduct.originalLink);
-            if (isValidAsin(linkAsin)) {
+            if (linkAsin && isValidAsin(linkAsin)) {
               bestProduct.asin = linkAsin;
             }
           }
@@ -505,7 +505,7 @@ Deno.serve(async (req) => {
     if (req.method !== "POST") return jsonResponse({ success: false, error: "Method not allowed" }, 405);
 
     const body = await req.json();
-    const { personId, eventType, budget } = body || {};
+    const { personId, eventType, budget, additionalContext } = body || {};
     
     if (!personId || typeof eventType !== "string" || typeof budget !== "number") {
       return jsonResponse({ success: false, error: "Paramètres manquants ou invalides" }, 400);
@@ -552,14 +552,45 @@ Deno.serve(async (req) => {
     }
 
     // Récupération des données de la personne
-    const { data: personData, error: personError } = await supabase
-      .from("persons")
-      .select("id, name, age_years, interests, notes, relationship")
-      .eq("id", personId)
-      .single();
+    let personData;
+    
+    if (personId === "onboarding-temp") {
+      // Mode onboarding : extraire les données du contexte
+      console.log("🔄 Mode onboarding détecté, parsing du contexte...");
+      
+      // Parse additionalContext: "Nom: Jean Baptiste, Relation: Partenaire, Intérêts: Artisanat, Tech, Jardinage"
+      const nameMatch = additionalContext?.match(/Nom:\s*([^,]+)/);
+      const relationMatch = additionalContext?.match(/Relation:\s*([^,]+)/);
+      const interestsMatch = additionalContext?.match(/Intérêts:\s*(.+)/);
+      
+      const name = nameMatch?.[1]?.trim() || "Personne";
+      const relationship = relationMatch?.[1]?.trim() || "Proche";
+      const interestsText = interestsMatch?.[1]?.trim() || "";
+      const interests = interestsText ? interestsText.split(",").map((i: string) => i.trim()) : [];
+      
+      personData = {
+        id: "onboarding-temp",
+        name,
+        age_years: null,
+        interests,
+        notes: null,
+        relationship
+      };
+      
+      console.log(`👤 Données onboarding: ${name}, relation: ${relationship}, intérêts: ${interests.join(", ")}`);
+    } else {
+      // Mode normal : chercher dans la base de données
+      const { data: dbPersonData, error: personError } = await supabase
+        .from("persons")
+        .select("id, name, age_years, interests, notes, relationship")
+        .eq("id", personId)
+        .single();
 
-    if (personError || !personData) {
-      return jsonResponse({ success: false, error: "Personne non trouvée" }, 404);
+      if (personError || !dbPersonData) {
+        return jsonResponse({ success: false, error: "Personne non trouvée" }, 404);
+      }
+      
+      personData = dbPersonData;
     }
 
     console.log(`👤 Données personne: ${personData.name}, intérêts: ${(personData.interests || []).join(", ")}`);
