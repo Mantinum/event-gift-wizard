@@ -67,6 +67,38 @@ const Suggestions = () => {
     return 'À considérer';
   };
 
+  // --- Helpers liens Amazon ---
+  const PARTNER_TAG = 'cadofy-21'; // ou process.env.VITE_AMZ_TAG si tu préfères
+
+  const withAffiliate = (url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.hostname.endsWith('amazon.fr')) {
+        u.searchParams.set('tag', PARTNER_TAG);
+        // optionnel : limiter le bruit
+        const keep = new Set(['tag', 'language']);
+        [...u.searchParams.keys()].forEach(k => { if (!keep.has(k)) u.searchParams.delete(k); });
+      }
+      return u.toString();
+    } catch { return url; }
+  };
+
+  const pickAmazonLink = (s: any) => {
+    // 1) lien produit direct fourni par l'enrichissement
+    if (s?.amazonData?.productUrl) return withAffiliate(s.amazonData.productUrl);
+    // 2) si on a l'ASIN, fabrique l'URL canonique
+    if (s?.amazonData?.asin) return withAffiliate(`https://www.amazon.fr/dp/${s.amazonData.asin}`);
+    // 3) sinon, fouille dans purchaseLinks pour un vrai /dp/
+    const links = (s?.purchaseLinks || []).filter((l: string) => /amazon\.fr/.test(l));
+    const dp = links.find((l: string) => /\/dp\/[A-Z0-9]{10}/i.test(l));
+    if (dp) return withAffiliate(dp);
+    // 4) à défaut, si le premier lien est une recherche mais qu'on a un productUrl, on le préfère
+    const first = links[0];
+    if (first && /\/s\?/.test(first) && s?.amazonData?.productUrl) return withAffiliate(s.amazonData.productUrl);
+    // 5) dernier recours : recherche
+    return first || `https://www.amazon.fr/s?k=${encodeURIComponent(s?.title || '')}`;
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-6">
@@ -204,10 +236,10 @@ const Suggestions = () => {
                       <p className="text-sm text-muted-foreground">{suggestion.reasoning}</p>
                     </div>
 
-                    <Button 
+                    <Button
                       onClick={() => {
-                        const amazonLink = suggestion.purchaseLinks?.[0] || suggestion.amazonData?.productUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`;
-                        window.open(amazonLink, '_blank');
+                        const amazonLink = pickAmazonLink(suggestion);
+                        window.open(amazonLink, '_blank', 'noopener,noreferrer');
                       }}
                       variant="outline"
                       size="sm"
