@@ -16,6 +16,7 @@ const Suggestions = () => {
   const name = sessionStorage.getItem('onboarding-name') || '';
   const relationship = sessionStorage.getItem('onboarding-relationship') || '';
   const birthday = sessionStorage.getItem('onboarding-birthday') || '';
+  const gender = sessionStorage.getItem('onboarding-gender') || '';
   const interests = JSON.parse(sessionStorage.getItem('onboarding-interests') || '[]');
 
   useEffect(() => {
@@ -25,7 +26,7 @@ const Suggestions = () => {
         personId: 'onboarding-temp', // Temporary ID for onboarding
         eventType: 'birthday',
         budget,
-        additionalContext: `Nom: ${name}, Relation: ${relationship}, Intérêts: ${interests.join(', ')}`
+        additionalContext: `Nom: ${name}, Relation: ${relationship}, Sexe: ${gender}, Intérêts: ${interests.join(', ')}`
       });
     }
   }, []);
@@ -49,7 +50,7 @@ const Suggestions = () => {
         personId: 'onboarding-temp',
         eventType: 'birthday',
         budget,
-        additionalContext: `Nom: ${name}, Relation: ${relationship}, Intérêts: ${interests.join(', ')}`
+        additionalContext: `Nom: ${name}, Relation: ${relationship}, Sexe: ${gender}, Intérêts: ${interests.join(', ')}`
       });
     }
   };

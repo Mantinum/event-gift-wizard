@@ -112,7 +112,7 @@ function isAmazonSearchUrl(link?: string | null): boolean {
 async function generateGiftIdeasWithGPT(personData: any, eventType: string, budget: number, openAIKey: string) {
   const personalInfo = personData.notes 
     ? `Notes: "${personData.notes}"`
-    : `Âge: ${personData.age_years || "?"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
+    : `Âge: ${personData.age_years || "?"} | Sexe: ${personData.gender || "N/A"} | Intérêts: ${(personData.interests || []).join(", ") || "N/A"} | Relation: ${personData.relationship || "N/A"}`;
 
   // Au lieu d'utiliser des ASIN qui peuvent ne plus être valides,
   // nous utiliserons une approche de recherche Amazon pour générer des liens fiables
@@ -134,6 +134,8 @@ INSTRUCTIONS PRODUITS:
 - Varie les catégories selon ses intérêts : Sport, Tech, Lifestyle, Beauty, Home
 - NE GÉNÈRE PAS D'ASIN - laisse le champ "asin" vide, il sera rempli automatiquement
 - Focus sur des produits populaires et disponibles sur Amazon France
+- Prends en compte le SEXE pour adapter les suggestions (parfums, vêtements, accessoires...)
+- Utilise des mots-clés précis incluant marque + modèle pour les searchKeywords
 
 Renvoie UNIQUEMENT un JSON avec ce format exact:
 {
@@ -558,13 +560,15 @@ Deno.serve(async (req) => {
       // Mode onboarding : extraire les données du contexte
       console.log("🔄 Mode onboarding détecté, parsing du contexte...");
       
-      // Parse additionalContext: "Nom: Jean Baptiste, Relation: Partenaire, Intérêts: Artisanat, Tech, Jardinage"
+      // Parse additionalContext: "Nom: Jean Baptiste, Relation: Partenaire, Sexe: Homme, Intérêts: Artisanat, Tech, Jardinage"
       const nameMatch = additionalContext?.match(/Nom:\s*([^,]+)/);
       const relationMatch = additionalContext?.match(/Relation:\s*([^,]+)/);
+      const genderMatch = additionalContext?.match(/Sexe:\s*([^,]+)/);
       const interestsMatch = additionalContext?.match(/Intérêts:\s*(.+)/);
       
       const name = nameMatch?.[1]?.trim() || "Personne";
       const relationship = relationMatch?.[1]?.trim() || "Proche";
+      const gender = genderMatch?.[1]?.trim() || "Non spécifié";
       const interestsText = interestsMatch?.[1]?.trim() || "";
       const interests = interestsText ? interestsText.split(",").map((i: string) => i.trim()) : [];
       
@@ -574,10 +578,11 @@ Deno.serve(async (req) => {
         age_years: null,
         interests,
         notes: null,
-        relationship
+        relationship,
+        gender
       };
       
-      console.log(`👤 Données onboarding: ${name}, relation: ${relationship}, intérêts: ${interests.join(", ")}`);
+      console.log(`👤 Données onboarding: ${name}, relation: ${relationship}, sexe: ${gender}, intérêts: ${interests.join(", ")}`);
     } else {
       // Mode normal : chercher dans la base de données
       const { data: dbPersonData, error: personError } = await supabase
