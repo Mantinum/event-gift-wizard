@@ -205,13 +205,16 @@ const Suggestions = () => {
                     </div>
 
                     <Button 
-                      onClick={() => window.open(`https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`, '_blank')}
+                      onClick={() => {
+                        const amazonLink = suggestion.purchaseLinks?.[0] || suggestion.amazonData?.productUrl || `https://www.amazon.fr/s?k=${encodeURIComponent(suggestion.title)}`;
+                        window.open(amazonLink, '_blank');
+                      }}
                       variant="outline"
                       size="sm"
                       className="text-xs"
                     >
                       <ShoppingCart className="h-3 w-3 mr-1" />
-                      Rechercher sur Amazon
+                      Voir sur Amazon
                     </Button>
                   </CardContent>
                 </Card>
