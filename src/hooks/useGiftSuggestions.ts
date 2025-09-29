@@ -27,6 +27,7 @@ export interface GiftSuggestion {
     rating?: number;
     reviewCount?: number;
     availability?: string;
+    isAvailable?: boolean;
     prime?: boolean;
     actualPrice?: number;
     imageUrl?: string;
@@ -96,7 +97,12 @@ export function useGiftSuggestions() {
       }
 
       setSuggestions(budgetValidatedSuggestions);
-      console.log('🔎 Suggestions received (debug):', data.suggestions.map((s: any) => ({ title: s.title, asin: s.amazonData?.asin, purchaseLinks: s.purchaseLinks })));
+      console.log('🔎 Suggestions received (debug):', data.suggestions.map((s: any) => ({ 
+        title: s.title, 
+        asin: s.amazonData?.asin, 
+        available: s.amazonData?.isAvailable,
+        purchaseLinks: s.purchaseLinks 
+      })));
       
       toast({
         title: "Suggestions générées !",

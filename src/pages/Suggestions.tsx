@@ -224,6 +224,11 @@ const Suggestions = () => {
                             <Euro className="w-3 h-3 mr-1" />
                             ~{suggestion.estimatedPrice}€
                           </Badge>
+                          {suggestion.amazonData?.isAvailable !== undefined && (
+                            <Badge variant={suggestion.amazonData.isAvailable ? "default" : "destructive"} className="text-xs">
+                              {suggestion.amazonData.isAvailable ? "✓ Disponible" : "✗ Indisponible"}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -244,9 +249,10 @@ const Suggestions = () => {
                       variant="outline"
                       size="sm"
                       className="text-xs"
+                      disabled={suggestion.amazonData?.isAvailable === false}
                     >
                       <ShoppingCart className="h-3 w-3 mr-1" />
-                      Voir sur Amazon
+                      {suggestion.amazonData?.isAvailable === false ? 'Indisponible' : 'Voir sur Amazon'}
                     </Button>
                   </CardContent>
                 </Card>

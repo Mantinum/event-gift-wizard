@@ -231,6 +231,95 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
   }
 }
 /* =========================
+   AVAILABILITY CHECK
+========================= */
+function checkAvailability(availabilityInfo: any): boolean {
+  if (!availabilityInfo) return false;
+  
+  const availText = typeof availabilityInfo === 'string' ? availabilityInfo.toLowerCase() : 
+                   availabilityInfo?.text?.toLowerCase() || '';
+                   
+  // Mots clés indiquant que le produit n'est pas disponible
+  const unavailableKeywords = [
+    'indisponible', 'rupture', 'stock', 'temporairement', 'currently unavailable',
+    'out of stock', 'non disponible', 'épuisé', 'plus disponible'
+  ];
+  
+  // Mots clés indiquant que le produit est disponible
+  const availableKeywords = [
+    'en stock', 'disponible', 'expédié', 'livraison', 'prime', 'available',
+    'in stock', 'ships', 'delivery'
+  ];
+  
+  // Si on trouve des mots-clés de non-disponibilité
+  if (unavailableKeywords.some(keyword => availText.includes(keyword))) {
+    return false;
+  }
+  
+  // Si on trouve des mots-clés de disponibilité
+  if (availableKeywords.some(keyword => availText.includes(keyword))) {
+    return true;
+  }
+  
+  // Par défaut, si on ne peut pas déterminer, on considère disponible
+  // pour éviter de filtrer trop de produits
+  return true;
+}
+
+/* =========================
+   ADVANCED AVAILABILITY CHECK
+========================= */
+async function checkProductAvailability(asin: string, oxyUsername?: string, oxyPassword?: string): Promise<{ isAvailable: boolean, info: string }> {
+  if (!asin || !isValidAsin(asin)) {
+    return { isAvailable: false, info: 'ASIN invalide' };
+  }
+
+  // Vérifier la disponibilité via Oxylabs product details
+  if (oxyUsername && oxyPassword) {
+    try {
+      const payload = {
+        source: "amazon_product",
+        domain: "fr",
+        query: asin,
+        parse: true
+      };
+
+      const response = await withTimeoutFetch("https://realtime.oxylabs.io/v1/queries", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${btoa(`${oxyUsername}:${oxyPassword}`)}`
+        },
+        body: JSON.stringify(payload),
+      }, 10000);
+
+      if (response.ok) {
+        const data = await response.json();
+        const productInfo = data?.results?.[0]?.content;
+        
+        if (productInfo) {
+          const availability = productInfo.availability || productInfo.stock_status;
+          const isAvailable = checkAvailability(availability);
+          const deliveryInfo = productInfo.delivery_info || {};
+          
+          return {
+            isAvailable,
+            info: isAvailable ? 
+              `Disponible - ${deliveryInfo.text || 'Livraison standard'}` : 
+              `Indisponible - ${availability?.text || 'Stock épuisé'}`
+          };
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ Erreur vérification disponibilité ${asin}:`, error);
+    }
+  }
+
+  // Fallback : considérer comme disponible si on ne peut pas vérifier
+  return { isAvailable: true, info: 'Disponibilité non vérifiée' };
+}
+
+/* =========================
    SERPAPI SEARCH
 ========================= */
 async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: number, maxPrice?: number) {
@@ -268,9 +357,11 @@ async function searchWithSerpApi(query: string, serpApiKey: string, minPrice?: n
           rating: item.rating ?? null,
           reviewCount: item.reviews_count ?? null,
           imageUrl: item.thumbnail || item.image || null,
+          availability: item.availability || item.stock_status || null,
+          isAvailable: checkAvailability(item.availability || item.stock_status || item.delivery_info)
         };
       })
-      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
+      .filter(p => p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))) && p.isAvailable)
       .filter(p => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
@@ -347,9 +438,11 @@ async function searchWithOxylabs(query: string, oxyUsername: string, oxyPassword
           rating: item.rating ?? null,
           reviewCount: item.reviews_count ?? null,
           imageUrl: item.image || null,
+          availability: item.availability || item.stock_status || null,
+          isAvailable: checkAvailability(item.availability || item.stock_status || item.delivery_info)
         };
       })
-      .filter((p: any) => p.title && p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))))
+      .filter((p: any) => p.title && p.title.length > 5 && (isValidAsin(p.asin) || (p.link && p.link.includes("amazon"))) && p.isAvailable)
       .filter((p: any) => {
         if (p.asin && isValidAsin(p.asin)) {
           if (seen.has(p.asin)) return false;
@@ -367,7 +460,14 @@ async function searchWithOxylabs(query: string, oxyUsername: string, oxyPassword
       return (b.reviewCount ?? 0) - (a.reviewCount ?? 0);
     });
 
-    return products.slice(0, 5);
+    const totalFound = products.length;
+    const availableProducts = products.filter((p: any) => p.isAvailable);
+    
+    if (totalFound > availableProducts.length) {
+      console.log(`📦 Filtrage disponibilité: ${totalFound} produits trouvés → ${availableProducts.length} disponibles`);
+    }
+
+    return availableProducts.slice(0, 5);
   };
 
   // PASS 1 : requête complète avec filtres de prix
@@ -457,33 +557,51 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             }
           }
           
-          console.log(`✅ Produit sélectionné: "${bestProduct.title}" - ASIN: ${bestProduct.asin || 'N/A'}`);
+          console.log(`✅ Produit sélectionné: "${bestProduct.title}" - ASIN: ${bestProduct.asin || 'N/A'} - Disponible: ${bestProduct.isAvailable ? 'Oui' : 'Non'}`);
           
-          // Construire le lien direct vers le produit
-          let productUrl = amazonSearchUrl;
-          if (bestProduct.asin && isValidAsin(bestProduct.asin)) {
-            productUrl = `https://www.amazon.fr/dp/${bestProduct.asin}`;
-          } else if (bestProduct.originalLink || bestProduct.link) {
-            productUrl = bestProduct.originalLink || bestProduct.link;
-          }
-          
-          enrichedSuggestion = {
-            ...suggestion,
-            title: bestProduct.title,
-            estimatedPrice: Math.round(bestProduct.price || suggestion.estimatedPrice),
-            amazonData: {
-              asin: bestProduct.asin,
-              rating: bestProduct.rating,
-              reviewCount: bestProduct.reviewCount,
-              imageUrl: bestProduct.imageUrl,
-              productUrl: withAffiliate(productUrl),
-              searchUrl: amazonSearchUrl,
-              addToCartUrl: bestProduct.asin && isValidAsin(bestProduct.asin) && partnerTagActive && partnerTag
-                ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${bestProduct.asin}&Quantity.1=1&tag=${partnerTag}`
-                : null,
-              matchType: bestProduct.asin && isValidAsin(bestProduct.asin) ? "exact" : "api_link"
+          // Ne traiter que les produits disponibles
+          if (!bestProduct.isAvailable) {
+            console.log(`⚠️ Produit "${bestProduct.title}" exclu car indisponible`);
+            enrichedSuggestion = {
+              ...suggestion,
+              amazonData: {
+                searchUrl: amazonSearchUrl,
+                productUrl: suggestion.amazonUrl || amazonSearchUrl,
+                addToCartUrl: null,
+                matchType: "search",
+                availability: "Indisponible",
+                isAvailable: false
+              }
+            };
+          } else {
+            // Construire le lien direct vers le produit
+            let productUrl = amazonSearchUrl;
+            if (bestProduct.asin && isValidAsin(bestProduct.asin)) {
+              productUrl = `https://www.amazon.fr/dp/${bestProduct.asin}`;
+            } else if (bestProduct.originalLink || bestProduct.link) {
+              productUrl = bestProduct.originalLink || bestProduct.link;
             }
-          };
+            
+            enrichedSuggestion = {
+              ...suggestion,
+              title: bestProduct.title,
+              estimatedPrice: Math.round(bestProduct.price || suggestion.estimatedPrice),
+              amazonData: {
+                asin: bestProduct.asin,
+                rating: bestProduct.rating,
+                reviewCount: bestProduct.reviewCount,
+                imageUrl: bestProduct.imageUrl,
+                productUrl: withAffiliate(productUrl),
+                searchUrl: amazonSearchUrl,
+                availability: bestProduct.availability,
+                isAvailable: bestProduct.isAvailable,
+                addToCartUrl: bestProduct.asin && isValidAsin(bestProduct.asin) && partnerTagActive && partnerTag
+                  ? `https://www.amazon.fr/gp/aws/cart/add.html?ASIN.1=${bestProduct.asin}&Quantity.1=1&tag=${partnerTag}`
+                  : null,
+                matchType: bestProduct.asin && isValidAsin(bestProduct.asin) ? "exact" : "api_link"
+              }
+            };
+          }
         }
       } else {
         console.log(`⚠️ Aucun produit spécifique trouvé pour: "${searchQuery}"`);
