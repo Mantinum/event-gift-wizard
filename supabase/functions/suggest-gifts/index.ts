@@ -733,8 +733,68 @@ Deno.serve(async (req) => {
     console.log("🔍 Enrichissement avec données Amazon...");
     const enrichedSuggestions = await enrichWithAmazonData(gptSuggestions, serpApiKey, oxyUsername, oxyPassword);
 
+    // Filtrer les suggestions qui n'ont que des liens de recherche
+    const validSuggestions = enrichedSuggestions.filter((suggestion: any) => {
+      return suggestion.amazonData?.matchType !== "search" || 
+             (suggestion.amazonData?.asin && isValidAsin(suggestion.amazonData.asin));
+    });
+
+    // Si aucune suggestion valide, générer des suggestions génériques avec des ASINs connus
+    let finalSuggestions = [];
+    
+    if (validSuggestions.length === 0) {
+      console.log("🔄 Aucun produit spécifique trouvé, génération de suggestions avec ASINs connus...");
+      
+      // Suggestions génériques avec des ASINs Amazon France populaires
+      const fallbackSuggestions = [
+        {
+          title: "AirPods Apple (3ème génération)",
+          description: "Écouteurs sans fil avec audio spatial et résistance à l'eau, parfaits pour la musique et les appels.",
+          estimatedPrice: Math.min(budget, 199),
+          reasoning: "Produit Apple populaire et apprécié pour sa qualité audio",
+          amazonData: {
+            asin: "B09JQM6427",
+            productUrl: "https://www.amazon.fr/dp/B09JQM6427",
+            searchUrl: "https://www.amazon.fr/s?k=airpods+apple",
+            matchType: "exact",
+            isAvailable: true
+          }
+        },
+        {
+          title: "Echo Dot (5ème génération)",
+          description: "Enceinte connectée Amazon avec Alexa, design compact et son amélioré pour la maison intelligente.",
+          estimatedPrice: Math.min(budget, 59),
+          reasoning: "Assistant vocal populaire pour automatiser le quotidien",
+          amazonData: {
+            asin: "B09B8V1LZ3",
+            productUrl: "https://www.amazon.fr/dp/B09B8V1LZ3", 
+            searchUrl: "https://www.amazon.fr/s?k=echo+dot+alexa",
+            matchType: "exact",
+            isAvailable: true
+          }
+        },
+        {
+          title: "Kindle Paperwhite",
+          description: "Liseuse numérique étanche avec écran haute résolution et éclairage intégré, parfaite pour lire partout.",
+          estimatedPrice: Math.min(budget, 149),
+          reasoning: "Idéal pour les amateurs de lecture avec une grande autonomie",
+          amazonData: {
+            asin: "B08KTZ8249",
+            productUrl: "https://www.amazon.fr/dp/B08KTZ8249",
+            searchUrl: "https://www.amazon.fr/s?k=kindle+paperwhite",
+            matchType: "exact", 
+            isAvailable: true
+          }
+        }
+      ].filter(s => s.estimatedPrice <= budget);
+      
+      finalSuggestions = fallbackSuggestions.slice(0, 3);
+    } else {
+      finalSuggestions = validSuggestions;
+    }
+
     // Formatage final des suggestions
-    const finalSuggestions = enrichedSuggestions.map((suggestion: any) => ({
+    const formattedSuggestions = finalSuggestions.map((suggestion: any) => ({
       title: suggestion.title,
       description: suggestion.description,
       estimatedPrice: suggestion.estimatedPrice,
@@ -743,12 +803,10 @@ Deno.serve(async (req) => {
       category: "Produit Amazon",
       alternatives: [],
       purchaseLinks: [
-        // Utiliser productUrl en priorité pour les liens directs, sinon searchUrl
-        withAffiliate(
-          suggestion.amazonData?.productUrl
-          || suggestion.amazonData?.searchUrl
-          || `https://www.amazon.fr/s?k=${encodeURIComponent(toSearchKeywords(suggestion.title))}&ref=sr_st_relevancerank`
-        )
+        // Prioriser les vrais liens produits avec ASIN
+        suggestion.amazonData?.asin && isValidAsin(suggestion.amazonData.asin)
+          ? withAffiliate(`https://www.amazon.fr/dp/${suggestion.amazonData.asin}`)
+          : withAffiliate(suggestion.amazonData?.productUrl || suggestion.amazonData?.searchUrl)
       ],
       priceInfo: {
         displayPrice: suggestion.estimatedPrice,
