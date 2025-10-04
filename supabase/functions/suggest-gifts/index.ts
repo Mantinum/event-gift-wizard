@@ -398,6 +398,7 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
     
     let enrichedSuggestion = {
       ...suggestion,
+      purchaseLinks: [amazonSearchUrl],
       amazonData: {
         searchUrl: amazonSearchUrl,
         productUrl: suggestion.amazonUrl || amazonSearchUrl,
@@ -471,6 +472,10 @@ async function enrichWithAmazonData(gptSuggestions: any[], serpApiKey?: string, 
             ...suggestion,
             title: bestProduct.title,
             estimatedPrice: Math.round(bestProduct.price || suggestion.estimatedPrice),
+            purchaseLinks: [
+              withAffiliate(productUrl),
+              amazonSearchUrl
+            ],
             amazonData: {
               asin: bestProduct.asin,
               rating: bestProduct.rating,
