@@ -123,11 +123,14 @@ ${personalInfo}
 Événement: ${eventType}
 Budget alloué: ${budget}€
 
-INSTRUCTIONS CRITIQUES BUDGET:
-- UTILISE INTELLIGEMMENT LE BUDGET: Si le budget est de 100€, propose des cadeaux entre 70-100€, pas 10-20€
-- Varie les prix: 1 cadeau proche du budget max (80-100%), 1 cadeau milieu de gamme (60-80%), 1 cadeau accessible (40-60%)
-- Pour un budget de 50€+, évite les cadeaux < 30€ sauf si très spécifiques aux intérêts
-- Pour un budget de 100€+, évite les cadeaux < 50€ sauf si très spécifiques aux intérêts
+RÈGLE ABSOLUE BUDGET - RESPECTE STRICTEMENT:
+Pour un budget de ${budget}€, tu DOIS proposer 3 cadeaux avec ces prix EXACTS:
+- Cadeau 1: entre ${Math.round(budget * 0.8)}-${budget}€ (proche du max)
+- Cadeau 2: entre ${Math.round(budget * 0.6)}-${Math.round(budget * 0.75)}€ (milieu de gamme)
+- Cadeau 3: entre ${Math.round(budget * 0.4)}-${Math.round(budget * 0.55)}€ (accessible)
+
+❌ REJETE: Tout cadeau < ${Math.round(budget * 0.35)}€ ou > ${budget}€
+✅ EXEMPLE pour budget 100€: 90€, 70€, 45€
 
 INSTRUCTIONS PRODUITS:
 - Génère 3 produits concrets avec marques et modèles réels (Nike, Adidas, Apple, Samsung, etc.)
@@ -161,7 +164,7 @@ Renvoie UNIQUEMENT un JSON avec ce format exact:
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Tu es un expert en idées cadeaux personnalisées. Tu renvoies UNIQUEMENT du JSON valide." },
+          { role: "system", content: `Tu es un expert en idées cadeaux personnalisées. Tu renvoies UNIQUEMENT du JSON valide. RÈGLE CRITIQUE: Les prix doivent être répartis intelligemment sur TOUT le budget disponible (pas seulement une petite partie).` },
           { role: "user", content: prompt }
         ],
         max_tokens: 1200,
