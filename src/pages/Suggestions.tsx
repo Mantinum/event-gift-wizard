@@ -11,6 +11,7 @@ import { ArrowLeft, Sparkles, ShoppingCart, Star, Euro, Calendar, Lightbulb, Arr
 const Suggestions = () => {
   const navigate = useNavigate();
   const [budget, setBudget] = useState(100);
+  const [hasGenerated, setHasGenerated] = useState(false);
   const { suggestions, loading, error, generateSuggestions } = useGiftSuggestions();
 
   const name = sessionStorage.getItem('onboarding-name') || '';
@@ -21,13 +22,13 @@ const Suggestions = () => {
 
   useEffect(() => {
     // Auto-generate suggestions when component mounts
-    if (name && relationship && interests.length > 0) {
+    if (name && relationship && interests.length > 0 && !hasGenerated) {
       generateSuggestions({
         personId: 'onboarding-temp', // Temporary ID for onboarding
         eventType: 'birthday',
         budget,
         additionalContext: `Nom: ${name}, Relation: ${relationship}, Sexe: ${gender}, Intérêts: ${interests.join(', ')}`
-      });
+      }).then(() => setHasGenerated(true));
     }
   }, []);
 
@@ -142,34 +143,29 @@ const Suggestions = () => {
             </CardContent>
           </Card>
 
-          {/* Budget Control */}
-          <Card className="shadow-card">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="font-medium">Budget: {budget}€</h4>
-                <Button 
-                  onClick={handleRegenerateSuggestions}
-                  disabled={loading}
-                  variant="outline"
-                  size="sm"
-                >
-                  {loading ? 'Génération...' : 'Régénérer'}
-                </Button>
-              </div>
-              <input
-                type="range"
-                min="10"
-                max="500"
-                step="10"
-                value={budget}
-                onChange={(e) => setBudget(Number(e.target.value))}
-                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="text-sm text-muted-foreground mt-2">
-                Ajustez le budget et régénérez pour de nouvelles suggestions
-              </div>
-            </CardContent>
-          </Card>
+          {/* Budget Display */}
+          {hasGenerated && (
+            <Card className="shadow-card border-primary/20">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium text-lg">Budget utilisé: {budget}€</h4>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Créez un compte pour modifier le budget et générer de nouvelles suggestions
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={handleCreateAccount}
+                    variant="default"
+                    size="sm"
+                    className="bg-primary"
+                  >
+                    Créer un compte
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Loading State */}
           {loading && (
@@ -256,11 +252,17 @@ const Suggestions = () => {
               <Card className="shadow-elegant bg-gradient-card border-primary/20">
                 <CardContent className="p-8 text-center">
                   <Sparkles className="w-12 h-12 mx-auto mb-4 text-primary" />
-                  <h3 className="text-2xl font-bold mb-4">Vous aimez ces suggestions ?</h3>
-                  <p className="text-muted-foreground mb-6 max-w-2xl mx-auto">
-                    Créez votre compte pour sauvegarder {name}, recevoir des rappels d'anniversaire,
-                    et accéder à des fonctionnalités avancées comme l'achat automatique !
+                  <h3 className="text-2xl font-bold mb-4">🎉 Ces suggestions vous plaisent ?</h3>
+                  <p className="text-muted-foreground mb-6 max-w-2xl mx-auto text-lg">
+                    <strong>Créez votre compte gratuit</strong> pour sauvegarder {name}, 
+                    recevoir des rappels d'anniversaire, générer des suggestions illimitées 
+                    et accéder à toutes les fonctionnalités avancées !
                   </p>
+                  <Alert className="mb-6 bg-primary/10 border-primary/30">
+                    <AlertDescription className="text-center text-sm">
+                      ⚠️ Sans compte, vous ne pourrez plus régénérer de suggestions (limite API atteinte)
+                    </AlertDescription>
+                  </Alert>
                   <Button 
                     onClick={handleCreateAccount}
                     size="lg"
